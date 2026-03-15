@@ -14,13 +14,13 @@ app = FastAPI(title="FreeRADIUS Manager")
 # CORS
 origins = os.getenv(
     "ALLOWED_ORIGINS",
-    "http://localhost:3000,http://localhost:5173,https://localhost,https://localhost:3000,https://localhost:5173",
+    "*",
 ).split(",")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
