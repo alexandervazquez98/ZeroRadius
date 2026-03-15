@@ -73,7 +73,7 @@ services:
       context: ./frontend
     container_name: radius-frontend
     ports:
-      - "3000:80"
+      - "3009:80"
       - "443:443"
     volumes:
       - ./certs:/etc/nginx/certs
