@@ -27,6 +27,7 @@ sql {
 
     # Tables configuration
     group_attribute = "SQL-Group"
+    user_attribute = "User-Name"
 
     # Default queries
     authorize_check_query = "SELECT id, username, attribute, value, op FROM radcheck WHERE username = '%{SQL-User-Name}' ORDER BY id"
