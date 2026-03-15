@@ -1,0 +1,76 @@
+# ─── Secrets & environment ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── TLS / certificates ───────────────────────────────────────────────────────
+certs/
+*.key
+*.crt
+*.pem
+*.p12
+*.pfx
+
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+*.log
+
+# ─── Node / frontend ──────────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+frontend/dist/
+frontend/build/
+.parcel-cache/
+
+# ─── Logs & runtime files ─────────────────────────────────────────────────────
+*.log
+logs/
+log.txt
+logs.txt
+connect.log
+capture_auth.txt
+full_auth.log
+full_debug.log
+logs_filtered.log
+radius_debug.log
+default_site_config.txt
+
+# ─── OS / editor ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ─── AI agent tooling (local only) ────────────────────────────────────────────
+.opencode/node_modules/
+.opencode/bun.lock
+.agent/
+openspec/
+
+# ─── Archives / temp ──────────────────────────────────────────────────────────
+*.rar
+*.zip
+*.tar.gz
+*.tar.bz2
+nul

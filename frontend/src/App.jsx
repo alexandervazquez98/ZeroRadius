@@ -1,0 +1,87 @@
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
+import RoleGuard from './components/RoleGuard';
+import Layout from './components/Layout';
+import Login from './pages/Login';
+import ChangePassword from './pages/ChangePassword';
+import Dashboard from './pages/Dashboard';
+import Users from './pages/Users';
+import NAS from './pages/NAS';
+import Sessions from './pages/Sessions';
+import Groups from './pages/Groups';
+import Audit from './pages/Audit';
+import Dictionaries from './pages/Dictionaries';
+import AdminUsers from './pages/AdminUsers';
+import PrivilegeMap from './pages/PrivilegeMap';
+
+/** Simple page shown when a user lacks permissions to access a route */
+function Unauthorized() {
+    return (
+        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center px-4">
+            <div className="w-20 h-20 rounded-full bg-rose-100 flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-10 h-10 text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636a9 9 0 11-12.728 0M12 9v4m0 4h.01" />
+                </svg>
+            </div>
+            <div>
+                <h2 className="text-2xl font-black text-slate-800">Access Denied</h2>
+                <p className="text-slate-500 mt-2 max-w-sm">You don't have permission to access this page. Contact your administrator if you believe this is an error.</p>
+            </div>
+        </div>
+    );
+}
+
+function App() {
+    return (
+        <AuthProvider>
+            <BrowserRouter>
+                <Routes>
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/change-password" element={<ChangePassword />} />
+
+                    <Route path="/" element={
+                        <ProtectedRoute>
+                            <Layout />
+                        </ProtectedRoute>
+                    }>
+                        <Route index element={<Dashboard />} />
+                        <Route path="users" element={<Users />} />
+                        <Route path="nas" element={<NAS />} />
+                        <Route path="sessions" element={<Sessions />} />
+                        <Route path="groups" element={<Groups />} />
+                        <Route path="audit" element={<Audit />} />
+                        <Route path="dictionaries" element={<Dictionaries />} />
+
+                        {/* Superadmin-only: System Users */}
+                        <Route
+                            path="admin-users"
+                            element={
+                                <RoleGuard allowedRoles={['superadmin']} fallback={<Unauthorized />}>
+                                    <AdminUsers />
+                                </RoleGuard>
+                            }
+                        />
+
+                        {/* Privilege Map: superadmin, admin, auditor */}
+                        <Route
+                            path="privilege-map"
+                            element={
+                                <RoleGuard allowedRoles={['superadmin', 'admin', 'auditor']} fallback={<Unauthorized />}>
+                                    <PrivilegeMap />
+                                </RoleGuard>
+                            }
+                        />
+
+                        <Route path="unauthorized" element={<Unauthorized />} />
+                    </Route>
+
+                    {/* Fallback */}
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+            </BrowserRouter>
+        </AuthProvider>
+    );
+}
+
+export default App;

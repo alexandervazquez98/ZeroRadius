@@ -1,0 +1,201 @@
+-- FreeRADIUS schema with ISO 27001:2022 compliance enhancements
+-- Updated: 2026-03-15
+
+CREATE TABLE IF NOT EXISTS radcheck (
+  id int(11) unsigned NOT NULL auto_increment,
+  username varchar(64) NOT NULL default '',
+  attribute varchar(64)  NOT NULL default '',
+  op char(2) NOT NULL DEFAULT '==',
+  value varchar(253) NOT NULL default '',
+  PRIMARY KEY  (id),
+  KEY username (username(32))
+);
+
+CREATE TABLE IF NOT EXISTS radreply (
+  id int(11) unsigned NOT NULL auto_increment,
+  username varchar(64) NOT NULL default '',
+  attribute varchar(64) NOT NULL default '',
+  op char(2) NOT NULL DEFAULT '=',
+  value varchar(253) NOT NULL default '',
+  PRIMARY KEY  (id),
+  KEY username (username(32))
+);
+
+CREATE TABLE IF NOT EXISTS radusergroup (
+  username varchar(64) NOT NULL default '',
+  groupname varchar(64) NOT NULL default '',
+  priority int(11) NOT NULL default '1',
+  KEY username (username(32))
+);
+
+CREATE TABLE IF NOT EXISTS radgroupcheck (
+  id int(11) unsigned NOT NULL auto_increment,
+  groupname varchar(64) NOT NULL default '',
+  attribute varchar(64)  NOT NULL default '',
+  op char(2) NOT NULL DEFAULT '==',
+  value varchar(253)  NOT NULL default '',
+  PRIMARY KEY  (id),
+  KEY groupname (groupname(32))
+);
+
+CREATE TABLE IF NOT EXISTS radgroupreply (
+  id int(11) unsigned NOT NULL auto_increment,
+  groupname varchar(64) NOT NULL default '',
+  attribute varchar(64)  NOT NULL default '',
+  op char(2) NOT NULL DEFAULT '=',
+  value varchar(253)  NOT NULL default '',
+  PRIMARY KEY  (id),
+  KEY groupname (groupname(32))
+);
+
+CREATE TABLE IF NOT EXISTS nas (
+  id int(10) NOT NULL auto_increment,
+  nasname varchar(128) NOT NULL,
+  shortname varchar(32),
+  type varchar(30) DEFAULT 'other',
+  ports int(5),
+  secret varchar(60) DEFAULT 'secret' NOT NULL,
+  server varchar(64),
+  community varchar(50),
+  description varchar(200) DEFAULT 'RADIUS Client',
+  PRIMARY KEY (id),
+  KEY nasname (nasname)
+);
+
+-- T08: radacct enhanced with nasidentifier, privilege_level, vendor_reply_attrs (ISO 27001 A.8.15)
+CREATE TABLE IF NOT EXISTS radacct (
+  radacctid bigint(21) NOT NULL auto_increment,
+  acctsessionid varchar(64) NOT NULL default '',
+  acctuniqueid varchar(32) NOT NULL default '',
+  username varchar(64) NOT NULL default '',
+  groupname varchar(64) NOT NULL default '',
+  realm varchar(64) default '',
+  nasipaddress varchar(15) NOT NULL default '',
+  nasidentifier varchar(64) default NULL,
+  nasportid varchar(15) default NULL,
+  nasporttype varchar(32) default NULL,
+  privilege_level varchar(32) default NULL,
+  vendor_reply_attrs JSON default NULL,
+  acctstarttime datetime NULL default NULL,
+  acctupdatetime datetime NULL default NULL,
+  acctstoptime datetime NULL default NULL,
+  acctinterval int(12) default NULL,
+  acctsessiontime int(12) unsigned default NULL,
+  acctauthentic varchar(32) default NULL,
+  connectinfo_start varchar(50) default NULL,
+  connectinfo_stop varchar(50) default NULL,
+  acctinputoctets bigint(20) default NULL,
+  acctoutputoctets bigint(20) default NULL,
+  calledstationid varchar(50) NOT NULL default '',
+  callingstationid varchar(50) NOT NULL default '',
+  acctterminatecause varchar(32) NOT NULL default '',
+  servicetype varchar(32) default NULL,
+  framedprotocol varchar(32) default NULL,
+  framedipaddress varchar(15) NOT NULL default '',
+  PRIMARY KEY  (radacctid),
+  UNIQUE KEY acctuniqueid (acctuniqueid),
+  KEY username (username),
+  KEY framedipaddress (framedipaddress),
+  KEY acctsessionid (acctsessionid),
+  KEY acctsessiontime (acctsessiontime),
+  KEY acctstarttime (acctstarttime),
+  KEY acctinterval (acctinterval),
+  KEY acctstoptime (acctstoptime),
+  KEY nasipaddress (nasipaddress)
+);
+
+-- T07: radpostauth enhanced with NAS traceability and integrity hash (ISO 27001 A.8.15, A.5.33)
+-- authdate is DATETIME(6) with no ON UPDATE — immutable after insert
+CREATE TABLE IF NOT EXISTS radpostauth (
+  id int(11) NOT NULL auto_increment,
+  username varchar(64) NOT NULL default '',
+  pass varchar(64) NOT NULL default '',
+  reply varchar(32) NOT NULL default '',
+  authdate DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  nas_ip_address varchar(15) NOT NULL DEFAULT '',
+  nas_identifier varchar(64) NULL,
+  nas_port INT NULL,
+  calling_station_id varchar(50) NULL,
+  called_station_id varchar(50) NULL,
+  reply_message TEXT NULL,
+  event_source varchar(32) NOT NULL DEFAULT 'radius',
+  integrity_hash varchar(71) NULL,
+  PRIMARY KEY  (id),
+  KEY idx_nas_ip (nas_ip_address),
+  KEY idx_calling_station (calling_station_id)
+);
+
+-- Custom Audit Table for the Web Admin Application
+CREATE TABLE IF NOT EXISTS app_audit_log (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    admin_user VARCHAR(255) NOT NULL,
+    target_user VARCHAR(255),
+    action VARCHAR(50) NOT NULL, -- CREATE, UPDATE, DELETE, AUTH-001..ADMIN-009
+    table_affected VARCHAR(50) NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- T03: admin_users with role column for RBAC (ISO 27001 A.5.15, A.5.18)
+CREATE TABLE IF NOT EXISTS admin_users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    email VARCHAR(255) NULL,
+    role VARCHAR(32) NOT NULL DEFAULT 'admin',
+    hashed_password VARCHAR(255) NOT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    force_password_change TINYINT(1) NOT NULL DEFAULT 1,
+    UNIQUE KEY idx_username (username)
+);
+
+-- T04: login_attempts for account lockout (ISO 27001 A.5.17)
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    username        VARCHAR(64) NOT NULL,
+    ip_address      VARCHAR(45) NULL,
+    attempted_at    DATETIME(6) DEFAULT CURRENT_TIMESTAMP(6),
+    success         TINYINT(1)  NOT NULL DEFAULT 0,
+    INDEX idx_username_time (username, attempted_at)
+) ENGINE=InnoDB;
+
+-- T05: radius_reply_audit — extended audit table (ISO 27001 A.5.15, A.8.2, A.5.18)
+CREATE TABLE IF NOT EXISTS radius_reply_audit (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    username        VARCHAR(64)  NOT NULL,
+    nas_ip          VARCHAR(15)  NULL,
+    nas_identifier  VARCHAR(64)  NULL,
+    radius_group    VARCHAR(64)  NULL,
+    reply_attributes JSON        NULL,
+    privilege_level VARCHAR(32)  NULL,
+    event_type      VARCHAR(32)  NULL,
+    created_at      DATETIME(6)  DEFAULT CURRENT_TIMESTAMP(6),
+    admin_user      VARCHAR(255) NULL,
+    old_value       TEXT         NULL,
+    new_value       TEXT         NULL,
+    record_hash     VARCHAR(71)  NULL,
+    INDEX idx_rra_username (username),
+    INDEX idx_rra_nas_ip (nas_ip),
+    INDEX idx_rra_created_at (created_at)
+) ENGINE=InnoDB;
+
+-- T06: user_nas_privilege_map — NAS-based access control (ISO 27001 A.5.15, A.8.2)
+CREATE TABLE IF NOT EXISTS user_nas_privilege_map (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    username        VARCHAR(64)  NOT NULL,
+    nas_ip          VARCHAR(15)  NOT NULL,
+    nas_identifier  VARCHAR(64)  NULL,
+    nas_vendor      VARCHAR(64)  NULL,
+    radius_group    VARCHAR(64)  NOT NULL,
+    privilege_level VARCHAR(32)  NULL,
+    justification   TEXT         NULL,
+    approved_by     VARCHAR(255) NULL,
+    review_date     DATETIME     NULL,
+    is_active       TINYINT(1)   NOT NULL DEFAULT 1,
+    created_at      DATETIME(6)  DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at      DATETIME(6)  DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    UNIQUE KEY uq_user_nas (username, nas_ip),
+    INDEX idx_unpm_nas_ip (nas_ip),
+    INDEX idx_unpm_is_active (is_active),
+    INDEX idx_unpm_review_date (review_date)
+) ENGINE=InnoDB;

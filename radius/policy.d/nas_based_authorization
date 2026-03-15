@@ -1,0 +1,46 @@
+# NAS-Based Authorization Policy
+# ISO 27001:2022 A.8.3 — Access control based on NAS identity
+#
+# This policy checks user_nas_privilege_map to determine if the user
+# is authorized to access from this specific NAS device.
+# If a matching active mapping exists, the user's RADIUS group is overridden
+# with the NAS-specific group. If no mapping is found, access is rejected.
+#
+# Include this in your authorize {} section:
+#   authorize {
+#     ...
+#     nas_based_authorization
+#     ...
+#   }
+
+policy nas_based_authorization {
+
+    # Only run if NAS-IP-Address is present
+    if (&NAS-IP-Address) {
+
+        # Query user_nas_privilege_map for a matching active entry
+        # The SQL module must be configured with authorize_nas_query (see radius/sql)
+        %{sql:SELECT radius_group FROM user_nas_privilege_map \
+            WHERE username='%{User-Name}' \
+            AND nas_ip='%{NAS-IP-Address}' \
+            AND is_active=1 \
+            LIMIT 1}
+
+        # If a group was found, override SQL-Group with the NAS-specific group
+        if (&control:SQL-Group) {
+            update control {
+                SQL-Group := &control:SQL-Group
+            }
+            # Grant access — NAS-specific group applies
+        }
+        else {
+            # No mapping found for this user+NAS combination
+            # Log and reject
+            update reply {
+                Reply-Message := "Access denied: NAS not authorized for this user"
+            }
+            reject
+        }
+    }
+    # If NAS-IP-Address is missing, fall through silently (allow default processing)
+}

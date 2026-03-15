@@ -1,0 +1,55 @@
+sql {
+    driver = "rlm_sql_mysql"
+    dialect = "mysql"
+
+    # Connection info:
+    server = "$ENV{DB_HOST}"
+    port = "$ENV{DB_PORT}"
+    login = "$ENV{DB_USER}"
+    password = "$ENV{DB_PASS}"
+    radius_db = "$ENV{DB_NAME}"
+
+    # Connection pool configuration
+    pool {
+        start = 5
+        min = 5
+        max = 10
+        spare = 3
+        uses = 0
+        retry_delay = 30
+        lifetime = 0
+        idle_timeout = 60
+    }
+
+    # Helper functions
+    read_clients = yes
+    client_table = "nas"
+
+    # Tables configuration
+    group_attribute = "SQL-Group"
+
+    # Default queries
+    authorize_check_query = "SELECT id, username, attribute, value, op FROM radcheck WHERE username = '%{SQL-User-Name}' ORDER BY id"
+    authorize_reply_query = "SELECT id, username, attribute, value, op FROM radreply WHERE username = '%{SQL-User-Name}' ORDER BY id"
+
+    group_membership_query = "SELECT groupname FROM radusergroup WHERE username = '%{SQL-User-Name}' ORDER BY priority"
+    authorize_group_check_query = "SELECT id, groupname, attribute, value, op FROM radgroupcheck WHERE groupname = '%{SQL-Group}' ORDER BY id"
+    authorize_group_reply_query = "SELECT id, groupname, attribute, value, op FROM radgroupreply WHERE groupname = '%{SQL-Group}' ORDER BY id"
+
+    # Accounting queries (basic)
+    accounting_on = "UPDATE radacct SET acctstoptime = acctstarttime, acctsessiontime = 0, connectinfo_stop = connectinfo_start, acctterminatecause = 'NAS-Reboot' WHERE nasipaddress = '%{NAS-IP-Address}' AND acctstoptime IS NULL"
+    accounting_off = "UPDATE radacct SET acctstoptime = acctstarttime, acctsessiontime = 0, connectinfo_stop = connectinfo_start, acctterminatecause = 'NAS-Reboot' WHERE nasipaddress = '%{NAS-IP-Address}' AND acctstoptime IS NULL"
+
+    accounting_start_query = "INSERT INTO radacct (acctsessionid, acctuniqueid, username, realm, nasipaddress, nasportid, nasporttype, acctstarttime, authentic, connectinfo_start, calledstationid, callingstationid, servicetype, framedprotocol, framedipaddress) VALUES ('%{Acct-Session-Id}', '%{Acct-Unique-Session-Id}', '%{SQL-User-Name}', '%{Realm}', '%{NAS-IP-Address}', '%{NAS-Port}', '%{NAS-Port-Type}', '%{Event-Timestamp}', '%{Acct-Authentic}', '%{Connect-Info}', '%{Called-Station-Id}', '%{Calling-Station-Id}', '%{Service-Type}', '%{Framed-Protocol}', '%{Framed-IP-Address}')"
+
+    accounting_update_query = "UPDATE radacct SET acctupdatetime = '%{Event-Timestamp}', acctinterval = %{Acct-Delay-Time}, acctsessiontime = %{Acct-Session-Time}, acctinputoctets = '%{Acct-Input-Octets}', acctoutputoctets = '%{Acct-Output-Octets}' WHERE acctuniqueid = '%{Acct-Unique-Session-Id}'"
+
+    accounting_stop_query = "UPDATE radacct SET acctstoptime = '%{Event-Timestamp}', acctsessiontime = %{Acct-Session-Time}, acctinputoctets = '%{Acct-Input-Octets}', acctoutputoctets = '%{Acct-Output-Octets}', acctterminatecause = '%{Acct-Terminate-Cause}', connectinfo_stop = '%{Connect-Info}' WHERE acctuniqueid = '%{Acct-Unique-Session-Id}'"
+
+    # Simultaneous Use Checking
+    simul_count_query = "SELECT COUNT(*) FROM radacct WHERE username = '%{SQL-User-Name}' AND acctstoptime IS NULL"
+    simul_verify_query = "SELECT radacctid, acctsessionid, username, nasipaddress, nasportid, framedipaddress, callingstationid, framedprotocol FROM radacct WHERE username = '%{SQL-User-Name}' AND acctstoptime IS NULL"
+
+    # Post-Auth (Logging) — T09: pass is [REDACTED] (ISO 27001 A.5.17), NAS context added (A.8.15)
+    postauth_query = "INSERT INTO radpostauth (username, pass, reply, authdate, nas_ip_address, nas_identifier, calling_station_id, reply_message, event_source) VALUES ('%{SQL-User-Name}', '[REDACTED]', '%{reply:Packet-Type}', '%{Event-Timestamp}', '%{NAS-IP-Address}', '%{NAS-Identifier}', '%{Calling-Station-Id}', '%{reply:Reply-Message}', 'radius')"
+}

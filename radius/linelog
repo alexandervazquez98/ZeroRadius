@@ -1,0 +1,41 @@
+linelog {
+	#
+	#  Used if the "filename" or "syslog_facility" configuration
+	#  items are empty.
+	#
+	#  The string here is written to the system log (syslog,
+	#  journald, etc).
+	#
+	syslog_level = info
+
+	#
+	#  If this is set, the log message is written to the file,
+	#  instead of to syslog.
+	#
+	#filename = ${logdir}/linelog
+    # Write to main radius log (stdout in Docker)
+    filename = ${logdir}/radius.log
+
+	#
+	#  The Unix permissions for the file.
+	#
+	permissions = 0600
+
+	#
+	#  The format of the log message.
+	#
+	#  The string here is expanded.  If the result is empty,
+	#  then nothing is logged.
+	#
+	format = "LINELOG: User: %{User-Name} - Access: %{Packet-Type} - Reply: %{reply:Reply-Message} - IP: %{reply:Framed-IP-Address}"
+
+	#
+	#  If the reference is to a list of attributes (e.g. "reply:"),
+	#  and there are no attributes in that list, then "reference"
+	#  is returned.
+	#
+	#  This configuration item allows you to change that return
+	#  value.
+	#
+	reference = ""
+}

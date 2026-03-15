@@ -1,0 +1,5 @@
+# COMPORTAMIENTO DEL SISTEMA DE ORQUESTACIÓN
+- Siempre verifica si existe un artifact previo antes de crear el siguiente.
+- Si el usuario pide un cambio, primero actualiza 02_specs.md y luego propaga a 04_tasks.md.
+- No escribas código en la fase de Design.
+- No hagas pruebas en la fase de Apply.
