@@ -43,6 +43,7 @@ services:
       - ./backend/dictionaries:/etc/raddb/custom_dictionaries
       - ./radius/sql:/etc/raddb/mods-available/sql
       - ./radius/clients.conf:/etc/raddb/clients.conf
+      - ./radius/default.conf:/etc/freeradius/sites-enabled/default
     depends_on:
       db:
         condition: service_healthy

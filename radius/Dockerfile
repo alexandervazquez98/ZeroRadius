@@ -34,13 +34,11 @@ RUN sed -i 's/driver = "rlm_sql_null"/driver = "rlm_sql_mysql"/g' /etc/raddb/mod
     sed -i 's/idle_timeout = .*/idle_timeout = 0/g' /etc/raddb/mods-available/sql
 
 # Enable linelog module (custom config)
+# linelog is referenced in radius/default.conf (bind-mounted), so we just
+# need the module available inside the image.
 COPY linelog /etc/raddb/mods-available/linelog
 RUN cd /etc/raddb/mods-enabled && \
     ln -sf ../mods-available/linelog linelog
-
-# Add linelog to post-auth in default site (after the main -sql, not inside REJECT sub-section)
-# Match the line immediately after the "Authentication Logging Queries" comment block
-RUN sed -i '/Authentication Logging Queries/{n; s/^\t-sql$/\t-sql\n\tlinelog/}' /etc/raddb/sites-available/default
 
 # Install Cambium Dictionary - AUTOMATED METHOD
 # We create a directory for custom dictionaries and tell FreeRADIUS to include our helper file
