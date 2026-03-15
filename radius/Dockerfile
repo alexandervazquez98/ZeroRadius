@@ -33,21 +33,14 @@ RUN sed -i 's/driver = "rlm_sql_null"/driver = "rlm_sql_mysql"/g' /etc/raddb/mod
     sed -i 's/start = .*/start = 1/g' /etc/raddb/mods-available/sql && \
     sed -i 's/idle_timeout = .*/idle_timeout = 0/g' /etc/raddb/mods-available/sql
 
-# Add 'sql' to the 'authorize', 'accounting', 'session', and 'post-auth' sections of default site
-# Using a simpler sed that is less prone to breaking
-RUN sed -i '/authorize {/a \ \tsql' /etc/raddb/sites-available/default && \
-    sed -i '/accounting {/a \ \tsql' /etc/raddb/sites-available/default && \
-    sed -i '/session {/a \ \tsql' /etc/raddb/sites-available/default && \
-    sed -i '/post-auth {/a \ \tsql' /etc/raddb/sites-available/default
-
 # Enable linelog module (custom config)
 COPY linelog /etc/raddb/mods-available/linelog
 RUN cd /etc/raddb/mods-enabled && \
     ln -sf ../mods-available/linelog linelog
 
-# Add linelog to post-auth in default site (AFTER sql)
-# Use a range match to only affect the post-auth section
-RUN sed -i '/post-auth {/,/}/ s/^\s*sql/&\n\tlinelog/' /etc/raddb/sites-available/default
+# Add linelog to post-auth in default site (after the main -sql, not inside REJECT sub-section)
+# Match the line immediately after the "Authentication Logging Queries" comment block
+RUN sed -i '/Authentication Logging Queries/{n; s/^\t-sql$/\t-sql\n\tlinelog/}' /etc/raddb/sites-available/default
 
 # Install Cambium Dictionary - AUTOMATED METHOD
 # We create a directory for custom dictionaries and tell FreeRADIUS to include our helper file
