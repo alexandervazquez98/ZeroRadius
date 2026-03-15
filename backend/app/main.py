@@ -50,6 +50,7 @@ async def startup():
             new_admin = AdminUser(
                 username="admin",
                 hashed_password=hashed_pw,
+                role="superadmin",
                 force_password_change=1,  # Force change immediately
             )
             db.add(new_admin)
