@@ -11,7 +11,7 @@ from app.core.rbac import require_roles, Role
 router = APIRouter(prefix="/nas", tags=["nas"])
 
 
-@router.get("/", response_model=list[NasOut])
+@router.get("", response_model=list[NasOut])
 async def get_nas(
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
@@ -20,7 +20,7 @@ async def get_nas(
     return result.scalars().all()
 
 
-@router.post("/", response_model=NasOut)
+@router.post("", response_model=NasOut)
 async def create_nas(
     nas: NasCreate,
     db: AsyncSession = Depends(get_db),

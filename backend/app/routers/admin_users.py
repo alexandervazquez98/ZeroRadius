@@ -12,7 +12,7 @@ from app.services.lockout import unlock_user
 router = APIRouter(prefix="/admin-users", tags=["admin-users"])
 
 
-@router.get("/", response_model=list[AdminUserOut])
+@router.get("", response_model=list[AdminUserOut])
 async def get_admin_users(
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
@@ -21,7 +21,7 @@ async def get_admin_users(
     return result.scalars().all()
 
 
-@router.post("/", response_model=AdminUserOut)
+@router.post("", response_model=AdminUserOut)
 async def create_admin_user(
     user: AdminUserCreate,
     db: AsyncSession = Depends(get_db),

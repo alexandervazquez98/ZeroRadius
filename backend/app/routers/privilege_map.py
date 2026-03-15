@@ -47,7 +47,7 @@ def _to_out(record: UserNasPrivilegeMap) -> UserNasPrivilegeMapOut:
     )
 
 
-@router.get("/", response_model=list[UserNasPrivilegeMapOut])
+@router.get("", response_model=list[UserNasPrivilegeMapOut])
 async def list_privilege_maps(
     username: Optional[str] = None,
     nas_ip: Optional[str] = None,
@@ -80,7 +80,7 @@ async def list_privilege_maps(
     return [_to_out(r) for r in records]
 
 
-@router.post("/", response_model=UserNasPrivilegeMapOut, status_code=201)
+@router.post("", response_model=UserNasPrivilegeMapOut, status_code=201)
 async def create_privilege_map(
     payload: UserNasPrivilegeMapCreate,
     db: AsyncSession = Depends(get_db),
