@@ -105,7 +105,7 @@ class TestAdminUsersRBAC:
             "role": "admin",
         }
         resp = await async_client.post(
-            "/admin-users/",
+            "/admin-users",
             json=payload,
             headers={"Authorization": f"Bearer {admin_token}"},
         )
@@ -121,7 +121,7 @@ class TestAdminUsersRBAC:
             "role": "helpdesk",
         }
         resp = await async_client.post(
-            "/admin-users/",
+            "/admin-users",
             json=payload,
             headers={"Authorization": f"Bearer {helpdesk_token}"},
         )
@@ -137,7 +137,7 @@ class TestAdminUsersRBAC:
             "role": "helpdesk",
         }
         resp = await async_client.post(
-            "/admin-users/",
+            "/admin-users",
             json=payload,
             headers={"Authorization": f"Bearer {superadmin_token}"},
         )
@@ -166,14 +166,14 @@ class TestPrivilegeMapRBAC:
 
     async def test_auditor_can_read_privilege_map(self, async_client, auditor_token):
         resp = await async_client.get(
-            "/privilege-map/",
+            "/privilege-map",
             headers={"Authorization": f"Bearer {auditor_token}"},
         )
         assert resp.status_code == 200
 
     async def test_admin_can_read_privilege_map(self, async_client, admin_token):
         resp = await async_client.get(
-            "/privilege-map/",
+            "/privilege-map",
             headers={"Authorization": f"Bearer {admin_token}"},
         )
         assert resp.status_code == 200
@@ -183,14 +183,14 @@ class TestPrivilegeMapRBAC:
     ):
         payload = {
             "username": "jperez",
-            "nas_ip": "10.1.1.1",
+            "nas_ips": ["10.1.1.1"],
             "radius_group": "grp_test",
             "privilege_level": "level-1",
             "approved_by": "admin",
             "review_date": "2027-01-01",
         }
         resp = await async_client.post(
-            "/privilege-map/",
+            "/privilege-map",
             json=payload,
             headers={"Authorization": f"Bearer {auditor_token}"},
         )
@@ -201,14 +201,14 @@ class TestPrivilegeMapRBAC:
     ):
         payload = {
             "username": "jperez",
-            "nas_ip": "10.1.1.2",
+            "nas_ips": ["10.1.1.2"],
             "radius_group": "grp_test",
             "privilege_level": "level-1",
             "approved_by": "admin",
             "review_date": "2027-01-01",
         }
         resp = await async_client.post(
-            "/privilege-map/",
+            "/privilege-map",
             json=payload,
             headers={"Authorization": f"Bearer {helpdesk_token}"},
         )
