@@ -33,6 +33,13 @@ El sistema está contenerizado con Docker y compuesto por:
 *   Si la validación pasa, consulta `radreply` y `radgroupreply` para obtener los atributos de configuración (Velocidad, VLAN, Tiempo).
 *   FreeRADIUS responde al NAS con `Access-Accept` + Atributos.
 
+### Mapa de Privilegios (Privilege Map) - ISO 27001
+El sistema implementa un control de acceso estricto basado en identidad de red (NAS) para cumplir con los controles **A.5.15 y A.8.3 de la ISO/IEC 27001:2022**.
+En lugar de conceder acceso global a todos los equipos de red, el Privilege Map restringe el acceso de manera granular:
+*   **Propósito:** Define exactamente qué usuario puede acceder a qué equipo (NAS IP), y con qué grupo/nivel de privilegios (RADIUS Group).
+*   **Autorización Dinámica:** Durante el login, la política `nas_based_authorization` en FreeRADIUS consulta la tabla `user_nas_privilege_map`. Si existe un mapeo activo para el usuario y la IP del NAS desde donde intenta entrar, su grupo RADIUS predeterminado se reemplaza dinámicamente por el grupo autorizado para ese equipo. Si no hay mapeo, el acceso se rechaza.
+*   **Auditoría y Revisión (A.8.2):** Cada mapeo requiere un aprobador (`Approved By`), una justificación de negocio (`Justification`) y una fecha de revisión obligatoria (`Review Date`), garantizando que los accesos privilegiados sean revocados cuando ya no se necesiten.
+
 ### Gestión de "Huntgroups" (Lógica Multi-NAS)
 *   Se utiliza la flexibilidad de SQL para asignar usuarios a grupos específicos según el NAS.
 *   En el Frontend, se pueden crear condiciones para que un grupo solo sea válido si la petición viene de una IP de NAS específica (Atributo `NAS-IP-Address` en `radgroupcheck`).

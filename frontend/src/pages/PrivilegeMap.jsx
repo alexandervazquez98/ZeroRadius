@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Shield, Plus, Trash2, Edit2, X, AlertTriangle, Clock, Server, User, CheckCircle } from 'lucide-react';
 import dayjs from 'dayjs';
+import api from '../api';
 import { useAuth } from '../context/AuthContext';
 import PrivilegeMapService from '../services/privilegeMapService';
+import GroupsService from '../services/groups';
 
 // Review badge helper
 const ReviewBadge = ({ reviewDate }) => {
@@ -39,7 +41,7 @@ const EMPTY_FORM = {
 };
 
 const PrivilegeMapPage = () => {
-    const { hasRole } = useAuth();
+    const { user, hasRole } = useAuth();
     const canWrite = hasRole(['superadmin', 'admin']);
     const canDelete = hasRole(['superadmin']);
 
@@ -51,12 +53,29 @@ const PrivilegeMapPage = () => {
     const [filterUsername, setFilterUsername] = useState('');
     const [filterNasIp, setFilterNasIp] = useState('');
 
+    // Fetch mappings
     const { data: items = [], isLoading } = useQuery({
         queryKey: ['privilege-map', filterUsername, filterNasIp],
         queryFn: () => PrivilegeMapService.getAll({
             username: filterUsername || undefined,
             nas_ip: filterNasIp || undefined,
         }),
+    });
+
+    // Fetch reference data for dropdowns
+    const { data: usersList = [] } = useQuery({
+        queryKey: ['users'],
+        queryFn: () => api.get('/users').then(r => r.data),
+    });
+
+    const { data: nasList = [] } = useQuery({
+        queryKey: ['nas'],
+        queryFn: () => api.get('/nas').then(r => r.data),
+    });
+
+    const { data: groupsList = [] } = useQuery({
+        queryKey: ['groups'],
+        queryFn: GroupsService.getAllGroups,
     });
 
     const createMutation = useMutation({
@@ -76,8 +95,21 @@ const PrivilegeMapPage = () => {
 
     const openCreate = () => {
         setEditItem(null);
-        setForm(EMPTY_FORM);
+        setForm({
+            ...EMPTY_FORM,
+            approved_by: user?.sub || '', // user.sub usually holds the username in JWT
+        });
         setShowModal(true);
+    };
+
+    const handleNasChange = (e) => {
+        const selectedIp = e.target.value;
+        const selectedNas = nasList.find(n => n.nasname === selectedIp);
+        setForm(f => ({
+            ...f,
+            nas_ip: selectedIp,
+            nas_vendor: selectedNas ? selectedNas.type : '', // auto-fill vendor
+        }));
     };
 
     const openEdit = (item) => {
@@ -286,48 +318,64 @@ const PrivilegeMapPage = () => {
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Username *</label>
-                                    <input
+                                    <select
                                         required
-                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white"
                                         value={form.username}
                                         onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
-                                        placeholder="e.g. jdoe"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">NAS IP *</label>
-                                    <input
-                                        required
-                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono"
-                                        value={form.nas_ip}
-                                        onChange={e => setForm(f => ({ ...f, nas_ip: e.target.value }))}
-                                        placeholder="e.g. 192.168.1.1"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">NAS Vendor</label>
-                                    <select
-                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white"
-                                        value={form.nas_vendor}
-                                        onChange={e => setForm(f => ({ ...f, nas_vendor: e.target.value }))}
+                                        disabled={editItem !== null} // Usually username shouldn't be changed during edit
                                     >
-                                        <option value="">-- Select vendor --</option>
-                                        <option value="Cisco">Cisco</option>
-                                        <option value="Juniper">Juniper</option>
-                                        <option value="Huawei">Huawei</option>
-                                        <option value="Fortinet">Fortinet</option>
-                                        <option value="Generic">Generic</option>
+                                        <option value="">-- Select User --</option>
+                                        {usersList.map(u => (
+                                            <option key={u.id || u.username} value={u.username}>
+                                                {u.username}
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">RADIUS Group *</label>
-                                    <input
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">NAS IP *</label>
+                                    <select
                                         required
-                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono bg-white"
+                                        value={form.nas_ip}
+                                        onChange={handleNasChange}
+                                        disabled={editItem !== null} // NAS IP shouldn't be changed during edit (composite unique key)
+                                    >
+                                        <option value="">-- Select NAS --</option>
+                                        {nasList.map(n => (
+                                            <option key={n.id} value={n.nasname}>
+                                                {n.nasname} {n.shortname ? `(${n.shortname})` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">NAS Vendor</label>
+                                    <input
+                                        type="text"
+                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
+                                        value={form.nas_vendor}
+                                        onChange={e => setForm(f => ({ ...f, nas_vendor: e.target.value }))}
+                                        disabled // Auto-filled from NAS selection
+                                        placeholder="Auto-filled"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">RADIUS Group *</label>
+                                    <select
+                                        required
+                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white"
                                         value={form.radius_group}
                                         onChange={e => setForm(f => ({ ...f, radius_group: e.target.value }))}
-                                        placeholder="e.g. grp_readonly"
-                                    />
+                                    >
+                                        <option value="">-- Select Group --</option>
+                                        {groupsList.map(g => (
+                                            <option key={g} value={g}>
+                                                {g}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                                 <div>
                                     <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Privilege Level</label>
