@@ -11,6 +11,34 @@ const NasPage = () => {
     const [nasCategory, setNasCategory] = useState('AP');
     const [nasName, setNasName] = useState('');
 
+    const { data: nasList, isLoading } = useQuery({
+        queryKey: ['nas'],
+        queryFn: () => api.get('/nas').then(r => r.data)
+    });
+
+    const createMutation = useMutation({
+        mutationFn: (nas) => api.post('/nas', nas),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['nas'] });
+            closeModal();
+        }
+    });
+
+    const updateMutation = useMutation({
+        mutationFn: ({ id, data }) => api.put(`/nas/${id}`, data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['nas'] });
+            closeModal();
+        }
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: (id) => api.delete(`/nas/${id}`),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['nas'] });
+        }
+    });
+
     const openEdit = (nas) => {
         setEditingId(nas.id);
         setFormData({
