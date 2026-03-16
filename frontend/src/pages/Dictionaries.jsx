@@ -4,6 +4,7 @@ import api from '../api';
 import {
     Upload, FileText, CheckCircle, AlertTriangle,
     Edit2, X, Save, Trash2, Eye, ArrowLeft,
+    Terminal, RefreshCw, ChevronDown, ChevronUp,
 } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
@@ -127,6 +128,103 @@ const DictionaryEditor = ({ filename, onClose }) => {
                     spellCheck={false}
                     className="w-full min-h-[520px] bg-slate-900 text-green-300 font-mono text-sm p-5 rounded-2xl border border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y leading-relaxed"
                 />
+            )}
+        </div>
+    );
+};
+
+/* ------------------------------------------------------------------ */
+/*  FreeRADIUS log panel                                               */
+/* ------------------------------------------------------------------ */
+const RadiusLogPanel = () => {
+    const [expanded, setExpanded] = useState(false);
+
+    const { data, isLoading, refetch, isFetching } = useQuery({
+        queryKey: ['dictionary', 'radius-logs'],
+        queryFn: () => api.get('/dictionary/radius-logs').then(r => r.data),
+        refetchOnWindowFocus: false,
+        enabled: expanded,
+    });
+
+    const statusColors = {
+        running: 'bg-emerald-500',
+        error: 'bg-red-500',
+        unknown: 'bg-amber-500',
+        unavailable: 'bg-slate-400',
+    };
+
+    const statusLabels = {
+        running: 'Running',
+        error: 'Error',
+        unknown: 'Unknown',
+        unavailable: 'Unavailable',
+    };
+
+    return (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <button
+                onClick={() => setExpanded(!expanded)}
+                className="w-full flex items-center justify-between p-5 hover:bg-slate-50 transition-colors"
+            >
+                <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-slate-800 rounded-xl text-green-400">
+                        <Terminal size={20} />
+                    </div>
+                    <div className="text-left">
+                        <h3 className="text-base font-bold text-slate-800">FreeRADIUS Logs</h3>
+                        <p className="text-xs text-slate-400">Dictionary loading diagnostics</p>
+                    </div>
+                    {data && (
+                        <div className="flex items-center gap-2 ml-3">
+                            <span className={`w-2.5 h-2.5 rounded-full ${statusColors[data.status] || statusColors.unknown} ${data.status === 'running' ? 'animate-pulse' : ''}`} />
+                            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                {statusLabels[data.status] || data.status}
+                            </span>
+                        </div>
+                    )}
+                </div>
+                {expanded ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
+            </button>
+
+            {expanded && (
+                <div className="border-t border-slate-100">
+                    <div className="flex items-center justify-between px-5 py-3 bg-slate-50">
+                        <span className="text-xs text-slate-400 font-medium">
+                            {data ? `${data.filtered_lines} relevant lines of ${data.total_lines} total` : 'Loading...'}
+                        </span>
+                        <button
+                            onClick={() => refetch()}
+                            disabled={isFetching}
+                            className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-700 disabled:text-slate-400 transition-colors"
+                        >
+                            <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
+                            Refresh
+                        </button>
+                    </div>
+                    <div className="bg-slate-900 max-h-72 overflow-y-auto p-4 font-mono text-xs leading-relaxed">
+                        {isLoading ? (
+                            <div className="text-slate-500 text-center py-6">Loading logs...</div>
+                        ) : data?.logs?.length > 0 ? (
+                            data.logs.map((line, i) => {
+                                const isError = /error|duplicate|fail/i.test(line);
+                                const isWarning = /warning|skip/i.test(line);
+                                const isSuccess = /ready to process|listening on/i.test(line);
+                                return (
+                                    <div key={i} className={`py-0.5 ${
+                                        isError ? 'text-red-400' :
+                                        isWarning ? 'text-amber-400' :
+                                        isSuccess ? 'text-emerald-400' :
+                                        'text-slate-400'
+                                    }`}>
+                                        {line}
+                                    </div>
+                                );
+                            })
+                        ) : (
+                            <div className="text-slate-500 text-center py-6">No dictionary-related log lines found.</div>
+                        )}
+                    </div>
+                </div>
             )}
         </div>
     );
@@ -264,6 +362,9 @@ const DictionariesPage = () => {
                     </div>
                 )}
             </div>
+
+            {/* FreeRADIUS Log Panel */}
+            <RadiusLogPanel />
 
             {/* File grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">

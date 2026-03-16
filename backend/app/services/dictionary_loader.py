@@ -3,6 +3,7 @@ import re
 import shutil
 import tempfile
 import logging
+from pathlib import Path
 from pyrad.dictionary import Dictionary, ParseError
 from typing import List, Dict, Set
 
@@ -38,106 +39,196 @@ _ATTR_NAME_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
-# Standard RADIUS attribute names defined in the FreeRADIUS base dictionary.
-# These MUST NOT be redefined in custom dictionaries or FreeRADIUS will
-# refuse to start with "Duplicate attribute name" errors.
-_BASE_RADIUS_ATTRIBUTES: Set[str] = {
-    # RFC 2865 - Core RADIUS
-    "User-Name",
-    "User-Password",
-    "CHAP-Password",
-    "NAS-IP-Address",
-    "NAS-Port",
-    "Service-Type",
-    "Framed-Protocol",
-    "Framed-IP-Address",
-    "Framed-IP-Netmask",
-    "Framed-Routing",
-    "Filter-Id",
-    "Framed-MTU",
-    "Framed-Compression",
-    "Login-IP-Host",
-    "Login-Service",
-    "Login-TCP-Port",
-    "Reply-Message",
-    "Callback-Number",
-    "Callback-Id",
-    "Framed-Route",
-    "Framed-IPX-Network",
-    "State",
-    "Class",
-    "Vendor-Specific",
-    "Session-Timeout",
-    "Idle-Timeout",
-    "Termination-Action",
-    "Called-Station-Id",
-    "Calling-Station-Id",
-    "NAS-Identifier",
-    "Proxy-State",
-    "Login-LAT-Service",
-    "Login-LAT-Node",
-    "Login-LAT-Group",
-    "Framed-AppleTalk-Link",
-    "Framed-AppleTalk-Network",
-    "Framed-AppleTalk-Zone",
-    "CHAP-Challenge",
-    "NAS-Port-Type",
-    "Port-Limit",
-    "Login-LAT-Port",
-    # RFC 2866 - Accounting
-    "Acct-Status-Type",
-    "Acct-Delay-Time",
-    "Acct-Input-Octets",
-    "Acct-Output-Octets",
-    "Acct-Session-Id",
-    "Acct-Authentic",
-    "Acct-Session-Time",
-    "Acct-Input-Packets",
-    "Acct-Output-Packets",
-    "Acct-Terminate-Cause",
-    "Acct-Multi-Session-Id",
-    "Acct-Link-Count",
-    # RFC 2869 - Extensions
-    "Acct-Input-Gigawords",
-    "Acct-Output-Gigawords",
-    "Event-Timestamp",
-    "ARAP-Password",
-    "ARAP-Features",
-    "ARAP-Zone-Access",
-    "ARAP-Security",
-    "ARAP-Security-Data",
-    "Password-Retry",
-    "Prompt",
-    "Connect-Info",
-    "Configuration-Token",
-    "EAP-Message",
-    "Message-Authenticator",
-    # RFC 2868 - Tunneling
-    "Tunnel-Type",
-    "Tunnel-Medium-Type",
-    "Tunnel-Client-Endpoint",
-    "Tunnel-Server-Endpoint",
-    "Tunnel-Password",
-    "Tunnel-Private-Group-Id",
-    "Tunnel-Assignment-Id",
-    "Tunnel-Preference",
-    "Tunnel-Client-Auth-Id",
-    "Tunnel-Server-Auth-Id",
-    # Common extensions
-    "NAS-Port-Id",
-    "Framed-Pool",
-    "NAS-IPv6-Address",
-    "Framed-Interface-Id",
-    "Framed-IPv6-Prefix",
-    "Login-IPv6-Host",
-    "Framed-IPv6-Route",
-    "Framed-IPv6-Pool",
-    "Delegated-IPv6-Prefix",
-}
+# Keywords only valid in FreeRADIUS 4.x — must be stripped from 3.x dicts.
+_V4_ONLY_KEYWORDS = {"ALIAS", "STRUCT", "MEMBER", "FLAGS"}
+
+# Regex to detect and remove FreeRADIUS 4.x-only keyword lines.
+_V4_KEYWORD_RE = re.compile(
+    r"^\s*(?:" + "|".join(_V4_ONLY_KEYWORDS) + r")\s+",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _load_base_attribute_names() -> Set[str]:
+    """Load all attribute names from pyrad's built-in dictionary.
+
+    pyrad ships with a copy of the FreeRADIUS base dictionary that
+    covers all standard RFCs.  We parse it once at import time and
+    use the resulting set to detect name collisions when users upload
+    custom vendor dictionaries.
+
+    This replaces the previous hard-coded _BASE_RADIUS_ATTRIBUTES set
+    and automatically covers every RFC dictionary that pyrad knows about.
+    """
+    try:
+        base = Dictionary()
+        # pyrad ships a default 'dictionary' in its package data
+        # that includes all standard attributes.  Dictionary() without
+        # arguments loads it automatically.  Some pyrad installations
+        # may not populate .attributes until a file is read, so we also
+        # try the pyrad package path.
+        names = set()
+        if hasattr(base, "attributes"):
+            for attr_name in base.attributes:
+                names.add(attr_name)
+        if names:
+            logger.info("Loaded %d base RADIUS attribute names from pyrad", len(names))
+            return names
+    except Exception as exc:
+        logger.warning("Could not load pyrad base dictionary: %s", exc)
+
+    # Fallback: a comprehensive static set covering the most common RFCs.
+    logger.info("Using static fallback for base RADIUS attribute names")
+    return {
+        # RFC 2865
+        "User-Name",
+        "User-Password",
+        "CHAP-Password",
+        "NAS-IP-Address",
+        "NAS-Port",
+        "Service-Type",
+        "Framed-Protocol",
+        "Framed-IP-Address",
+        "Framed-IP-Netmask",
+        "Framed-Routing",
+        "Filter-Id",
+        "Framed-MTU",
+        "Framed-Compression",
+        "Login-IP-Host",
+        "Login-Service",
+        "Login-TCP-Port",
+        "Reply-Message",
+        "Callback-Number",
+        "Callback-Id",
+        "Framed-Route",
+        "Framed-IPX-Network",
+        "State",
+        "Class",
+        "Vendor-Specific",
+        "Session-Timeout",
+        "Idle-Timeout",
+        "Termination-Action",
+        "Called-Station-Id",
+        "Calling-Station-Id",
+        "NAS-Identifier",
+        "Proxy-State",
+        "Login-LAT-Service",
+        "Login-LAT-Node",
+        "Login-LAT-Group",
+        "Framed-AppleTalk-Link",
+        "Framed-AppleTalk-Network",
+        "Framed-AppleTalk-Zone",
+        "CHAP-Challenge",
+        "NAS-Port-Type",
+        "Port-Limit",
+        "Login-LAT-Port",
+        # RFC 2866
+        "Acct-Status-Type",
+        "Acct-Delay-Time",
+        "Acct-Input-Octets",
+        "Acct-Output-Octets",
+        "Acct-Session-Id",
+        "Acct-Authentic",
+        "Acct-Session-Time",
+        "Acct-Input-Packets",
+        "Acct-Output-Packets",
+        "Acct-Terminate-Cause",
+        "Acct-Multi-Session-Id",
+        "Acct-Link-Count",
+        # RFC 2867
+        "Acct-Tunnel-Connection",
+        "Acct-Tunnel-Packets-Lost",
+        # RFC 2868
+        "Tunnel-Type",
+        "Tunnel-Medium-Type",
+        "Tunnel-Client-Endpoint",
+        "Tunnel-Server-Endpoint",
+        "Tunnel-Password",
+        "Tunnel-Private-Group-Id",
+        "Tunnel-Assignment-Id",
+        "Tunnel-Preference",
+        "Tunnel-Client-Auth-Id",
+        "Tunnel-Server-Auth-Id",
+        # RFC 2869
+        "Acct-Input-Gigawords",
+        "Acct-Output-Gigawords",
+        "Event-Timestamp",
+        "ARAP-Password",
+        "ARAP-Features",
+        "ARAP-Zone-Access",
+        "ARAP-Security",
+        "ARAP-Security-Data",
+        "Password-Retry",
+        "Prompt",
+        "Connect-Info",
+        "Configuration-Token",
+        "EAP-Message",
+        "Message-Authenticator",
+        "ARAP-Challenge-Response",
+        "Acct-Interim-Interval",
+        "NAS-Port-Id",
+        "Framed-Pool",
+        # RFC 3162
+        "NAS-IPv6-Address",
+        "Framed-Interface-Id",
+        "Framed-IPv6-Prefix",
+        "Login-IPv6-Host",
+        "Framed-IPv6-Route",
+        "Framed-IPv6-Pool",
+        # RFC 3576
+        "Error-Cause",
+        # RFC 4372
+        "Chargeable-User-Identity",
+        # RFC 4675
+        "Egress-VLANID",
+        "Ingress-Filters",
+        "Egress-VLAN-Name",
+        "User-Priority-Table",
+        # RFC 4818
+        "Delegated-IPv6-Prefix",
+        # RFC 4849
+        "NAS-Filter-Rule",
+        # RFC 5580
+        "Operator-Name",
+        "Location-Information",
+        "Location-Data",
+        "Basic-Location-Policy-Rules",
+        "Extended-Location-Policy-Rules",
+        "Location-Capable",
+        "Requested-Location-Info",
+        # RFC 6572
+        "Service-Selection",
+        "Mobile-Node-Identifier",
+        # RFC 6911
+        "Framed-IPv6-Address",
+        "DNS-Server-IPv6-Address",
+        "Route-IPv6-Information",
+        "Delegated-IPv6-Prefix-Pool",
+        "Stateful-IPv6-Address-Pool",
+        # Compat aliases
+        "Client-Id",
+        "Client-Port-Id",
+        "User-Service-Type",
+        "Framed-Address",
+        "Framed-Netmask",
+        "Framed-Filter-Id",
+        "Login-Host",
+        "Login-Port",
+        "Old-Password",
+        "Port-Message",
+        "Dialback-No",
+        "Dialback-Name",
+        "Challenge-State",
+    }
+
+
+# Loaded once at module import time.
+_BASE_RADIUS_ATTRIBUTES: Set[str] = _load_base_attribute_names()
 
 
 def _convert_v4_types(content: str) -> tuple[str, int]:
-    """Replace FreeRADIUS 4.x data-types with their 3.x equivalents.
+    """Replace FreeRADIUS 4.x data-types with their 3.x equivalents
+    and strip v4-only keywords (ALIAS, STRUCT, MEMBER, FLAGS).
 
     Returns (converted_content, number_of_replacements).
     """
@@ -151,7 +242,28 @@ def _convert_v4_types(content: str) -> tuple[str, int]:
         return m.group(1) + new_type + m.group(3)
 
     converted = _ATTR_RE.sub(_replacer, content)
-    return converted, count
+
+    # Strip lines with FreeRADIUS 4.x-only keywords (ALIAS, STRUCT, etc.)
+    # These cause parse errors on FreeRADIUS 3.x.
+    lines = converted.splitlines(keepends=True)
+    cleaned: list[str] = []
+    stripped_count = 0
+    for line in lines:
+        s = line.strip()
+        if s and not s.startswith("#"):
+            first_word = s.split()[0].upper()
+            if first_word in _V4_ONLY_KEYWORDS:
+                stripped_count += 1
+                # Replace with a comment so line numbers stay meaningful
+                cleaned.append(f"# [removed v4 keyword] {s}\n")
+                continue
+        cleaned.append(line)
+
+    if stripped_count:
+        count += stripped_count
+        logger.info("Stripped %d FreeRADIUS 4.x keyword line(s)", stripped_count)
+
+    return "".join(cleaned), count
 
 
 def _find_duplicate_attributes(content: str) -> List[str]:

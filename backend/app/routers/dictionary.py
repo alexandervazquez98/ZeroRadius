@@ -225,3 +225,72 @@ async def get_attribute_values(
 ):
     """Get predefined values (enums) for a specific attribute."""
     return dictionary_service.get_values(attribute_name)
+
+
+# ---------- FreeRADIUS logs ----------
+
+
+@router.get("/radius-logs")
+async def get_radius_logs(
+    lines: int = 80,
+    current_user: AdminUser = Depends(get_current_active_user),
+):
+    """Return recent FreeRADIUS container logs for dictionary diagnostics.
+
+    Filters the output to show only dictionary-related lines (includes,
+    errors, warnings) plus the last startup status.
+    """
+    try:
+        client = docker_sdk.from_env()
+        container = client.containers.get("radius-server")
+        raw_logs = container.logs(tail=lines, timestamps=False).decode(
+            "utf-8", errors="replace"
+        )
+
+        all_lines = raw_logs.splitlines()
+
+        # Filter for dictionary/startup relevant lines
+        keywords = [
+            "dictionary",
+            "dict_init",
+            "dict_add",
+            "Duplicate attribute",
+            "Error",
+            "error",
+            "Warning",
+            "warning",
+            "Including custom",
+            "Skipping duplicate",
+            "Starting -",
+            "Ready to process",
+            "Listening on",
+            "Exiting",
+            "removed v4 keyword",
+        ]
+        filtered = [
+            ln for ln in all_lines if any(kw.lower() in ln.lower() for kw in keywords)
+        ]
+
+        # Determine overall status
+        status = "unknown"
+        for ln in reversed(all_lines):
+            if "Ready to process requests" in ln:
+                status = "running"
+                break
+            if "Exiting normally" in ln or "Error" in ln.lower():
+                status = "error"
+                break
+
+        return {
+            "status": status,
+            "total_lines": len(all_lines),
+            "filtered_lines": len(filtered),
+            "logs": filtered[-50:],  # last 50 relevant lines
+        }
+    except Exception as exc:
+        return {
+            "status": "unavailable",
+            "total_lines": 0,
+            "filtered_lines": 0,
+            "logs": [f"Could not fetch logs: {exc}"],
+        }
