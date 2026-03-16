@@ -7,8 +7,28 @@ from app.models.models import AdminUser
 from app.services.dictionary_loader import dictionary_service
 from app.services.audit import log_audit
 from app.core.security import get_current_active_user
+import logging
+import docker as docker_sdk
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/dictionary", tags=["dictionary"])
+
+
+def _reload_radius() -> None:
+    """Restart the radius-server container so it re-reads custom dictionaries.
+
+    FreeRADIUS only loads dictionaries at startup.  After uploading,
+    editing or deleting a dictionary file the container must be restarted
+    for the changes to take effect.
+    """
+    try:
+        client = docker_sdk.from_env()
+        container = client.containers.get("radius-server")
+        container.restart(timeout=5)
+        logger.info("radius-server restarted to reload custom dictionaries")
+    except Exception as exc:
+        logger.warning("Could not restart radius-server: %s", exc)
 
 
 # ---------- Schemas ----------
@@ -68,6 +88,7 @@ async def upload_dictionary(
             "dictionary",
             file.filename,
         )
+        _reload_radius()
         return {"message": msg}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -93,6 +114,7 @@ async def rename_dictionary(
             old_name,
             new_value={"new_name": new_name},
         )
+        _reload_radius()
         return {"message": f"File {old_name} renamed to {new_name}"}
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -118,6 +140,7 @@ async def delete_dictionary(
             "dictionary",
             filename,
         )
+        _reload_radius()
         return {"message": f"Dictionary {filename} deleted."}
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -164,6 +187,7 @@ async def update_dictionary_content(
             "dictionary",
             filename,
         )
+        _reload_radius()
         return {"message": msg}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
