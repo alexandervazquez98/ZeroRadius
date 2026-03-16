@@ -81,6 +81,9 @@ RUN echo 'group_membership_query = "SELECT groupname FROM ${usergroup_table} WHE
     echo 'group_reply_query = "SELECT attribute, value, op FROM ${groupreply_table} WHERE groupname = \047%{Sql-Group}\047 ORDER BY id"' >> /etc/raddb/mods-config/sql/main/mysql/queries.conf && \
     echo 'group_check_query = "SELECT attribute, value, op FROM ${groupcheck_table} WHERE groupname = \047%{Sql-Group}\047 ORDER BY id"' >> /etc/raddb/mods-config/sql/main/mysql/queries.conf
 
+# Copy custom policies (nas_based_authorization for ISO 27001 A.8.3)
+COPY policy.d/nas_based_authorization /etc/raddb/policy.d/nas_based_authorization
+
 # Copy entrypoint script
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
