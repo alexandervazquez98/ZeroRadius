@@ -157,30 +157,17 @@ def _convert_v4_types(content: str) -> tuple[str, int]:
 def _find_duplicate_attributes(content: str) -> List[str]:
     """Check if a dictionary file redefines any standard RADIUS attributes.
 
-    Only checks non-vendor-specific attributes (lines outside
-    BEGIN-VENDOR / END-VENDOR blocks), since vendor attributes live in
-    their own namespace and cannot collide with the base dictionary.
+    Checks ALL attributes (both top-level and vendor-specific) because
+    FreeRADIUS 3.x rejects duplicate attribute *names* globally,
+    even when the duplicate is inside a BEGIN-VENDOR block.
 
     Returns a list of duplicate attribute names found.
     """
     duplicates: List[str] = []
-    inside_vendor = False
 
     for line in content.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
-            continue
-
-        upper = stripped.upper()
-        if upper.startswith("BEGIN-VENDOR"):
-            inside_vendor = True
-            continue
-        if upper.startswith("END-VENDOR"):
-            inside_vendor = False
-            continue
-
-        # Only check top-level (non-vendor) attributes
-        if inside_vendor:
             continue
 
         m = _ATTR_NAME_RE.match(stripped)
@@ -190,6 +177,55 @@ def _find_duplicate_attributes(content: str) -> List[str]:
                 duplicates.append(attr_name)
 
     return duplicates
+
+
+# Regex to match BEGIN-VENDOR lines and capture the vendor name.
+_BEGIN_VENDOR_RE = re.compile(r"^\s*BEGIN-VENDOR\s+(\S+)", re.IGNORECASE)
+
+# Regex to match ATTRIBUTE lines and capture name, code, type, and optional extras.
+_ATTR_FULL_RE = re.compile(r"^(\s*ATTRIBUTE\s+)(\S+)(\s+\d+\s+\S+.*)$", re.IGNORECASE)
+
+
+def _auto_rename_vendor_duplicates(content: str) -> tuple[str, List[str]]:
+    """Auto-rename vendor-specific attributes that collide with base names.
+
+    When a vendor attribute has the same name as a standard RADIUS
+    attribute (e.g. ``NAS-Port`` inside ``BEGIN-VENDOR Cisco``),
+    it is renamed to ``<Vendor>-<Name>`` (e.g. ``Cisco-NAS-Port``).
+
+    Returns (fixed_content, list_of_renames_applied).
+    """
+    lines = content.splitlines(keepends=True)
+    current_vendor: str | None = None
+    renames: List[str] = []
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        upper = stripped.upper()
+        if upper.startswith("BEGIN-VENDOR"):
+            m = _BEGIN_VENDOR_RE.match(stripped)
+            if m:
+                current_vendor = m.group(1)
+            continue
+        if upper.startswith("END-VENDOR"):
+            current_vendor = None
+            continue
+
+        if current_vendor:
+            m = _ATTR_FULL_RE.match(line)
+            if m:
+                attr_name = m.group(2)
+                if attr_name in _BASE_RADIUS_ATTRIBUTES:
+                    new_name = f"{current_vendor}-{attr_name}"
+                    lines[i] = m.group(1) + new_name + m.group(3)
+                    if not lines[i].endswith("\n") and line.endswith("\n"):
+                        lines[i] += "\n"
+                    renames.append(f"{attr_name} -> {new_name}")
+
+    return "".join(lines), renames
 
 
 class DictionaryService:
@@ -281,13 +317,17 @@ class DictionaryService:
         """Validate and overwrite a dictionary file with new content.
 
         Auto-converts FreeRADIUS 4.x types before validation.
-        Rejects files that redefine standard RADIUS attributes (which
-        would crash FreeRADIUS with "Duplicate attribute name" errors).
-        Returns {"conversions": int} with the number of type fixes applied.
+        Auto-renames vendor attributes that collide with standard names.
+        Rejects files that still redefine standard RADIUS attributes
+        at the top level after auto-rename.
+        Returns {"conversions": int, "renames": list} with fixes applied.
         """
         converted, conversions = _convert_v4_types(content)
 
-        # Check for duplicate attributes against FreeRADIUS base dictionary
+        # Auto-rename vendor-specific attributes that collide with base names
+        converted, renames = _auto_rename_vendor_duplicates(converted)
+
+        # Check for remaining duplicate attributes (top-level, not auto-fixable)
         duplicates = _find_duplicate_attributes(converted)
         if duplicates:
             raise ValueError(
@@ -315,19 +355,23 @@ class DictionaryService:
         dest_path = os.path.join(self.dict_dir, filename)
         shutil.move(tmp_path, dest_path)
         self.load()
-        return {"conversions": conversions}
+        return {"conversions": conversions, "renames": renames}
 
     def validate_and_save(self, filename: str, content: bytes) -> dict:
         """Validate an uploaded dictionary file, auto-converting v4 types.
 
-        Rejects files that redefine standard RADIUS attributes (which
-        would crash FreeRADIUS with "Duplicate attribute name" errors).
-        Returns {"conversions": int}.
+        Auto-renames vendor attributes that collide with standard names.
+        Rejects files that still redefine standard RADIUS attributes
+        at the top level after auto-rename.
+        Returns {"conversions": int, "renames": list}.
         """
         text = content.decode("utf-8", errors="replace")
         converted, conversions = _convert_v4_types(text)
 
-        # Check for duplicate attributes against FreeRADIUS base dictionary
+        # Auto-rename vendor-specific attributes that collide with base names
+        converted, renames = _auto_rename_vendor_duplicates(converted)
+
+        # Check for remaining duplicate attributes (top-level, not auto-fixable)
         duplicates = _find_duplicate_attributes(converted)
         if duplicates:
             raise ValueError(
@@ -351,7 +395,7 @@ class DictionaryService:
             shutil.move(tmp_path, dest_path)
 
             self.load()
-            return {"conversions": conversions}
+            return {"conversions": conversions, "renames": renames}
         except Exception as e:
             os.unlink(tmp_path)
             raise ValueError(f"Invalid dictionary format: {e}")

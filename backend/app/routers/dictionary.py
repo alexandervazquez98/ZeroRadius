@@ -81,6 +81,12 @@ async def upload_dictionary(
                 f" {result['conversions']} FreeRADIUS 4.x type(s) were "
                 "auto-converted to 3.x equivalents."
             )
+        if result.get("renames"):
+            msg += (
+                f" {len(result['renames'])} vendor attribute(s) were "
+                f"auto-renamed to avoid collisions: "
+                f"{', '.join(result['renames'])}."
+            )
         await log_audit(
             db,
             current_user.username,
@@ -179,6 +185,12 @@ async def update_dictionary_content(
             msg += (
                 f" {result['conversions']} FreeRADIUS 4.x type(s) were "
                 "auto-converted to 3.x equivalents."
+            )
+        if result.get("renames"):
+            msg += (
+                f" {len(result['renames'])} vendor attribute(s) were "
+                f"auto-renamed to avoid collisions: "
+                f"{', '.join(result['renames'])}."
             )
         await log_audit(
             db,
