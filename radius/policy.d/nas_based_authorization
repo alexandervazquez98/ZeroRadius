@@ -13,7 +13,7 @@
 #     ...
 #   }
 
-policy nas_based_authorization {
+nas_based_authorization {
 
     # Only run if NAS-IP-Address is present
     if (&NAS-IP-Address) {
