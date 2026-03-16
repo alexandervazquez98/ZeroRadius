@@ -30,7 +30,8 @@ const ReviewBadge = ({ reviewDate }) => {
 
 const EMPTY_FORM = {
     username: '',
-    nas_ip: '',
+    nas_ips: [], // Used for bulk create
+    nas_ip: '',  // Used for edit
     nas_vendor: '',
     radius_group: '',
     privilege_level: '',
@@ -52,6 +53,7 @@ const PrivilegeMapPage = () => {
     const [deleteTarget, setDeleteTarget] = useState(null);
     const [filterUsername, setFilterUsername] = useState('');
     const [filterNasIp, setFilterNasIp] = useState('');
+    const [nasSearchTerm, setNasSearchTerm] = useState('');
 
     // Fetch mappings
     const { data: items = [], isLoading } = useQuery({
@@ -95,28 +97,22 @@ const PrivilegeMapPage = () => {
 
     const openCreate = () => {
         setEditItem(null);
+        setNasSearchTerm('');
         setForm({
             ...EMPTY_FORM,
+            nas_ips: [],
             approved_by: user?.sub || '', // user.sub usually holds the username in JWT
         });
         setShowModal(true);
     };
 
-    const handleNasChange = (e) => {
-        const selectedIp = e.target.value;
-        const selectedNas = nasList.find(n => n.nasname === selectedIp);
-        setForm(f => ({
-            ...f,
-            nas_ip: selectedIp,
-            nas_vendor: selectedNas ? selectedNas.type : '', // auto-fill vendor
-        }));
-    };
-
     const openEdit = (item) => {
         setEditItem(item);
+        setNasSearchTerm('');
         setForm({
             username: item.username,
-            nas_ip: item.nas_ip,
+            nas_ip: item.nas_ip, // Edit uses single IP
+            nas_ips: [], // Reset just in case
             nas_vendor: item.nas_vendor || '',
             radius_group: item.radius_group,
             privilege_level: item.privilege_level || '',
@@ -131,6 +127,7 @@ const PrivilegeMapPage = () => {
     const closeModal = () => {
         setShowModal(false);
         setEditItem(null);
+        setNasSearchTerm('');
         setForm(EMPTY_FORM);
     };
 
@@ -141,10 +138,54 @@ const PrivilegeMapPage = () => {
             review_date: form.review_date || null,
         };
         if (editItem) {
+            // Remove bulk field
+            delete payload.nas_ips;
             updateMutation.mutate({ id: editItem.id, data: payload });
         } else {
+            // Remove edit field
+            delete payload.nas_ip;
             createMutation.mutate(payload);
         }
+    };
+
+    // Filter NAS list based on search
+    const filteredNasList = nasList.filter(n => {
+        const term = nasSearchTerm.toLowerCase();
+        return n.nasname.toLowerCase().includes(term) || (n.shortname && n.shortname.toLowerCase().includes(term));
+    });
+
+    const toggleNasSelection = (ip, vendor) => {
+        setForm(f => {
+            const isSelected = f.nas_ips.includes(ip);
+            let newIps;
+            if (isSelected) {
+                newIps = f.nas_ips.filter(val => val !== ip);
+            } else {
+                newIps = [...f.nas_ips, ip];
+            }
+            // For multiple, vendor field might not make sense if mixed, but we set it to the last selected or Generic
+            return {
+                ...f,
+                nas_ips: newIps,
+                nas_vendor: newIps.length === 1 && !isSelected ? vendor : (newIps.length > 1 ? 'Multiple' : '')
+            };
+        });
+    };
+
+    const toggleSelectAllFiltered = () => {
+        setForm(f => {
+            const allFilteredIps = filteredNasList.map(n => n.nasname);
+            const allSelected = allFilteredIps.every(ip => f.nas_ips.includes(ip));
+            
+            if (allSelected) {
+                // Deselect all filtered
+                return { ...f, nas_ips: f.nas_ips.filter(ip => !allFilteredIps.includes(ip)) };
+            } else {
+                // Select all filtered (merge avoiding duplicates)
+                const newIps = Array.from(new Set([...f.nas_ips, ...allFilteredIps]));
+                return { ...f, nas_ips: newIps, nas_vendor: 'Multiple' };
+            }
+        });
     };
 
     const isMutating = createMutation.isPending || updateMutation.isPending;
@@ -315,116 +356,174 @@ const PrivilegeMapPage = () => {
                             </button>
                         </div>
                         <form onSubmit={handleSubmit} className="p-8 space-y-5 max-h-[70vh] overflow-y-auto">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Username *</label>
-                                    <select
-                                        required
-                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white"
-                                        value={form.username}
-                                        onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
-                                        disabled={editItem !== null} // Usually username shouldn't be changed during edit
-                                    >
-                                        <option value="">-- Select User --</option>
-                                        {usersList.map(u => (
-                                            <option key={u.id || u.username} value={u.username}>
-                                                {u.username}
-                                            </option>
-                                        ))}
-                                    </select>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                {/* Left Column: Username and NAS Selection */}
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Username *</label>
+                                        <select
+                                            required
+                                            className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white"
+                                            value={form.username}
+                                            onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
+                                            disabled={editItem !== null} 
+                                        >
+                                            <option value="">-- Select User --</option>
+                                            {usersList.map(u => (
+                                                <option key={u.id || u.username} value={u.username}>
+                                                    {u.username}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="flex items-center justify-between text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
+                                            <span>NAS IPs *</span>
+                                            {!editItem && (
+                                                <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{form.nas_ips.length} selected</span>
+                                            )}
+                                        </label>
+
+                                        {editItem ? (
+                                            // Edit mode: single NAS IP readonly
+                                            <input
+                                                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none text-sm font-mono bg-slate-50 text-slate-500 cursor-not-allowed"
+                                                value={form.nas_ip}
+                                                disabled
+                                            />
+                                        ) : (
+                                            // Create mode: Multi-select NAS with search
+                                            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white flex flex-col h-64">
+                                                <div className="p-2 border-b border-slate-100 bg-slate-50">
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Search by IP or Shortname..."
+                                                        className="w-full px-3 py-1.5 text-sm bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-500"
+                                                        value={nasSearchTerm}
+                                                        onChange={e => setNasSearchTerm(e.target.value)}
+                                                    />
+                                                </div>
+                                                {filteredNasList.length > 0 && (
+                                                    <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                                                        <span className="text-xs text-slate-500 font-medium">Select devices:</span>
+                                                        <button 
+                                                            type="button" 
+                                                            onClick={toggleSelectAllFiltered}
+                                                            className="text-xs font-bold text-indigo-600 hover:text-indigo-700"
+                                                        >
+                                                            Toggle All Filtered
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                                                    {filteredNasList.length === 0 ? (
+                                                        <div className="text-center py-4 text-sm text-slate-400">No NAS matched</div>
+                                                    ) : (
+                                                        filteredNasList.map(n => (
+                                                            <label key={n.nasname} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded-lg cursor-pointer border border-transparent hover:border-slate-200 transition-colors">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={form.nas_ips.includes(n.nasname)}
+                                                                    onChange={() => toggleNasSelection(n.nasname, n.type)}
+                                                                    className="w-4 h-4 rounded accent-indigo-600"
+                                                                />
+                                                                <div className="flex flex-col">
+                                                                    <span className="text-sm font-mono font-bold text-slate-700">{n.nasname}</span>
+                                                                    <span className="text-xs text-slate-500">{n.shortname || 'Unnamed'} • {n.type}</span>
+                                                                </div>
+                                                            </label>
+                                                        ))
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">NAS IP *</label>
-                                    <select
-                                        required
-                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono bg-white"
-                                        value={form.nas_ip}
-                                        onChange={handleNasChange}
-                                        disabled={editItem !== null} // NAS IP shouldn't be changed during edit (composite unique key)
-                                    >
-                                        <option value="">-- Select NAS --</option>
-                                        {nasList.map(n => (
-                                            <option key={n.id} value={n.nasname}>
-                                                {n.nasname} {n.shortname ? `(${n.shortname})` : ''}
-                                            </option>
-                                        ))}
-                                    </select>
+
+                                {/* Right Column: Details */}
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">NAS Vendor</label>
+                                            <input
+                                                type="text"
+                                                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
+                                                value={form.nas_vendor}
+                                                disabled
+                                                placeholder={editItem ? "" : "Auto-filled"}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">RADIUS Group *</label>
+                                            <select
+                                                required
+                                                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white"
+                                                value={form.radius_group}
+                                                onChange={e => setForm(f => ({ ...f, radius_group: e.target.value }))}
+                                            >
+                                                <option value="">-- Select Group --</option>
+                                                {groupsList.map(g => (
+                                                    <option key={g} value={g}>{g}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Privilege Level</label>
+                                            <input
+                                                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                                value={form.privilege_level}
+                                                onChange={e => setForm(f => ({ ...f, privilege_level: e.target.value }))}
+                                                placeholder="e.g. level-1"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Review Date</label>
+                                            <input
+                                                type="date"
+                                                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                                value={form.review_date}
+                                                onChange={e => setForm(f => ({ ...f, review_date: e.target.value }))}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Approved By *</label>
+                                            <input
+                                                required
+                                                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                                value={form.approved_by}
+                                                onChange={e => setForm(f => ({ ...f, approved_by: e.target.value }))}
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-3 mt-8">
+                                            <input
+                                                type="checkbox"
+                                                id="is_active"
+                                                checked={form.is_active}
+                                                onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))}
+                                                className="w-4 h-4 rounded accent-indigo-600"
+                                            />
+                                            <label htmlFor="is_active" className="text-sm font-bold text-slate-700">Active</label>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Justification</label>
+                                        <textarea
+                                            rows={2}
+                                            className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm resize-none"
+                                            value={form.justification}
+                                            onChange={e => setForm(f => ({ ...f, justification: e.target.value }))}
+                                            placeholder="Business justification..."
+                                        />
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">NAS Vendor</label>
-                                    <input
-                                        type="text"
-                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
-                                        value={form.nas_vendor}
-                                        onChange={e => setForm(f => ({ ...f, nas_vendor: e.target.value }))}
-                                        disabled // Auto-filled from NAS selection
-                                        placeholder="Auto-filled"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">RADIUS Group *</label>
-                                    <select
-                                        required
-                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white"
-                                        value={form.radius_group}
-                                        onChange={e => setForm(f => ({ ...f, radius_group: e.target.value }))}
-                                    >
-                                        <option value="">-- Select Group --</option>
-                                        {groupsList.map(g => (
-                                            <option key={g} value={g}>
-                                                {g}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Privilege Level</label>
-                                    <input
-                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                                        value={form.privilege_level}
-                                        onChange={e => setForm(f => ({ ...f, privilege_level: e.target.value }))}
-                                        placeholder="e.g. level-1"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Review Date</label>
-                                    <input
-                                        type="date"
-                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                                        value={form.review_date}
-                                        onChange={e => setForm(f => ({ ...f, review_date: e.target.value }))}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Approved By *</label>
-                                    <input
-                                        required
-                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                                        value={form.approved_by}
-                                        onChange={e => setForm(f => ({ ...f, approved_by: e.target.value }))}
-                                        placeholder="e.g. admin"
-                                    />
-                                </div>
-                                <div className="flex items-center gap-3 pt-6">
-                                    <input
-                                        type="checkbox"
-                                        id="is_active"
-                                        checked={form.is_active}
-                                        onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))}
-                                        className="w-4 h-4 rounded accent-indigo-600"
-                                    />
-                                    <label htmlFor="is_active" className="text-sm font-bold text-slate-700">Active</label>
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Justification</label>
-                                <textarea
-                                    rows={3}
-                                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm resize-none"
-                                    value={form.justification}
-                                    onChange={e => setForm(f => ({ ...f, justification: e.target.value }))}
-                                    placeholder="Business justification for this access..."
-                                />
                             </div>
 
                             {(createMutation.isError || updateMutation.isError) && (

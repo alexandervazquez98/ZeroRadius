@@ -257,6 +257,19 @@ class UserNasPrivilegeMapCreate(BaseModel):
     is_active: int = 1
 
 
+class UserNasPrivilegeMapBulkCreate(BaseModel):
+    username: str
+    nas_ips: List[str]
+    nas_identifier: Optional[str] = None
+    nas_vendor: Optional[str] = None
+    radius_group: str
+    privilege_level: Optional[str] = None
+    justification: Optional[str] = None
+    approved_by: Optional[str] = None
+    review_date: Optional[date] = None
+    is_active: int = 1
+
+
 class UserNasPrivilegeMapOut(UserNasPrivilegeMapCreate):
     id: int
     created_at: Optional[datetime] = None

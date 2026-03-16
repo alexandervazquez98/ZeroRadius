@@ -8,41 +8,35 @@ const NasPage = () => {
     const [isOpen, setIsOpen] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [formData, setFormData] = useState({ nasname: '', secret: '', shortname: '', type: 'other' });
-
-    const { data: nasList, isLoading } = useQuery({
-        queryKey: ['nas'],
-        queryFn: () => api.get('/nas').then(r => r.data)
-    });
-
-    const createMutation = useMutation({
-        mutationFn: (nas) => api.post('/nas', nas),
-        onSuccess: () => {
-            queryClient.invalidateQueries(['nas']);
-            closeModal();
-        }
-    });
-
-    const updateMutation = useMutation({
-        mutationFn: ({ id, data }) => api.put(`/nas/${id}`, data),
-        onSuccess: () => {
-            queryClient.invalidateQueries(['nas']);
-            closeModal();
-        }
-    });
-
-    const deleteMutation = useMutation({
-        mutationFn: (id) => api.delete(`/nas/${id}`),
-        onSuccess: () => queryClient.invalidateQueries(['nas'])
-    });
+    const [nasCategory, setNasCategory] = useState('AP');
+    const [nasName, setNasName] = useState('');
 
     const openEdit = (nas) => {
         setEditingId(nas.id);
         setFormData({
             nasname: nas.nasname,
             secret: nas.secret,
-            shortname: nas.shortname || '',
-            type: nas.type || 'other'
+            shortname: nas.shortname,
+            type: nas.type
         });
+        
+        // Parse existing shortname into Category and Name
+        if (nas.shortname && nas.shortname.includes('-')) {
+            const parts = nas.shortname.split('-');
+            const possibleCategory = parts[0];
+            const categories = ['AP', 'SM', 'PTZ', 'SW', 'RTR', 'FW', 'WLC', 'OTHER'];
+            if (categories.includes(possibleCategory)) {
+                setNasCategory(possibleCategory);
+                setNasName(parts.slice(1).join('-'));
+            } else {
+                setNasCategory('OTHER');
+                setNasName(nas.shortname);
+            }
+        } else {
+            setNasCategory('OTHER');
+            setNasName(nas.shortname || '');
+        }
+
         setIsOpen(true);
     };
 
@@ -50,14 +44,21 @@ const NasPage = () => {
         setIsOpen(false);
         setEditingId(null);
         setFormData({ nasname: '', secret: '', shortname: '', type: 'other' });
+        setNasCategory('AP');
+        setNasName('');
     };
 
     const handleSubmit = (e) => {
         e.preventDefault();
+        
+        // Construct shortname based on category and name
+        const finalShortname = nasCategory === 'OTHER' ? nasName : `${nasCategory}-${nasName}`;
+        const payload = { ...formData, shortname: finalShortname };
+
         if (editingId) {
-            updateMutation.mutate({ id: editingId, data: formData });
+            updateMutation.mutate({ id: editingId, data: payload });
         } else {
-            createMutation.mutate(formData);
+            createMutation.mutate(payload);
         }
     };
 
@@ -128,14 +129,31 @@ const NasPage = () => {
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium mb-1">Short Name / Group</label>
-                                <input
-                                    className="w-full border rounded p-2"
-                                    value={formData.shortname}
-                                    onChange={e => setFormData({ ...formData, shortname: e.target.value })}
-                                    placeholder="e.g. Cisco-Switches"
-                                />
-                                <p className="text-xs text-gray-500 mt-1">Used for Dynamic Policy grouping.</p>
+                                <label className="block text-sm font-medium mb-1">Short Name / Group (ISO Naming Convention)</label>
+                                <div className="flex gap-2">
+                                    <select
+                                        className="w-1/3 border rounded p-2"
+                                        value={nasCategory}
+                                        onChange={e => setNasCategory(e.target.value)}
+                                    >
+                                        <option value="AP">AP</option>
+                                        <option value="SM">SM</option>
+                                        <option value="PTZ">PTZ</option>
+                                        <option value="SW">Switch</option>
+                                        <option value="RTR">Router</option>
+                                        <option value="FW">Firewall</option>
+                                        <option value="WLC">WLC</option>
+                                        <option value="OTHER">Other/Custom</option>
+                                    </select>
+                                    <input
+                                        className="w-2/3 border rounded p-2"
+                                        value={nasName}
+                                        onChange={e => setNasName(e.target.value)}
+                                        placeholder="e.g. Sector1-Norte"
+                                        required
+                                    />
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">Resulting shortname: <span className="font-mono bg-slate-100 px-1 py-0.5 rounded">{nasCategory === 'OTHER' ? nasName : `${nasCategory}-${nasName}`}</span></p>
                             </div>
                             <div>
                                 <label className="block text-sm font-medium mb-1">Type</label>

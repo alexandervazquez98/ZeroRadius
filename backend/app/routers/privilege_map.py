@@ -10,7 +10,11 @@ from typing import Optional
 from datetime import datetime, date
 from app.db.session import get_db
 from app.models.models import UserNasPrivilegeMap, AdminUser
-from app.schemas.schemas import UserNasPrivilegeMapCreate, UserNasPrivilegeMapOut
+from app.schemas.schemas import (
+    UserNasPrivilegeMapCreate,
+    UserNasPrivilegeMapBulkCreate,
+    UserNasPrivilegeMapOut,
+)
 from app.core.security import get_current_active_user
 from app.core.rbac import require_roles, Role
 from app.services.audit import log_audit, EventCode
@@ -80,49 +84,54 @@ async def list_privilege_maps(
     return [_to_out(r) for r in records]
 
 
-@router.post("", response_model=UserNasPrivilegeMapOut, status_code=201)
-async def create_privilege_map(
-    payload: UserNasPrivilegeMapCreate,
+@router.post("", response_model=list[UserNasPrivilegeMapOut], status_code=201)
+async def create_privilege_map_bulk(
+    payload: UserNasPrivilegeMapBulkCreate,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
 ):
     """
-    Create a new user-NAS privilege mapping.
+    Create new user-NAS privilege mapping(s) in bulk.
     Requires admin or superadmin role.
     """
-    # Convert date to datetime for storage
     review_dt = (
         datetime.combine(payload.review_date, datetime.min.time())
         if payload.review_date
         else None
     )
 
-    record = UserNasPrivilegeMap(
-        username=payload.username,
-        nas_ip=payload.nas_ip,
-        nas_identifier=payload.nas_identifier,
-        nas_vendor=payload.nas_vendor,
-        radius_group=payload.radius_group,
-        privilege_level=payload.privilege_level,
-        justification=payload.justification,
-        approved_by=payload.approved_by,
-        review_date=review_dt,
-        is_active=payload.is_active,
-    )
-    db.add(record)
+    records = []
+    for ip in payload.nas_ips:
+        record = UserNasPrivilegeMap(
+            username=payload.username,
+            nas_ip=ip,
+            nas_identifier=payload.nas_identifier,
+            nas_vendor=payload.nas_vendor,
+            radius_group=payload.radius_group,
+            privilege_level=payload.privilege_level,
+            justification=payload.justification,
+            approved_by=payload.approved_by,
+            review_date=review_dt,
+            is_active=payload.is_active,
+        )
+        db.add(record)
+        records.append(record)
+
     await db.commit()
-    await db.refresh(record)
+
+    for record in records:
+        await db.refresh(record)
 
     await log_audit(
         db,
         current_user.username,
-        "CREATE",
+        "CREATE_BULK",
         "user_nas_privilege_map",
         payload.username,
         new_value=payload.model_dump(mode="json"),
         event_code=EventCode.ADMIN_002,
     )
-    return _to_out(record)
+    return [_to_out(r) for r in records]
 
 
 @router.put("/{id}", response_model=UserNasPrivilegeMapOut)
