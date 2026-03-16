@@ -298,18 +298,27 @@ _BEGIN_VENDOR_RE = re.compile(r"^\s*BEGIN-VENDOR\s+(\S+)", re.IGNORECASE)
 _ATTR_FULL_RE = re.compile(r"^(\s*ATTRIBUTE\s+)(\S+)(\s+\d+\s+\S+.*)$", re.IGNORECASE)
 
 
-def _auto_rename_vendor_duplicates(content: str) -> tuple[str, List[str]]:
-    """Auto-rename vendor-specific attributes that collide with base names.
+def _auto_prefix_vendor_attributes(content: str) -> tuple[str, List[str]]:
+    """Auto-prefix vendor-specific attributes with the vendor name.
 
-    When a vendor attribute has the same name as a standard RADIUS
-    attribute (e.g. ``NAS-Port`` inside ``BEGIN-VENDOR Cisco``),
-    it is renamed to ``<Vendor>-<Name>`` (e.g. ``Cisco-NAS-Port``).
+    FreeRADIUS 3.x enforces globally unique attribute names.  Vendor
+    dictionaries that use generic names (e.g. ``NAS-Port`` or
+    ``Service-Name`` inside ``BEGIN-VENDOR Cisco``) will collide with
+    the base dictionary or other loaded dictionaries.
+
+    This function prefixes every vendor attribute that does NOT already
+    start with ``<Vendor>-`` with the vendor name, matching the official
+    FreeRADIUS convention (e.g. ``NAS-Port`` → ``Cisco-NAS-Port``).
+
+    VALUE lines referencing renamed attributes are also updated.
 
     Returns (fixed_content, list_of_renames_applied).
     """
     lines = content.splitlines(keepends=True)
     current_vendor: str | None = None
     renames: List[str] = []
+    # Map old_name -> new_name for VALUE line fixups
+    rename_map: Dict[str, str] = {}
 
     for i, line in enumerate(lines):
         stripped = line.strip()
@@ -327,15 +336,30 @@ def _auto_rename_vendor_duplicates(content: str) -> tuple[str, List[str]]:
             continue
 
         if current_vendor:
+            prefix = f"{current_vendor}-"
+
+            # Handle ATTRIBUTE lines
             m = _ATTR_FULL_RE.match(line)
             if m:
                 attr_name = m.group(2)
-                if attr_name in _BASE_RADIUS_ATTRIBUTES:
-                    new_name = f"{current_vendor}-{attr_name}"
+                # Only rename if the attribute doesn't already have the vendor prefix
+                if not attr_name.startswith(prefix):
+                    new_name = f"{prefix}{attr_name}"
                     lines[i] = m.group(1) + new_name + m.group(3)
                     if not lines[i].endswith("\n") and line.endswith("\n"):
                         lines[i] += "\n"
                     renames.append(f"{attr_name} -> {new_name}")
+                    rename_map[attr_name] = new_name
+                continue
+
+            # Handle VALUE lines: VALUE <attr-name> <value-name> <number>
+            if upper.startswith("VALUE"):
+                parts = stripped.split()
+                if len(parts) >= 4:
+                    val_attr = parts[1]
+                    if val_attr in rename_map:
+                        # Replace the old attribute name with the new one
+                        lines[i] = line.replace(val_attr, rename_map[val_attr], 1)
 
     return "".join(lines), renames
 
@@ -437,7 +461,7 @@ class DictionaryService:
         converted, conversions = _convert_v4_types(content)
 
         # Auto-rename vendor-specific attributes that collide with base names
-        converted, renames = _auto_rename_vendor_duplicates(converted)
+        converted, renames = _auto_prefix_vendor_attributes(converted)
 
         # Check for remaining duplicate attributes (top-level, not auto-fixable)
         duplicates = _find_duplicate_attributes(converted)
@@ -481,7 +505,7 @@ class DictionaryService:
         converted, conversions = _convert_v4_types(text)
 
         # Auto-rename vendor-specific attributes that collide with base names
-        converted, renames = _auto_rename_vendor_duplicates(converted)
+        converted, renames = _auto_prefix_vendor_attributes(converted)
 
         # Check for remaining duplicate attributes (top-level, not auto-fixable)
         duplicates = _find_duplicate_attributes(converted)
