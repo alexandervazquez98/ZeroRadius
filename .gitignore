@@ -73,6 +73,7 @@ artifacts/
 .cline_rules
 .engram/
 openspec/
+AGENTS.md
 
 # ─── Archives / temp ──────────────────────────────────────────────────────────
 *.rar

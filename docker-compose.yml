@@ -1,5 +1,6 @@
 services:
   db:
+    restart: unless-stopped
     image: mariadb:10.11
     container_name: radius-db
     env_file:
@@ -23,6 +24,7 @@ services:
       retries: 3
 
   radius:
+    restart: unless-stopped
     build:
       context: ./radius
     container_name: radius-server
@@ -49,6 +51,7 @@ services:
         condition: service_healthy
 
   backend:
+    restart: unless-stopped
     build:
       context: ./backend
     container_name: radius-backend
@@ -72,6 +75,7 @@ services:
       - radius-net
 
   frontend:
+    restart: unless-stopped
     build:
       context: ./frontend
     container_name: radius-frontend
