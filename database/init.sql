@@ -58,8 +58,10 @@ CREATE TABLE IF NOT EXISTS nas (
   server varchar(64),
   community varchar(50),
   description varchar(200) DEFAULT 'RADIUS Client',
+  zone_id int(11) NULL DEFAULT NULL,
   PRIMARY KEY (id),
-  KEY nasname (nasname)
+  KEY nasname (nasname),
+  KEY fk_nas_zone (zone_id)
 );
 
 -- T08: radacct enhanced with nasidentifier, privilege_level, vendor_reply_attrs (ISO 27001 A.8.15)
@@ -199,3 +201,41 @@ CREATE TABLE IF NOT EXISTS user_nas_privilege_map (
     INDEX idx_unpm_is_active (is_active),
     INDEX idx_unpm_review_date (review_date)
 ) ENGINE=InnoDB;
+
+-- IAM & NAC RBAC tables
+
+CREATE TABLE IF NOT EXISTS hardware_zones (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT NULL,
+    INDEX idx_hz_name (name)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS iam_roles (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE,
+    description TEXT NULL,
+    INDEX idx_ir_name (name)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS policy_macros (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT NULL,
+    attributes_json JSON DEFAULT NULL,
+    INDEX idx_pm_name (name)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS role_zone_policies (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    role_id INT NOT NULL,
+    zone_id INT NOT NULL,
+    policy_id INT NOT NULL,
+    UNIQUE KEY uq_role_zone_policy (role_id, zone_id),
+    CONSTRAINT fk_rzp_role FOREIGN KEY (role_id) REFERENCES iam_roles(id) ON DELETE CASCADE,
+    CONSTRAINT fk_rzp_zone FOREIGN KEY (zone_id) REFERENCES hardware_zones(id) ON DELETE CASCADE,
+    CONSTRAINT fk_rzp_policy FOREIGN KEY (policy_id) REFERENCES policy_macros(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Add FK for nas.zone_id after hardware_zones is created
+ALTER TABLE nas ADD CONSTRAINT fk_nas_zone FOREIGN KEY (zone_id) REFERENCES hardware_zones(id) ON DELETE SET NULL;
