@@ -1,5 +1,6 @@
 services:
   db:
+    restart: unless-stopped
     image: mariadb:10.11
     container_name: radius-db
     env_file:
@@ -28,6 +29,7 @@ services:
     container_name: radius-server
     command: [ "freeradius", "-X" ]
     network_mode: host
+    restart: unless-stopped
     env_file:
       - .env
     environment:
