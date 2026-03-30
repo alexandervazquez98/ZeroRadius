@@ -1,61 +1,56 @@
-# FreeRADIUS Management System
+# ZeroRadius 🌐
 
-Este sistema es una solución completa para la gestión y administración de un servidor AAA (Authentication, Authorization, Accounting) basado en **FreeRADIUS**. Proporciona una interfaz web moderna para gestionar usuarios, grupos, dispositivos NAS y auditoría, abstrayendo la complejidad de la base de datos SQL subyacente.
+ZeroRadius is a modern, full-stack, state-driven management interface for the **FreeRADIUS** AAA Server. Built to abstract the severe complexities, flat-file hell, and UX pitfalls of traditional legacy managers (like daloRADIUS), it offers a React-driven frontend and an asynchronous Python/FastAPI backend designed for enterprise networks and ISPs.
 
-## 🏗 Arquitectura
+![ZeroRadius Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Architecture](https://img.shields.io/badge/infrastructure-Docker_Compose-blueviolet)
 
-El sistema está contenerizado con Docker y compuesto por:
+## 🚀 Why ZeroRadius over daloRADIUS?
 
-1.  **Frontend (React + Vite)**:
-    *   Interfaz de usuario para administradores.
-    *   Gestiona usuarios, NAS, sesiones activas y logs.
-    *   Se comunica con el Backend vía API REST.
+Historically, operating daloRADIUS meant fighting with raw SQL schemas, clunky 2000s PHP interfaces, and manual dictionary editing to provision modern devices. **ZeroRadius changes the paradigm:**
+- **Visual Macro Builders:** Drag and drop RADIUS attributes instead of manually typing `radgroupreply` statements. Syntax constraints are strictly validated by `pyrad`.
+- **Zero-Trust Identity Mapping:** Granular, NAS-based privilege scopes (ISO 27001 compliant) instead of granting global network access for every administrator.
+- **RESTful Asynchronous Backend:** Built entirely on modern FastAPI + SQLAlchemy 2.0 Async, enabling massive high-concurrency without breaking a sweat.
 
-2.  **Backend (FastAPI)**:
-    *   API RESTful escrita en Python.
-    *   Gestiona la lógica de negocio y la conexión segura a la base de datos.
-    *   Implementa la lógica de auditoría personalizada (`app_audit_log`).
-    *   Expone endpoints para CRUD de tablas RADIUS (`radcheck`, `radreply`, `nas`, `radacct`).
+## 🏗 Architecture & Stack 
 
-3.  **RADIUS Server (FreeRADIUS)**:
-    *   Servidor estándar FreeRADIUS (v3.2.3).
-    *   Configurado para leer autenticación y configuración directamente de SQL.
-    *   Sin archivos de texto complejos; toda la lógica reside en la BD.
+ZeroRadius is fully containerized and consists of four main pillars:
 
-4.  **Database (MariaDB)**:
-    *   Almacena el esquema estándar de FreeRADIUS + tablas de la aplicación.
+1. **Frontend (React + Vite + TailwindCSS)**:
+   - Consumer-grade UI/UX for network administrators.
+   - Manages Users, Accounts, NAS Devices, Active Sessions, and Audit Logs.
+   - Communicates with the Backend entirely via REST APIs.
 
-## Flujos Principales
+2. **Backend (FastAPI)**:
+   - High-throughput REST API written in Python.
+   - Manages business logic and direct connection to the AAA MariaDB.
+   - Executes custom localized Audit Trails (`app_audit_log`).
 
-### Autenticación de Usuarios
-*   El NAS envía la petición al contenedor FreeRADIUS.
-*   FreeRADIUS consulta las tablas `radcheck` y `radgroupcheck` en MariaDB.
-*   Si la validación pasa, consulta `radreply` y `radgroupreply` para obtener los atributos de configuración (Velocidad, VLAN, Tiempo).
-*   FreeRADIUS responde al NAS con `Access-Accept` + Atributos.
+3. **RADIUS AAA Server (FreeRADIUS v3.2.3)**:
+   - Standard FreeRADIUS configured for 100% SQL-driven operation. No local `users` or text-based configurations. All network policies reside dynamically inside MariaDB.
 
-### Mapa de Privilegios (Privilege Map) - ISO 27001
-El sistema implementa un control de acceso estricto basado en identidad de red (NAS) para cumplir con los controles **A.5.15 y A.8.3 de la ISO/IEC 27001:2022**.
-En lugar de conceder acceso global a todos los equipos de red, el Privilege Map restringe el acceso de manera granular:
-*   **Propósito:** Define exactamente qué usuario puede acceder a qué equipo (NAS IP), y con qué grupo/nivel de privilegios (RADIUS Group).
-*   **Autorización Dinámica:** Durante el login, la política `nas_based_authorization` en FreeRADIUS consulta la tabla `user_nas_privilege_map`. Si existe un mapeo activo para el usuario y la IP del NAS desde donde intenta entrar, su grupo RADIUS predeterminado se reemplaza dinámicamente por el grupo autorizado para ese equipo. Si no hay mapeo, el acceso se rechaza.
-*   **Auditoría y Revisión (A.8.2):** Cada mapeo requiere un aprobador (`Approved By`), una justificación de negocio (`Justification`) y una fecha de revisión obligatoria (`Review Date`), garantizando que los accesos privilegiados sean revocados cuando ya no se necesiten.
+4. **Database (MariaDB)**:
+   - Stores the standard FreeRADIUS schemas extended with ZeroRadius custom identity management tables.
 
-### Gestión de "Huntgroups" (Lógica Multi-NAS)
-*   Se utiliza la flexibilidad de SQL para asignar usuarios a grupos específicos según el NAS.
-*   En el Frontend, se pueden crear condiciones para que un grupo solo sea válido si la petición viene de una IP de NAS específica (Atributo `NAS-IP-Address` en `radgroupcheck`).
+## 📚 Official Documentation & User Manuals
+The project relies on localized, flowchart-driven Markdown manuals to ensure network administrators can confidently provision networks.
 
-### Control de Acceso de Red IAM/RBAC (N-Dimensional)
-El sistema incluye un motor avanzado de políticas IAM que aprovisiona atributos para múltiples dispositivos simultáneamente:
-*   **Múltiples Hardware Zones**: Permite aplicar atributos de aprovisionamiento (QoS, VLAN, VRF) según marcas y perfiles utilizando las sentencias nativas de FreeRADIUS.
-*   **Workflow "Break-Glass" (JIT)**: Soporte de elevación de privilegios Just-In-Time para soporte especializado. Inyecta el atributo `Expiration` calculando el TTL solicitado, permitiendo operar como superusuario de red solo durante el período de ventana de mantenimiento o resolución de incidentes aprobado.
-*   **Building de Macros Visuales**: Editor dinámico para construir directivas RADIUS sin programar diccionarios SQL, validando la semántica contra `pyrad` y compilando el resultado optimizado en la tabla `radgroupreply`.
+- [**01. NAS Provisioning & Huntgroups**](docs/01-nas-provisioning.md) - How to onboard hardware, segment network devices, and restrict users to specific access nodes.
+- [**02. ISO 27001 Privilege Map & RBAC**](docs/02-iso27001-privilege-map.md) - Deep dive into ZeroRadius's Identity Access Management (IAM), explaining how general authentication tokens are converted into restricted, hardware-specific group roles dynamically during login.
+- [**03. JIT "Break-Glass" Workflow**](docs/03-jit-break-glass.md) - Understanding Just-In-Time role elevation logic. How operators request timed root-access and how the `Expiration` attribute is injected into the AAA workflow.
 
-## 🛠 Despliegue
+## 🛠 Deployment & Setup
+
+Deploying the stack is native and self-contained via Docker.
 
 ```bash
-# Iniciar todo el stack
+# Clone the repository
+git clone https://github.com/alexandervazquez98/ZeroRadius.git
+cd ZeroRadius
+
+# Initialize the stack
 docker-compose up -d --build
 ```
 
-*   **Frontend**: http://localhost:3000
-*   **Backend Docs**: http://localhost:8000/docs
+- **Frontend Application**: [http://localhost:3000](http://localhost:3000)
+- **Backend Swagger Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
