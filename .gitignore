@@ -66,6 +66,11 @@ desktop.ini
 .opencode/node_modules/
 .opencode/bun.lock
 .agent/
+.agents/
+artifacts/
+.clirules
+.cline_rules
+.engram/
 openspec/
 
 # ─── Archives / temp ──────────────────────────────────────────────────────────
