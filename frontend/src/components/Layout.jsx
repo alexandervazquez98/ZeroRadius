@@ -22,6 +22,7 @@ const Layout = () => {
         { name: 'Active Sessions', path: '/sessions', icon: Activity },
         { name: 'Groups', path: '/groups', icon: Layers },
         { name: 'Privilege Map', path: '/privilege-map', icon: Map, allowedRoles: ['superadmin', 'admin', 'auditor'] },
+        { name: 'IAM & Zonas', path: '/iam', icon: Shield, allowedRoles: ['superadmin', 'admin'] },
         { name: 'Dictionaries', path: '/dictionaries', icon: BookOpen },
         { name: 'Audit Logs', path: '/audit', icon: Shield },
         { name: 'System Users', path: '/admin-users', icon: UserCog, allowedRoles: ['superadmin'] },

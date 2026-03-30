@@ -103,6 +103,7 @@ class NasBase(BaseModel):
     ports: Optional[int] = None
     secret: str = "secret"
     description: Optional[str] = None
+    zone_id: Optional[int] = None
 
 
 class NasOut(NasBase):
@@ -209,6 +210,7 @@ class NasCreate(BaseModel):
     ports: Optional[int] = None
     secret: str = "secret"
     description: Optional[str] = None
+    zone_id: Optional[int] = None
 
     @field_validator("secret")
     @classmethod
@@ -287,6 +289,74 @@ class LoginAttemptOut(BaseModel):
     ip_address: Optional[str] = None
     attempted_at: Optional[datetime] = None
     success: int
+
+    class Config:
+        from_attributes = True
+
+
+# --- IAM & NAC RBAC Schemas ---
+
+class HardwareZoneBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class HardwareZoneCreate(HardwareZoneBase):
+    pass
+
+
+class HardwareZoneOut(HardwareZoneBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class IAMRoleBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class IAMRoleCreate(IAMRoleBase):
+    pass
+
+
+class IAMRoleOut(IAMRoleBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class PolicyMacroBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    attributes_json: dict = {}
+
+
+class PolicyMacroCreate(PolicyMacroBase):
+    pass
+
+
+class PolicyMacroOut(PolicyMacroBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class RoleZonePolicyBase(BaseModel):
+    role_id: int
+    zone_id: int
+    policy_id: int
+
+
+class RoleZonePolicyCreate(RoleZonePolicyBase):
+    pass
+
+
+class RoleZonePolicyOut(RoleZonePolicyBase):
+    id: int
 
     class Config:
         from_attributes = True

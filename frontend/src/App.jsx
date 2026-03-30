@@ -14,6 +14,7 @@ import Audit from './pages/Audit';
 import Dictionaries from './pages/Dictionaries';
 import AdminUsers from './pages/AdminUsers';
 import PrivilegeMap from './pages/PrivilegeMap';
+import IAM from './pages/IAM';
 
 /** Simple page shown when a user lacks permissions to access a route */
 function Unauthorized() {
@@ -52,6 +53,7 @@ function App() {
                         <Route path="groups" element={<Groups />} />
                         <Route path="audit" element={<Audit />} />
                         <Route path="dictionaries" element={<Dictionaries />} />
+                        <Route path="iam" element={<IAM />} />
 
                         {/* Superadmin-only: System Users */}
                         <Route
