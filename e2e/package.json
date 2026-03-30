@@ -1,0 +1,13 @@
+{
+  "name": "zeroadius-e2e",
+  "version": "1.0.0",
+  "description": "E2E tests for ZeroRadius using Playwright",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.43.0"
+  }
+}

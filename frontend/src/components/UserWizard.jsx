@@ -100,8 +100,9 @@ const UserWizard = ({ onComplete, onCancel }) => {
                     <div className="space-y-4 max-w-sm mx-auto">
                         <h3 className="text-lg font-semibold text-center mb-6">User Credentials</h3>
                         <div>
-                            <label className="block text-sm font-medium mb-1">Username</label>
+                            <label htmlFor="wizard-username" className="block text-sm font-medium mb-1">Username</label>
                             <input
+                                id="wizard-username"
                                 className="w-full border rounded-lg p-3 focus:ring-2 focus:ring-blue-500 outline-none"
                                 value={userData.username}
                                 onChange={e => setUserData({ ...userData, username: e.target.value })}
@@ -120,8 +121,9 @@ const UserWizard = ({ onComplete, onCancel }) => {
                             </select>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium mb-1">Password</label>
+                            <label htmlFor="wizard-password" className="block text-sm font-medium mb-1">Password</label>
                             <input
+                                id="wizard-password"
                                 type="password"
                                 className="w-full border rounded-lg p-3 focus:ring-2 focus:ring-blue-500 outline-none"
                                 value={userData.password}

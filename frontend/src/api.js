@@ -17,7 +17,12 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
     (response) => response,
     (error) => {
-        if (error.response && error.response.status === 401) {
+        const isAuthEndpoint = error.config?.url?.includes('/auth/token');
+        const isAlreadyOnLogin = window.location.pathname === '/login';
+
+        // No redirigir si el 401 viene del login mismo (credenciales inválidas)
+        // ni si ya estamos en /login — evita loops y permite mostrar el error
+        if (error.response && error.response.status === 401 && !isAuthEndpoint && !isAlreadyOnLogin) {
             localStorage.removeItem('token');
             window.location.href = '/login';
         }
