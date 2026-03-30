@@ -15,20 +15,26 @@ In FreeRADIUS, a Huntgroup allows you to bundle several NAS devices under a sing
 ### Architecture Flow
 
 ```mermaid
-flowchart TD
-    NAS[Network Access Server IP: 192.168.1.50] -->|Access-Request| AAA(FreeRADIUS Engine)
-    AAA -->|Query radusergroup| DB[(MariaDB)]
-    DB -.->|User is in Group 'Core_Network'| AAA
-    AAA -->|Query radgroupcheck| DB2[(MariaDB)]
-    DB2 -.->|Must match NAS-IP-Address == 192.168.1.50| AAA
+sequenceDiagram
+    participant NAS as Network Access Server
+    participant AAA as FreeRADIUS Engine
+    participant DB as MariaDB
+
+    NAS->>AAA: Access-Request (IP: 192.168.1.50)
     
-    AAA -- Valid IP Match --> ACCEPT((Access-Accept))
-    AAA -- Invalid IP Match --> REJECT((Access-Reject))
+    AAA->>DB: Query 'radusergroup'
+    DB-->>AAA: Matches -> User in 'Core_Network'
     
-    style NAS fill:#2563eb,stroke:#1e40af,stroke-width:2px,color:#fff
-    style AAA fill:#10b981,stroke:#047857,stroke-width:2px,color:#fff
-    style DB fill:#4b5563,stroke:#374151,stroke-width:2px,color:#fff
-    style DB2 fill:#4b5563,stroke:#374151,stroke-width:2px,color:#fff
+    AAA->>DB: Query 'radgroupcheck'
+    DB-->>AAA: Rule -> Must match NAS-IP-Address == 192.168.1.50
+    
+    alt IP Matches Rule
+        AAA->>AAA: Verification OK
+        AAA-->>NAS: Access-Accept
+    else IP Mismatch
+        AAA->>AAA: Verification Failed
+        AAA-->>NAS: Access-Reject
+    end
 ```
 
 ### Steps to Segment a User
