@@ -24,6 +24,7 @@ services:
       retries: 3
 
   radius:
+    restart: unless-stopped
     build:
       context: ./radius
     container_name: radius-server
@@ -51,6 +52,7 @@ services:
         condition: service_healthy
 
   backend:
+    restart: unless-stopped
     build:
       context: ./backend
     container_name: radius-backend
@@ -74,6 +76,7 @@ services:
       - radius-net
 
   frontend:
+    restart: unless-stopped
     build:
       context: ./frontend
     container_name: radius-frontend
