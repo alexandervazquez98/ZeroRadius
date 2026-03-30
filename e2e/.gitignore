@@ -1,0 +1,4 @@
+# Playwright build artifacts — never commit these
+playwright-report/
+test-results/
+node_modules/
