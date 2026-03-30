@@ -1,13 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Server, Radio, Activity, Shield, Layers, BookOpen, LogOut, UserCog, Map, Clock } from 'lucide-react';
+import { LayoutDashboard, Users, Server, Radio, Activity, Shield, Layers, BookOpen, LogOut, UserCog, Map, Clock, ScrollText } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NTPIndicator from './NTPIndicator';
+import LogViewer from './LogViewer';
 
 const Layout = () => {
     const location = useLocation();
     const { logout, user, role, hasRole } = useAuth();
     const navigate = useNavigate();
+    const [logDrawerOpen, setLogDrawerOpen] = useState(false);
 
     const handleLogout = () => {
         logout();
@@ -86,6 +88,21 @@ const Layout = () => {
                     <div className="flex items-center gap-4">
                         {/* NTP status indicator — only for admin/superadmin */}
                         {hasRole(['admin', 'superadmin']) && <NTPIndicator />}
+                        {/* Log viewer toggle — only for admin/superadmin */}
+                        {hasRole(['admin', 'superadmin']) && (
+                            <button
+                                onClick={() => setLogDrawerOpen(o => !o)}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-semibold transition-colors ${
+                                    logDrawerOpen
+                                        ? 'bg-indigo-50 border-indigo-200 text-indigo-600'
+                                        : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                                }`}
+                                title="RADIUS Live Log"
+                            >
+                                <ScrollText size={14} />
+                                <span className="hidden sm:inline">Logs</span>
+                            </button>
+                        )}
                         <div className="flex items-center gap-2">
                             <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs uppercase">
                                 {user?.username?.charAt(0) || 'A'}
@@ -100,6 +117,9 @@ const Layout = () => {
                     <Outlet />
                 </div>
             </main>
+
+            {/* Log viewer drawer — persists across navigation */}
+            <LogViewer isOpen={logDrawerOpen} onClose={() => setLogDrawerOpen(false)} />
         </div>
     );
 };
