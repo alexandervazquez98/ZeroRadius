@@ -2,7 +2,7 @@
 
 ZeroRadius is a modern, full-stack, state-driven management interface for the **FreeRADIUS** AAA Server. Built to abstract the severe complexities, flat-file hell, and UX pitfalls of traditional legacy managers (like daloRADIUS), it offers a React-driven frontend and an asynchronous Python/FastAPI backend designed for enterprise networks and ISPs.
 
-![ZeroRadius Version](https://img.shields.io/badge/version-1.1.0-blue)
+![ZeroRadius Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![Architecture](https://img.shields.io/badge/infrastructure-Docker_Compose-blueviolet)
 
 ## 🚀 Why ZeroRadius over daloRADIUS?
@@ -19,11 +19,13 @@ ZeroRadius is fully containerized and consists of four main pillars:
 1. **Frontend (React + Vite + TailwindCSS)**:
    - Consumer-grade UI/UX for network administrators.
    - Manages Users, Accounts, NAS Devices, Active Sessions, and Audit Logs.
-   - Communicates with the Backend entirely via REST APIs.
+   - **Real-time RADIUS Log Viewer** accessible from the header for live Access-Request monitoring.
+   - Communicates with the Backend via REST APIs and WebSockets.
 
 2. **Backend (FastAPI)**:
    - High-throughput REST API written in Python.
    - Manages business logic and direct connection to the AAA MariaDB.
+   - **WebSocket log streaming** endpoint for real-time FreeRADIUS log monitoring via Docker SDK.
    - Executes custom localized Audit Trails (`app_audit_log`).
 
 3. **RADIUS AAA Server (FreeRADIUS v3.2.3)**:
@@ -38,6 +40,7 @@ The project relies on localized, flowchart-driven Markdown manuals to ensure net
 - [**01. NAS Provisioning & Huntgroups**](docs/01-nas-provisioning.md) - How to onboard hardware, segment network devices, and restrict users to specific access nodes.
 - [**02. ISO 27001 Privilege Map & RBAC**](docs/02-iso27001-privilege-map.md) - Deep dive into ZeroRadius's Identity Access Management (IAM), explaining how general authentication tokens are converted into restricted, hardware-specific group roles dynamically during login.
 - [**03. JIT "Break-Glass" Workflow**](docs/03-jit-break-glass.md) - Understanding Just-In-Time role elevation logic. How operators request timed root-access and how the `Expiration` attribute is injected into the AAA workflow.
+- [**04. Live RADIUS Log Viewer**](docs/04-live-log-viewer.md) - Real-time monitoring of Access-Request events (Accept/Reject) via WebSocket streaming from the FreeRADIUS container.
 
 ## 🛠 Deployment & Setup
 
