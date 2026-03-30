@@ -25,7 +25,7 @@ El sistema está contenerizado con Docker y compuesto por:
 4.  **Database (MariaDB)**:
     *   Almacena el esquema estándar de FreeRADIUS + tablas de la aplicación.
 
-## 🚀 Flujos Principales
+## Flujos Principales
 
 ### Autenticación de Usuarios
 *   El NAS envía la petición al contenedor FreeRADIUS.

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import users, nas, auth, groups, audit, dictionary, admin_users
-from app.routers import system, privilege_map, sessions
+from app.routers import system, privilege_map, sessions, iam_nac
 from app.db.session import engine, Base
 import asyncio
 import logging
@@ -68,6 +68,7 @@ app.include_router(admin_users.router)
 app.include_router(system.router)
 app.include_router(privilege_map.router)
 app.include_router(sessions.router)
+app.include_router(iam_nac.router)
 
 
 # ---------------------------------------------------------------------------
