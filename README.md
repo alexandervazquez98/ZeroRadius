@@ -44,6 +44,12 @@ En lugar de conceder acceso global a todos los equipos de red, el Privilege Map 
 *   Se utiliza la flexibilidad de SQL para asignar usuarios a grupos específicos según el NAS.
 *   En el Frontend, se pueden crear condiciones para que un grupo solo sea válido si la petición viene de una IP de NAS específica (Atributo `NAS-IP-Address` en `radgroupcheck`).
 
+### Control de Acceso de Red IAM/RBAC (N-Dimensional)
+El sistema incluye un motor avanzado de políticas IAM que aprovisiona atributos para múltiples dispositivos simultáneamente:
+*   **Múltiples Hardware Zones**: Permite aplicar atributos de aprovisionamiento (QoS, VLAN, VRF) según marcas y perfiles utilizando las sentencias nativas de FreeRADIUS.
+*   **Workflow "Break-Glass" (JIT)**: Soporte de elevación de privilegios Just-In-Time para soporte especializado. Inyecta el atributo `Expiration` calculando el TTL solicitado, permitiendo operar como superusuario de red solo durante el período de ventana de mantenimiento o resolución de incidentes aprobado.
+*   **Building de Macros Visuales**: Editor dinámico para construir directivas RADIUS sin programar diccionarios SQL, validando la semántica contra `pyrad` y compilando el resultado optimizado en la tabla `radgroupreply`.
+
 ## 🛠 Despliegue
 
 ```bash

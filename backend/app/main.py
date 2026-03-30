@@ -9,7 +9,7 @@ import os
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="FreeRADIUS Manager", redirect_slashes=False)
+app = FastAPI(title="FreeRADIUS Manager", version="1.1.0", redirect_slashes=False)
 
 # CORS
 origins = os.getenv(
