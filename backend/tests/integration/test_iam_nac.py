@@ -1,5 +1,5 @@
 """
-Integration tests: /api/v1/iam-nac endpoints (RBAC, Macros, Policy Compiler Engine, JIT).
+Integration tests: /iam-nac endpoints (RBAC, Macros, Policy Compiler Engine, JIT).
 
 Verifies:
 - Creation of Policy Macros
@@ -38,7 +38,7 @@ class TestIAMNAC:
             }
         }
         resp = await async_client.post(
-            "/api/v1/iam-nac/macros",
+            "/iam-nac/macros",
             json=payload,
             headers={"Authorization": f"Bearer {superadmin_token}"}
         )
@@ -47,7 +47,7 @@ class TestIAMNAC:
 
         # 2. Compile macro
         compile_resp = await async_client.post(
-            f"/api/v1/iam-nac/compile/{macro_id}",
+            f"/iam-nac/compile/{macro_id}",
             headers={"Authorization": f"Bearer {superadmin_token}"}
         )
         assert compile_resp.status_code == 200
@@ -76,7 +76,7 @@ class TestIAMNAC:
             }
         }
         resp = await async_client.post(
-            "/api/v1/iam-nac/macros",
+            "/iam-nac/macros",
             json=payload,
             headers={"Authorization": f"Bearer {superadmin_token}"}
         )
@@ -85,7 +85,7 @@ class TestIAMNAC:
 
         # 2. Compile macro -> should return 400 because attribute isn't in dictionary
         compile_resp = await async_client.post(
-            f"/api/v1/iam-nac/compile/{macro_id}",
+            f"/iam-nac/compile/{macro_id}",
             headers={"Authorization": f"Bearer {superadmin_token}"}
         )
         assert compile_resp.status_code == 400
@@ -101,7 +101,7 @@ class TestJITWorkflow:
 
         # Approve JIT flow
         resp = await async_client.post(
-            f"/api/v1/iam-nac/jit-requests/{username}/approve?ttl_hours={ttl_hours}",
+            f"/iam-nac/jit-requests/{username}/approve?ttl_hours={ttl_hours}",
             headers={"Authorization": f"Bearer {superadmin_token}"}
         )
         assert resp.status_code == 200

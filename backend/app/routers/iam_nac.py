@@ -14,7 +14,7 @@ from app.schemas.schemas import (
     RoleZonePolicyCreate, RoleZonePolicyOut
 )
 
-router = APIRouter(prefix="/api/v1/iam-nac", tags=["IAM & NAC RBAC"])
+router = APIRouter(prefix="/iam-nac", tags=["IAM & NAC RBAC"])
 
 # --- Phase 2.1: Hardware Zones CRUD ---
 @router.post("/zones", response_model=HardwareZoneOut)
