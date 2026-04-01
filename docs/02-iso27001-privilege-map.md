@@ -42,3 +42,20 @@ stateDiagram-v2
 
 ## Admin Auditing
 Every mapping requires an explicit `Approved By`, a `Justification`, and a `Review Date`, meaning abandoned or stale network privileges can be systematically audited and disabled as per ISO 27001 A.8.2.
+
+## Category-Based Targeting
+In addition to IP-based targeting, ZeroRadius supports **category-based privilege mapping**. Instead of mapping a user to a specific NAS IP address, you can map them to an entire **NAS Category** (e.g., "Core Routers", "WiFi Controllers").
+
+### Benefits
+- **Scalability:** Add new devices to a category and automatically inherit privilege mappings.
+- **Simplified Management:** Update permissions for all devices in a category by modifying a single mapping.
+- **Bulk Operations:** Assign privileges to groups of similar hardware at once.
+
+### How It Works
+1. Create NAS Categories in the NAS Devices module (e.g., "Branch Offices", "Data Center")
+2. Assign NAS devices to their corresponding categories
+3. In the Privilege Map, select category-based targeting instead of IP-based
+4. The backend evaluates both IP-based and category-based mappings during authentication
+
+### Priority
+When evaluating access, IP-based mappings take precedence over category-based mappings, allowing for exceptions while maintaining default category policies.

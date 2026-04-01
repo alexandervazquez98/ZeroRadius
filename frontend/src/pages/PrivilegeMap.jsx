@@ -553,8 +553,9 @@ const PrivilegeMapPage = () => {
                                 {/* Left: username + NAS selection */}
                                 <div className="space-y-4">
                                     <div>
-                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Username *</label>
+                                        <label htmlFor="pm-username" className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Username *</label>
                                         <select
+                                            id="pm-username"
                                             required
                                             className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
                                             value={form.username}
@@ -622,6 +623,7 @@ const PrivilegeMapPage = () => {
                                         ) : form.mapping_mode === 'category' ? (
                                             /* Category selector */
                                             <select
+                                                id="pm-category"
                                                 required
                                                 className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-violet-500 text-sm bg-white"
                                                 value={form.nas_category_id || ''}
@@ -700,8 +702,9 @@ const PrivilegeMapPage = () => {
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">RADIUS Group *</label>
+                                            <label htmlFor="pm-radius-group" className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">RADIUS Group *</label>
                                             <select
+                                                id="pm-radius-group"
                                                 required
                                                 className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white"
                                                 value={form.radius_group}
@@ -736,8 +739,9 @@ const PrivilegeMapPage = () => {
 
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Approved By *</label>
+                                            <label htmlFor="pm-approved-by" className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Approved By *</label>
                                             <input
+                                                id="pm-approved-by"
                                                 required
                                                 className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
                                                 value={form.approved_by}

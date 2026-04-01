@@ -64,7 +64,7 @@ async def create_nas_category(
             detail=f"A NAS category named '{payload.name}' already exists",
         )
 
-    category = NasCategory(**payload.model_dump())
+    category = NasCategory(**payload.model_dump(mode="json"))
     db.add(category)
     await db.commit()
     await db.refresh(category)
@@ -75,7 +75,7 @@ async def create_nas_category(
         "CREATE",
         "nas_categories",
         payload.name,
-        new_value=payload.model_dump(),
+        new_value=payload.model_dump(mode="json"),
         event_code=EventCode.ADMIN_005,
     )
     return category
@@ -97,7 +97,7 @@ async def update_nas_category(
     if not category:
         raise HTTPException(status_code=404, detail="NAS category not found")
 
-    old_data = NasCategoryOut.model_validate(category).model_dump()
+    old_data = NasCategoryOut.model_validate(category).model_dump(mode="json")
 
     # Check name uniqueness (excluding self)
     if payload.name != category.name:
@@ -110,7 +110,7 @@ async def update_nas_category(
                 detail=f"A NAS category named '{payload.name}' already exists",
             )
 
-    for key, value in payload.model_dump().items():
+    for key, value in payload.model_dump(mode="json").items():
         setattr(category, key, value)
 
     await db.commit()
@@ -123,7 +123,7 @@ async def update_nas_category(
         "nas_categories",
         category.name,
         old_value=old_data,
-        new_value=payload.model_dump(),
+        new_value=payload.model_dump(mode="json"),
     )
     return category
 
@@ -158,7 +158,7 @@ async def delete_nas_category(
             ),
         )
 
-    old_data = NasCategoryOut.model_validate(category).model_dump()
+    old_data = NasCategoryOut.model_validate(category).model_dump(mode="json")
     await db.delete(category)
     await db.commit()
 
