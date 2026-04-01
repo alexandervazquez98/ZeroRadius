@@ -4,23 +4,27 @@ import api from '../api';
 import {
     Upload, FileText, CheckCircle, AlertTriangle,
     Edit2, X, Save, Trash2, Eye, ArrowLeft,
-    Terminal, RefreshCw, ChevronDown, ChevronUp,
+    Terminal, RefreshCw, ChevronDown, ChevronUp, Lock, Shield,
 } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
 /*  Editor view — shown when a dictionary file is opened for editing  */
 /* ------------------------------------------------------------------ */
-const DictionaryEditor = ({ filename, onClose }) => {
+const DictionaryEditor = ({ filename, onClose, readonly = false, builtinPath = null }) => {
     const queryClient = useQueryClient();
     const [content, setContent] = useState('');
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState(null);
     const [dirty, setDirty] = useState(false);
 
-    // Fetch file content
+    // Fetch file content — built-ins use a different endpoint
+    const apiPath = builtinPath
+        ? `/dictionary/builtin/${encodeURIComponent(filename)}`
+        : `/dictionary/content/${encodeURIComponent(filename)}`;
+
     const { data, isLoading } = useQuery({
-        queryKey: ['dictionary', 'content', filename],
-        queryFn: () => api.get(`/dictionary/content/${encodeURIComponent(filename)}`).then(r => r.data),
+        queryKey: ['dictionary', builtinPath ? 'builtin-content' : 'content', filename],
+        queryFn: () => api.get(apiPath).then(r => r.data),
         refetchOnWindowFocus: false,
     });
 
@@ -33,7 +37,7 @@ const DictionaryEditor = ({ filename, onClose }) => {
 
     const saveMutation = useMutation({
         mutationFn: () => api.put(`/dictionary/content/${encodeURIComponent(filename)}`, { content }),
-        onSuccess: (res) => {
+        onSuccess: () => {
             queryClient.invalidateQueries(['dictionary']);
             setSaved(true);
             setDirty(false);
@@ -47,24 +51,20 @@ const DictionaryEditor = ({ filename, onClose }) => {
     });
 
     const handleKeyDown = (e) => {
-        // Ctrl+S / Cmd+S to save
+        if (readonly) return;
         if ((e.ctrlKey || e.metaKey) && e.key === 's') {
             e.preventDefault();
             saveMutation.mutate();
         }
-        // Tab inserts a real tab instead of moving focus
         if (e.key === 'Tab') {
             e.preventDefault();
             const ta = e.target;
             const start = ta.selectionStart;
             const end = ta.selectionEnd;
-            const val = ta.value;
-            const newVal = val.substring(0, start) + '\t' + val.substring(end);
+            const newVal = ta.value.substring(0, start) + '\t' + ta.value.substring(end);
             setContent(newVal);
             setDirty(true);
-            requestAnimationFrame(() => {
-                ta.selectionStart = ta.selectionEnd = start + 1;
-            });
+            requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 1; });
         }
     };
 
@@ -76,35 +76,41 @@ const DictionaryEditor = ({ filename, onClose }) => {
                     className="flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-indigo-600 transition-colors">
                     <ArrowLeft size={16} /> Back to list
                 </button>
-                <div className="flex items-center gap-3">
-                    {dirty && (
-                        <span className="text-xs font-bold text-amber-500 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
-                            Unsaved changes
-                        </span>
-                    )}
-                    <button
-                        onClick={() => saveMutation.mutate()}
-                        disabled={saveMutation.isPending || !dirty}
-                        className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-white shadow-md transition-all
-                            ${saveMutation.isPending || !dirty
-                                ? 'bg-slate-300 cursor-not-allowed'
-                                : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}`}
-                    >
-                        <Save size={16} />
-                        {saveMutation.isPending ? 'Saving...' : 'Save'}
-                    </button>
-                </div>
+                {!readonly && (
+                    <div className="flex items-center gap-3">
+                        {dirty && (
+                            <span className="text-xs font-bold text-amber-500 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+                                Unsaved changes
+                            </span>
+                        )}
+                        <button
+                            onClick={() => saveMutation.mutate()}
+                            disabled={saveMutation.isPending || !dirty}
+                            className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-white shadow-md transition-all
+                                ${saveMutation.isPending || !dirty
+                                    ? 'bg-slate-300 cursor-not-allowed'
+                                    : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}`}
+                        >
+                            <Save size={16} />
+                            {saveMutation.isPending ? 'Saving...' : 'Save'}
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Title */}
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+            <div className={`bg-white p-5 rounded-2xl shadow-sm border ${readonly ? 'border-amber-200 bg-amber-50' : 'border-slate-200'}`}>
                 <div className="flex items-center gap-3 mb-1">
-                    <FileText size={20} className="text-indigo-500" />
+                    {readonly ? <Lock size={20} className="text-amber-500" /> : <FileText size={20} className="text-indigo-500" />}
                     <h3 className="text-lg font-extrabold text-slate-800">{filename}</h3>
+                    {readonly && (
+                        <span className="ml-2 text-xs font-extrabold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 uppercase tracking-wider">Sistema</span>
+                    )}
                 </div>
                 <p className="text-xs text-slate-400 ml-8">
-                    Ctrl+S to save &middot; Tab inserts a tab character &middot;
-                    FreeRADIUS 4.x types (uint32, uint16...) are auto-converted on save
+                    {readonly
+                        ? 'Diccionario nativo de FreeRADIUS — sólo lectura. Para modificarlo se requiere un cambio de infraestructura.'
+                        : 'Ctrl+S to save · Tab inserts a tab character · FreeRADIUS 4.x types are auto-converted on save'}
                 </p>
             </div>
 
@@ -123,10 +129,14 @@ const DictionaryEditor = ({ filename, onClose }) => {
             ) : (
                 <textarea
                     value={content}
-                    onChange={(e) => { setContent(e.target.value); setDirty(true); setError(null); }}
+                    onChange={readonly ? undefined : (e) => { setContent(e.target.value); setDirty(true); setError(null); }}
                     onKeyDown={handleKeyDown}
+                    readOnly={readonly}
                     spellCheck={false}
-                    className="w-full min-h-[520px] bg-slate-900 text-green-300 font-mono text-sm p-5 rounded-2xl border border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y leading-relaxed"
+                    className={`w-full min-h-[520px] font-mono text-sm p-5 rounded-2xl border focus:outline-none focus:ring-2 resize-y leading-relaxed
+                        ${readonly
+                            ? 'bg-slate-800 text-amber-200 border-slate-700 focus:ring-amber-400 cursor-default'
+                            : 'bg-slate-900 text-green-300 border-slate-700 focus:ring-indigo-500'}`}
                 />
             )}
         </div>
@@ -239,12 +249,18 @@ const DictionariesPage = () => {
     const [uploadSuccess, setUploadSuccess] = useState(null);
     const [renamingFile, setRenamingFile] = useState(null);
     const [newName, setNewName] = useState('');
-    const [editingFile, setEditingFile] = useState(null);
+    const [editingFile, setEditingFile] = useState(null);     // { name, builtin }
     const [confirmDelete, setConfirmDelete] = useState(null);
 
     const { data: files } = useQuery({
         queryKey: ['dictionary', 'files'],
         queryFn: () => api.get('/dictionary/files').then(r => r.data),
+    });
+
+    const { data: builtinFiles } = useQuery({
+        queryKey: ['dictionary', 'builtin'],
+        queryFn: () => api.get('/dictionary/builtin').then(r => r.data),
+        staleTime: 5 * 60 * 1000, // built-ins rarely change
     });
 
     /* Upload */
@@ -312,7 +328,9 @@ const DictionariesPage = () => {
         return (
             <div className="max-w-7xl mx-auto space-y-6">
                 <DictionaryEditor
-                    filename={editingFile}
+                    filename={editingFile.name}
+                    readonly={editingFile.builtin}
+                    builtinPath={editingFile.builtin ? true : null}
                     onClose={() => setEditingFile(null)}
                 />
             </div>
@@ -366,99 +384,133 @@ const DictionariesPage = () => {
             {/* FreeRADIUS Log Panel */}
             <RadiusLogPanel />
 
-            {/* File grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {files?.map(file => (
-                    <div key={file} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 hover:border-indigo-300 transition-all group flex flex-col justify-between min-h-[160px]">
-                        {/* Top row */}
-                        <div className="flex items-start justify-between gap-3">
-                            <div className="flex items-center gap-3 min-w-0 flex-1">
-                                <div className="p-3 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors shrink-0">
-                                    <FileText size={24} />
-                                </div>
-
-                                {renamingFile === file ? (
-                                    <div className="flex flex-col gap-2 flex-1">
-                                        <input
-                                            autoFocus
-                                            className="w-full border-2 border-indigo-500 rounded-lg px-3 py-1.5 text-sm font-bold outline-none shadow-sm"
-                                            value={newName}
-                                            onChange={(e) => setNewName(e.target.value)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') renameMutation.mutate({ oldName: file, newName });
-                                                if (e.key === 'Escape') setRenamingFile(null);
-                                            }}
-                                        />
-                                        <div className="flex gap-2">
-                                            <button onClick={() => renameMutation.mutate({ oldName: file, newName })} className="flex-1 bg-indigo-600 text-white text-xs py-1 rounded-md font-bold flex items-center justify-center gap-1 hover:bg-indigo-700">
-                                                <Save size={12} /> Save
-                                            </button>
-                                            <button onClick={() => setRenamingFile(null)} className="flex-1 bg-slate-100 text-slate-500 text-xs py-1 rounded-md font-bold flex items-center justify-center gap-1 hover:bg-slate-200">
-                                                <X size={12} /> Cancel
-                                            </button>
+            {/* Custom dictionaries grid */}
+            {files && files.length > 0 && (
+                <>
+                    <h3 className="text-sm font-extrabold text-slate-500 uppercase tracking-widest px-1">Diccionarios Custom</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                        {files.map(file => (
+                            <div key={file} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 hover:border-indigo-300 transition-all group flex flex-col justify-between min-h-[160px]">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                                        <div className="p-3 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors shrink-0">
+                                            <FileText size={24} />
                                         </div>
+                                        {renamingFile === file ? (
+                                            <div className="flex flex-col gap-2 flex-1">
+                                                <input autoFocus
+                                                    className="w-full border-2 border-indigo-500 rounded-lg px-3 py-1.5 text-sm font-bold outline-none shadow-sm"
+                                                    value={newName}
+                                                    onChange={(e) => setNewName(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') renameMutation.mutate({ oldName: file, newName });
+                                                        if (e.key === 'Escape') setRenamingFile(null);
+                                                    }}
+                                                />
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => renameMutation.mutate({ oldName: file, newName })} className="flex-1 bg-indigo-600 text-white text-xs py-1 rounded-md font-bold flex items-center justify-center gap-1 hover:bg-indigo-700">
+                                                        <Save size={12} /> Save
+                                                    </button>
+                                                    <button onClick={() => setRenamingFile(null)} className="flex-1 bg-slate-100 text-slate-500 text-xs py-1 rounded-md font-bold flex items-center justify-center gap-1 hover:bg-slate-200">
+                                                        <X size={12} /> Cancel
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="min-w-0">
+                                                <h4 className="font-bold text-slate-800 truncate text-base" title={file}>{file}</h4>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Custom · Active</span>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
-                                ) : (
-                                    <div className="min-w-0">
-                                        <h4 className="font-bold text-slate-800 truncate text-base" title={file}>{file}</h4>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Active</span>
+                                </div>
+                                {renamingFile !== file && confirmDelete !== file && (
+                                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end gap-1">
+                                        <button onClick={() => setEditingFile({ name: file, builtin: false })} title="View / Edit content"
+                                            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all">
+                                            <Eye size={18} />
+                                        </button>
+                                        <button onClick={() => { setRenamingFile(file); setNewName(file); }} title="Rename"
+                                            className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all">
+                                            <Edit2 size={18} />
+                                        </button>
+                                        <button onClick={() => setConfirmDelete(file)} title="Delete"
+                                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
+                                            <Trash2 size={18} />
+                                        </button>
+                                    </div>
+                                )}
+                                {confirmDelete === file && (
+                                    <div className="mt-4 pt-3 border-t border-red-100 flex items-center justify-between">
+                                        <span className="text-xs font-bold text-red-600">Delete this dictionary?</span>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => deleteMutation.mutate(file)}
+                                                className="px-3 py-1 bg-red-600 text-white text-xs rounded-lg font-bold hover:bg-red-700 transition-colors">
+                                                Yes, delete
+                                            </button>
+                                            <button onClick={() => setConfirmDelete(null)}
+                                                className="px-3 py-1 bg-slate-100 text-slate-600 text-xs rounded-lg font-bold hover:bg-slate-200 transition-colors">
+                                                Cancel
+                                            </button>
                                         </div>
                                     </div>
                                 )}
                             </div>
-                        </div>
+                        ))}
+                    </div>
+                </>
+            )}
 
-                        {/* Bottom action bar */}
-                        {renamingFile !== file && confirmDelete !== file && (
-                            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end gap-1">
-                                <button onClick={() => setEditingFile(file)} title="View / Edit content"
-                                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all">
-                                    <Eye size={18} />
-                                </button>
-                                <button onClick={() => { setRenamingFile(file); setNewName(file); }} title="Rename"
-                                    className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all">
-                                    <Edit2 size={18} />
-                                </button>
-                                <button onClick={() => setConfirmDelete(file)} title="Delete"
-                                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
-                                    <Trash2 size={18} />
-                                </button>
-                            </div>
-                        )}
+            {/* Empty custom state */}
+            {files?.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-12 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+                    <div className="p-5 bg-white rounded-full shadow-lg text-slate-300 mb-3"><FileText size={36} /></div>
+                    <h3 className="text-lg font-bold text-slate-800">No Custom Dictionaries</h3>
+                    <p className="text-slate-500 max-w-sm text-center mt-1 text-sm">Upload a vendor dictionary file to expand RADIUS attribute support.</p>
+                </div>
+            )}
 
-                        {/* Delete confirmation */}
-                        {confirmDelete === file && (
-                            <div className="mt-4 pt-3 border-t border-red-100 flex items-center justify-between">
-                                <span className="text-xs font-bold text-red-600">Delete this dictionary?</span>
-                                <div className="flex gap-2">
-                                    <button onClick={() => deleteMutation.mutate(file)}
-                                        className="px-3 py-1 bg-red-600 text-white text-xs rounded-lg font-bold hover:bg-red-700 transition-colors">
-                                        Yes, delete
-                                    </button>
-                                    <button onClick={() => setConfirmDelete(null)}
-                                        className="px-3 py-1 bg-slate-100 text-slate-600 text-xs rounded-lg font-bold hover:bg-slate-200 transition-colors">
-                                        Cancel
+            {/* Built-in dictionaries grid */}
+            {builtinFiles && builtinFiles.length > 0 && (
+                <>
+                    <div className="flex items-center gap-3 px-1 pt-2">
+                        <Shield size={16} className="text-amber-500" />
+                        <h3 className="text-sm font-extrabold text-slate-500 uppercase tracking-widest">Diccionarios del Sistema (FreeRADIUS Built-in)</h3>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        {builtinFiles.map(({ filename, vendor }) => (
+                            <div key={filename} className="bg-white p-5 rounded-2xl shadow-sm border border-amber-100 hover:border-amber-300 transition-all group flex flex-col justify-between min-h-[140px]">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className="p-3 bg-amber-50 rounded-xl text-amber-400 group-hover:bg-amber-100 transition-colors shrink-0">
+                                        <Lock size={22} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <h4 className="font-bold text-slate-800 truncate text-sm" title={filename}>{filename}</h4>
+                                            <span className="text-xs font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 uppercase tracking-wider whitespace-nowrap">Sistema</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <span className="w-2 h-2 rounded-full bg-amber-400" />
+                                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Vendor: {vendor}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="mt-4 pt-3 border-t border-amber-50 flex items-center justify-end">
+                                    <button
+                                        onClick={() => setEditingFile({ name: filename, builtin: true })}
+                                        title="Ver contenido (solo lectura)"
+                                        className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all"
+                                    >
+                                        <Eye size={18} />
                                     </button>
                                 </div>
                             </div>
-                        )}
+                        ))}
                     </div>
-                ))}
-            </div>
-
-            {/* Empty state */}
-            {files?.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-20 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
-                    <div className="p-6 bg-white rounded-full shadow-lg text-slate-300 mb-4">
-                        <FileText size={48} />
-                    </div>
-                    <h3 className="text-xl font-bold text-slate-800">No Custom Dictionaries</h3>
-                    <p className="text-slate-500 max-w-sm text-center mt-2">
-                        Upload a vendor dictionary file to expand RADIUS attribute support.
-                    </p>
-                </div>
+                </>
             )}
         </div>
     );
