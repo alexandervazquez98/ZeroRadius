@@ -145,8 +145,10 @@ const PoliciesPage = () => {
         mutationFn: (id) => api.post(`/iam-nac/compile/${id}`),
         onMutate: (id) => setCompileStatus({ id, msg: 'Compilando en NAS...', error: false }),
         onSuccess: (data, id) => {
-            setCompileStatus({ id, msg: `Compilación Exitosa. Insertados ${data.rows_inserted} VSAs en RADIUS.`, error: false });
-            setTimeout(() => setCompileStatus({ id: null, msg: '', error: false }), 4000);
+            const compiled = data?.data?.attributes_compiled ?? 0;
+            const groupName = data?.data?.compiled_group_name ?? '';
+            setCompileStatus({ id, msg: `Compilación Exitosa. ${compiled} VSAs insertados → grupo "${groupName}" en RADIUS.`, error: false });
+            setTimeout(() => setCompileStatus({ id: null, msg: '', error: false }), 5000);
         },
         onError: (err, id) => {
             setCompileStatus({ id, msg: `ERROR: ${err.response?.data?.detail || 'Fallo de compilación.'}`, error: true });

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 from app.db.session import get_db
 from app.services.dictionary_loader import dictionary_service
+from app.routers.dictionary import _get_builtin_attributes_cached
 from app.models.models import HardwareZone, IAM_Role, PolicyMacro, RoleZonePolicy, RadCheck, RadGroupReply
 from app.schemas.schemas import (
     HardwareZoneCreate, HardwareZoneOut,
@@ -115,48 +116,66 @@ async def assign_policy_matrix(assignment: RoleZonePolicyCreate, db: AsyncSessio
 async def compile_policy_to_radius(policy_id: int, db: AsyncSession = Depends(get_db)):
     """
     Phase 2.2: Policy Compiler Engine that translates a Macro to radgroupreply rows.
-    This calls pyrad to validate syntax before INSERT.
+
+    Validates each attribute name against the union of:
+    - Custom dictionaries loaded by DictionaryService (backend/dictionaries/)
+    - Built-in FreeRADIUS vendor dictionaries from the radius-server container
+
+    The compiled RADIUS group name equals the safe (space-stripped) policy name so
+    the group appears as-is in GET /groups/list and the user-assignment dropdown.
     """
     policy = (await db.execute(select(PolicyMacro).where(PolicyMacro.id == policy_id))).scalars().first()
     if not policy:
         raise HTTPException(status_code=404, detail="PolicyMacro not found")
-        
+
     attributes = policy.attributes_json.get("attributes", [])
     if not isinstance(attributes, list):
-         raise HTTPException(status_code=400, detail="Invalid attributes_json format. Expected 'attributes' array.")
-         
-    # Load dictionary if not already loaded
+        raise HTTPException(status_code=400, detail="Invalid attributes_json format. Expected 'attributes' array.")
+
+    # --- Build the full set of valid attribute names ---
+    # Custom dicts: whatever DictionaryService has loaded from backend/dictionaries/
     dict_obj = dictionary_service.dictionary
-    if not hasattr(dict_obj, "attributes"):
-        dictionary_service.load()
-        dict_obj = dictionary_service.dictionary
+    custom_attr_names: set = set(dict_obj.attributes.keys()) if hasattr(dict_obj, "attributes") else set()
+
+    # Built-in dicts: from radius-server container (cached in memory after first load)
+    builtin_attr_names: set = {a["name"] for a in _get_builtin_attributes_cached()}
+
+    all_valid_names = custom_attr_names | builtin_attr_names
 
     valid_attrs = []
     for item in attributes:
         attr_name = item.get("name")
         attr_value = item.get("value")
         op = item.get("op", "=")
-        
+
         if not attr_name or attr_value is None:
             raise HTTPException(status_code=400, detail="Attribute missing 'name' or 'value'")
-            
-        # Pyrad syntax validation
-        if attr_name not in dict_obj:
-            raise HTTPException(status_code=400, detail=f"Attribute '{attr_name}' not found in FreeRADIUS dictionary.")
-            
+
+        # Validate only when we have a populated set to check against.
+        # If all_valid_names is empty (first startup, Docker not ready), allow through
+        # so operators can still compile.
+        if all_valid_names and attr_name not in all_valid_names:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Attribute '{attr_name}' not found in any loaded RADIUS dictionary."
+            )
+
         valid_attrs.append({"name": attr_name, "value": str(attr_value), "op": op})
-        
-    # Generate a unique RADIUS group name for this policy
-    safe_name = policy.name.replace(" ", "_")[:30]
-    group_name = f"POL_{policy.id}_{safe_name}"
-    
-    # Sweep old compilation for this policy
+
+    # Use the policy name directly as the RADIUS group name.
+    # Spaces are replaced with underscores; truncated to 50 chars to stay within
+    # the radgroupreply.groupname column width.
+    # This gives the user "CISCO" in the group-assignment dropdown, not "POL_1_CISCO".
+    safe_name = policy.name.replace(" ", "_")[:50]
+    group_name = safe_name
+
+    # Sweep previous compilation for this policy (by name, not by id)
     stmt = select(RadGroupReply).where(RadGroupReply.groupname == group_name)
     existing_rows = (await db.execute(stmt)).scalars().all()
     for row in existing_rows:
         await db.delete(row)
-    
-    # Insert new compiled attributes
+
+    # Insert newly compiled attributes
     for item in valid_attrs:
         db.add(RadGroupReply(
             groupname=group_name,
@@ -164,9 +183,9 @@ async def compile_policy_to_radius(policy_id: int, db: AsyncSession = Depends(ge
             op=item["op"],
             value=item["value"]
         ))
-        
+
     await db.commit()
-    
+
     return {
         "message": f"Policy '{policy.name}' compiled successfully.",
         "compiled_group_name": group_name,
