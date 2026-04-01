@@ -97,6 +97,52 @@ async def delete_group_reply(
     return {"ok": True}
 
 
+@router.put("/reply/{id}", response_model=RadGroupReplyOut)
+async def update_group_reply(
+    id: int,
+    reply: RadGroupReplyCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
+):
+    # VSA validation
+    attrs = [{"name": reply.attribute, "value": reply.value}]
+    if check_high_privilege(attrs):
+        if getattr(current_user, "role", None) != Role.SUPERADMIN.value:
+            raise HTTPException(
+                status_code=403,
+                detail="Assigning high-privilege attributes requires superadmin role.",
+            )
+
+    result = await db.execute(select(RadGroupReply).where(RadGroupReply.id == id))
+    item = result.scalars().first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Attribute not found")
+
+    old_data = {
+        "groupname": item.groupname,
+        "attribute": item.attribute,
+        "value": item.value,
+    }
+
+    item.attribute = reply.attribute
+    item.value = reply.value
+    item.groupname = reply.groupname
+
+    await db.commit()
+    await db.refresh(item)
+    await log_audit(
+        db,
+        current_user.username,
+        "UPDATE",
+        "radgroupreply",
+        reply.groupname,
+        old_value=old_data,
+        new_value=reply.model_dump(),
+        event_code=EventCode.ADMIN_006,
+    )
+    return item
+
+
 # --- Group Checks (Huntgroups) ---
 @router.get("/check", response_model=list[RadGroupCheckOut])
 async def get_group_checks(
@@ -161,6 +207,43 @@ async def delete_group_check(
         event_code=EventCode.ADMIN_004,
     )
     return {"ok": True}
+
+
+@router.put("/check/{id}", response_model=RadGroupCheckOut)
+async def update_group_check(
+    id: int,
+    check: RadGroupCheckCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
+):
+    result = await db.execute(select(RadGroupCheck).where(RadGroupCheck.id == id))
+    item = result.scalars().first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Attribute not found")
+
+    old_data = {
+        "groupname": item.groupname,
+        "attribute": item.attribute,
+        "value": item.value,
+    }
+
+    item.attribute = check.attribute
+    item.value = check.value
+    item.groupname = check.groupname
+
+    await db.commit()
+    await db.refresh(item)
+    await log_audit(
+        db,
+        current_user.username,
+        "UPDATE",
+        "radgroupcheck",
+        check.groupname,
+        old_value=old_data,
+        new_value=check.model_dump(),
+        event_code=EventCode.ADMIN_004,
+    )
+    return item
 
 
 @router.delete("/policy")
