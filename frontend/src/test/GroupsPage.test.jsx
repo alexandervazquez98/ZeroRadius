@@ -1,11 +1,11 @@
 /**
  * Tests para GroupsPage (src/pages/Groups.jsx → PoliciesPage).
  *
- * GroupsPage es un wrapper de PoliciesPage que muestra la lista de políticas/grupos.
+ * GroupsPage es un wrapper de PoliciesPage que muestra la lista de Macros/NAC Policies.
  * Cubre:
- * - Renderiza el título "Policies"
- * - Renderiza el botón "Create Policy"
- * - Los grupos del mock (helpdesk_group, admin_group) aparecen en la tabla
+ * - Renderiza el título "Macro Policy Builder"
+ * - Renderiza el botón "Nueva Macro"
+ * - Muestra mensaje cuando no hay macros definidas
  */
 
 import React from 'react'
@@ -40,26 +40,25 @@ function renderGroups(role = 'superadmin') {
 }
 
 describe('GroupsPage — rendering', () => {
-  it('renders the Policies heading', async () => {
+  it('renders the Macro Policy Builder heading', async () => {
     renderGroups()
     await waitFor(() => {
-      expect(screen.getByText('Policies')).toBeInTheDocument()
+      expect(screen.getByText('Macro Policy Builder')).toBeInTheDocument()
     })
   })
 
-  it('renders Create Policy button', async () => {
+  it('renders Nueva Macro button', async () => {
     renderGroups()
     await waitFor(() => {
-      expect(screen.getByText(/create policy/i)).toBeInTheDocument()
+      expect(screen.getByText('Nueva Macro')).toBeInTheDocument()
     })
   })
 
-  it('renders mock group names from API', async () => {
+  it('renders empty state when no macros defined', async () => {
     renderGroups()
-    // MSW /api/groups/list retorna helpdesk_group y admin_group
+    // MSW /api/iam-nac/macros retorna [] (vacío)
     await waitFor(() => {
-      expect(screen.getByText('helpdesk_group')).toBeInTheDocument()
-      expect(screen.getByText('admin_group')).toBeInTheDocument()
+      expect(screen.getByText(/No hay Macros definidas/i)).toBeInTheDocument()
     })
   })
 })

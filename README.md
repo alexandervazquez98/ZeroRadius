@@ -18,8 +18,9 @@ ZeroRadius is fully containerized and consists of four main pillars:
 
 1. **Frontend (React + Vite + TailwindCSS)**:
    - Consumer-grade UI/UX for network administrators.
-   - Manages Users, Accounts, NAS Devices, Active Sessions, and Audit Logs.
+   - Manages Users, Accounts, NAS Devices, Active Sessions, Audit Logs, and **NAS Categories**.
    - **Real-time RADIUS Log Viewer** accessible from the header for live Access-Request monitoring.
+   - **Privilege Map** with category-based targeting for ISO 27001 compliance.
    - Communicates with the Backend via REST APIs and WebSockets.
 
 2. **Backend (FastAPI)**:
@@ -37,10 +38,11 @@ ZeroRadius is fully containerized and consists of four main pillars:
 ## 📚 Official Documentation & User Manuals
 The project relies on localized, flowchart-driven Markdown manuals to ensure network administrators can confidently provision networks.
 
-- [**01. NAS Provisioning & Huntgroups**](docs/01-nas-provisioning.md) - How to onboard hardware, segment network devices, and restrict users to specific access nodes.
-- [**02. ISO 27001 Privilege Map & RBAC**](docs/02-iso27001-privilege-map.md) - Deep dive into ZeroRadius's Identity Access Management (IAM), explaining how general authentication tokens are converted into restricted, hardware-specific group roles dynamically during login.
+- [**01. NAS Provisioning & Huntgroups**](docs/01-nas-provisioning.md) - How to onboard hardware, segment network devices, and categorize NAS devices by type/location using **NAS Categories**.
+- [**02. ISO 27001 Privilege Map & RBAC**](docs/02-iso27001-privilege-map.md) - Deep dive into ZeroRadius's Identity Access Management (IAM), explaining how general authentication tokens are converted into restricted, hardware-specific group roles dynamically during login. **Now supports category-based targeting**.
 - [**03. JIT "Break-Glass" Workflow**](docs/03-jit-break-glass.md) - Understanding Just-In-Time role elevation logic. How operators request timed root-access and how the `Expiration` attribute is injected into the AAA workflow.
 - [**04. Live RADIUS Log Viewer**](docs/04-live-log-viewer.md) - Real-time monitoring of Access-Request events (Accept/Reject) via WebSocket streaming from the FreeRADIUS container.
+- [**05. NAS Categories Management**](docs/05-nas-categories.md) - Managing NAS device categories for streamlined provisioning and bulk operations.
 
 ## 🛠 Deployment & Setup
 

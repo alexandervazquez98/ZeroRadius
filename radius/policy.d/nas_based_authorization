@@ -1,10 +1,18 @@
-# NAS-Based Authorization Policy
+# NAS-Based Authorization Policy — nas-categories update
 # ISO 27001:2022 A.8.3 — Access control based on NAS identity
 #
-# This policy checks user_nas_privilege_map to determine if the user
-# is authorized to access from this specific NAS device.
-# If a matching active mapping exists, the user's RADIUS group is overridden
-# with the NAS-specific group. If no mapping is found, access is rejected.
+# Two-step authorization:
+#
+#   Step 1 (IP-specific, unchanged):
+#     Query user_nas_privilege_map by exact NAS-IP-Address.
+#     Most specific — always wins over category.
+#
+#   Step 2 (Category fallback, NEW):
+#     If no IP match, resolve the NAS device's category via the
+#     nas_cidr_ranges VIEW (handles both /32 and CIDR ranges).
+#     Then look up the user's category-level privilege mapping.
+#
+# Reject if neither step finds a match (Zero Trust).
 #
 # Include this in your authorize {} section:
 #   authorize {
@@ -15,35 +23,61 @@
 
 nas_based_authorization {
 
-    # Only run if NAS-IP-Address is present
     if (&NAS-IP-Address) {
 
-        # Query user_nas_privilege_map for a matching active entry.
-        # %{sql:} is an xlat — it returns the value as a string but does NOT
-        # populate any control attribute automatically. We must capture the
-        # result explicitly into a temporary attribute (Tmp-String-0).
+        # ── STEP 1: Exact IP match ──────────────────────────────────────────
+        # Unchanged from original — backwards compatible with all existing rows.
+        # nas_category_id IS NULL ensures we only match IP-based entries here.
         update control {
             Tmp-String-0 := "%{sql:SELECT radius_group FROM user_nas_privilege_map \
                 WHERE username='%{User-Name}' \
                 AND nas_ip='%{NAS-IP-Address}' \
+                AND nas_category_id IS NULL \
                 AND is_active=1 \
                 LIMIT 1}"
         }
 
-        # If the query returned a non-empty group name, override SQL-Group
-        # so the standard SQL group-reply lookup uses the NAS-specific group.
         if (&control:Tmp-String-0 && "%{control:Tmp-String-0}" != "") {
+            # IP match found — use this group and fall through to SQL group-reply
             update control {
                 SQL-Group := "%{control:Tmp-String-0}"
             }
-            # Grant access — NAS-specific group applies, fall through to sql module
         }
         else {
-            # No mapping found for this user+NAS combination — reject (Zero Trust)
-            update reply {
-                Reply-Message := "Access denied: NAS not authorized for this user"
+            # ── STEP 2: Category fallback ───────────────────────────────────
+            # Resolve the category of the NAS device from the nas_cidr_ranges
+            # view, then match the user's category-level privilege mapping.
+            #
+            # nas_cidr_ranges pre-computes INET_ATON boundaries for CIDR entries,
+            # defaulting to /32 for plain IP registrations.
+            # ORDER BY prefix_len DESC ensures most-specific CIDR wins.
+            update control {
+                Tmp-String-0 := "%{sql:SELECT unpm.radius_group \
+                    FROM user_nas_privilege_map unpm \
+                    WHERE unpm.username='%{User-Name}' \
+                    AND unpm.nas_ip IS NULL \
+                    AND unpm.is_active=1 \
+                    AND unpm.nas_category_id = ( \
+                        SELECT category_id FROM nas_cidr_ranges \
+                        WHERE INET_ATON('%{NAS-IP-Address}') BETWEEN net_start AND net_end \
+                        ORDER BY prefix_len DESC LIMIT 1 \
+                    ) \
+                    LIMIT 1}"
             }
-            reject
+
+            if (&control:Tmp-String-0 && "%{control:Tmp-String-0}" != "") {
+                # Category match found — apply category-level group
+                update control {
+                    SQL-Group := "%{control:Tmp-String-0}"
+                }
+            }
+            else {
+                # No match in either step — Zero Trust reject
+                update reply {
+                    Reply-Message := "Access denied: NAS not authorized for this user"
+                }
+                reject
+            }
         }
     }
     # If NAS-IP-Address is missing, fall through silently (allow default processing)

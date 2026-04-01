@@ -69,14 +69,46 @@ export const handlers = [
     ])
   }),
 
+  http.get('/api/iam-nac/macros', () => {
+    return HttpResponse.json([])
+  }),
+
   // -------------------------------------------------------------------------
   // NAS
   // -------------------------------------------------------------------------
   http.get('/api/nas', () => {
     return HttpResponse.json([
-      { id: 1, nasname: '10.0.0.1', shortname: 'router-core', secret: '***', type: 'cisco' },
-      { id: 2, nasname: '10.0.0.2', shortname: 'switch-access', secret: '***', type: 'other' },
+      { id: 1, nasname: '10.0.0.1', shortname: 'router-core', secret: '***', type: 'cisco', category_id: 1, category_name: 'AP_CAMBIUM' },
+      { id: 2, nasname: '10.0.0.2', shortname: 'switch-access', secret: '***', type: 'other', category_id: null, category_name: null },
     ])
+  }),
+
+  http.post('/api/nas', async ({ request }) => {
+    const body = await request.json()
+    return HttpResponse.json({ id: 99, ...body }, { status: 201 })
+  }),
+
+  http.delete('/api/nas/:id', () => {
+    return HttpResponse.json({ ok: true })
+  }),
+
+  // -------------------------------------------------------------------------
+  // NAS Categories
+  // -------------------------------------------------------------------------
+  http.get('/api/nas-categories', () => {
+    return HttpResponse.json([
+      { id: 1, name: 'AP_CAMBIUM', criticality: 'critical', vendor: 'Cambium', description: 'Access Points Cambium 450i' },
+      { id: 2, name: 'SM_CAMBIUM', criticality: 'standard', vendor: 'Cambium', description: 'Subscriber Modules Cambium 450i' },
+    ])
+  }),
+
+  http.post('/api/nas-categories', async ({ request }) => {
+    const body = await request.json()
+    return HttpResponse.json({ id: 99, ...body }, { status: 201 })
+  }),
+
+  http.delete('/api/nas-categories/:id', () => {
+    return HttpResponse.json({ ok: true })
   }),
 
   // -------------------------------------------------------------------------
@@ -118,13 +150,41 @@ export const handlers = [
         id: 1,
         username: 'jperez',
         nas_ip: '10.0.0.1',
+        nas_category_id: null,
+        nas_category_name: null,
         radius_group: 'admin_group',
         privilege_level: 'level-15',
         approved_by: 'superadmin',
         review_date: '2027-01-01',
         is_active: 1,
       },
+      {
+        id: 2,
+        username: 'mgarcia',
+        nas_ip: null,
+        nas_category_id: 1,
+        nas_category_name: 'AP_CAMBIUM',
+        radius_group: 'helpdesk_group',
+        privilege_level: 'level-5',
+        approved_by: 'superadmin',
+        review_date: '2028-01-01',
+        is_active: 1,
+      },
     ])
+  }),
+
+  http.post('/api/privilege-map', async ({ request }) => {
+    const body = await request.json()
+    return HttpResponse.json({ ok: true, count: body.nas_ips ? body.nas_ips.length : 1 }, { status: 201 })
+  }),
+
+  http.post('/api/privilege-map/category', async ({ request }) => {
+    const body = await request.json()
+    return HttpResponse.json({ id: 99, ...body }, { status: 201 })
+  }),
+
+  http.delete('/api/privilege-map/:id', () => {
+    return HttpResponse.json({ ok: true })
   }),
 
   // -------------------------------------------------------------------------

@@ -8,6 +8,7 @@ A NAS represents any hardware device (Router, Switch, Wireless Controller) confi
 1. Navigate to the **NAS Devices** module in ZeroRadius.
 2. Provide the **IP Address** and the **RADIUS Secret**.
 3. *Optional but recommended:* Provide a descriptive name and hardware type to categorize it in the dashboard.
+4. *Categorization:* Assign a **NAS Category** to group devices by type (e.g., "Core Routers", "WiFi Controllers", "Branch Switches") for streamlined bulk operations and privilege mapping.
 
 ## 2. Using Huntgroups for Regional Segmentation
 In FreeRADIUS, a Huntgroup allows you to bundle several NAS devices under a single localized umbrella. With ZeroRadius, we define this dynamically using the `radgroupcheck` tables.

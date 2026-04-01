@@ -2,13 +2,14 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     Shield, Plus, Trash2, Edit2, X, AlertTriangle, Clock,
-    Server, User, CheckCircle, ChevronRight, Search,
+    Server, User, CheckCircle, ChevronRight, Search, Tag,
 } from 'lucide-react';
 import dayjs from 'dayjs';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
 import PrivilegeMapService from '../services/privilegeMapService';
 import GroupsService from '../services/groups';
+import NasCategoriesService from '../services/nasCategoriesService';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,8 @@ const vendorBadge = (vendor) => {
 
 const EMPTY_FORM = {
     username: '',
+    mapping_mode: 'ip',        // 'ip' | 'category'
+    nas_category_id: null,     // set when mapping_mode === 'category'
     nas_ips: [],
     nas_ip: '',
     nas_vendor: '',
@@ -92,6 +95,11 @@ const PrivilegeMapPage = () => {
         queryFn: GroupsService.getAllGroups,
     });
 
+    const { data: categoriesList = [] } = useQuery({
+        queryKey: ['nas-categories'],
+        queryFn: NasCategoriesService.getAll,
+    });
+
     // ── Derived state ─────────────────────────────────────────────────────────
 
     // Group all mappings by username for the left panel
@@ -137,6 +145,11 @@ const PrivilegeMapPage = () => {
         onSuccess: () => { invalidate(); closeModal(); },
     });
 
+    const createCategoryMutation = useMutation({
+        mutationFn: (data) => PrivilegeMapService.createCategory(data),
+        onSuccess: () => { invalidate(); closeModal(); },
+    });
+
     const updateMutation = useMutation({
         mutationFn: ({ id, data }) => PrivilegeMapService.update(id, data),
         onSuccess: () => { invalidate(); closeModal(); },
@@ -161,7 +174,9 @@ const PrivilegeMapPage = () => {
         setNasSearchTerm('');
         setForm({
             username: item.username,
-            nas_ip: item.nas_ip,
+            mapping_mode: item.nas_category_id ? 'category' : 'ip',
+            nas_category_id: item.nas_category_id || null,
+            nas_ip: item.nas_ip || '',
             nas_ips: [],
             nas_vendor: item.nas_vendor || '',
             radius_group: item.radius_group,
@@ -178,12 +193,31 @@ const PrivilegeMapPage = () => {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        const payload = { ...form, review_date: form.review_date || null };
         if (editItem) {
+            // Edit: unified PUT handles both IP and category rows
+            const payload = { ...form, review_date: form.review_date || null };
             delete payload.nas_ips;
+            delete payload.mapping_mode;
             updateMutation.mutate({ id: editItem.id, data: payload });
+        } else if (form.mapping_mode === 'category') {
+            // Category-based create — single entry, no IP list
+            createCategoryMutation.mutate({
+                username: form.username,
+                nas_category_id: form.nas_category_id,
+                nas_vendor: form.nas_vendor || undefined,
+                radius_group: form.radius_group,
+                privilege_level: form.privilege_level || undefined,
+                justification: form.justification || undefined,
+                approved_by: form.approved_by,
+                review_date: form.review_date || null,
+                is_active: form.is_active,
+            });
         } else {
+            // IP-based bulk create
+            const payload = { ...form, review_date: form.review_date || null };
             delete payload.nas_ip;
+            delete payload.nas_category_id;
+            delete payload.mapping_mode;
             createMutation.mutate(payload);
         }
     };
@@ -209,7 +243,7 @@ const PrivilegeMapPage = () => {
         });
     };
 
-    const isMutating = createMutation.isPending || updateMutation.isPending;
+    const isMutating = createMutation.isPending || updateMutation.isPending || createCategoryMutation.isPending;
     const isUsernameLocked = editItem !== null || (selectedUser !== null && form.username === selectedUser);
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -392,7 +426,7 @@ const PrivilegeMapPage = () => {
                                         <table className="min-w-full divide-y divide-slate-100">
                                             <thead className="bg-slate-50">
                                                 <tr>
-                                                    <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">NAS IP</th>
+                                                    <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">NAS Target</th>
                                                     <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Vendor</th>
                                                     <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">RADIUS Group</th>
                                                     <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Priv Level</th>
@@ -406,17 +440,28 @@ const PrivilegeMapPage = () => {
                                             <tbody className="divide-y divide-slate-100">
                                                 {selectedMappings.map(item => (
                                                     <tr key={item.id} className="hover:bg-slate-50/70 transition-colors group">
-                                                        <td className="px-6 py-4 whitespace-nowrap">
-                                                            <div className="flex items-center gap-2">
-                                                                <Server size={14} className="text-slate-400" />
-                                                                <span className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded">
-                                                                    {item.nas_ip}
-                                                                </span>
-                                                            </div>
-                                                            {item.nas_identifier && (
-                                                                <div className="text-[10px] text-slate-400 mt-0.5 pl-5">{item.nas_identifier}</div>
-                                                            )}
-                                                        </td>
+                                                                                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                             <div className="flex items-center gap-2">
+                                                                 {item.nas_category_id ? (
+                                                                     <>
+                                                                         <Tag size={13} className="text-violet-400 flex-shrink-0" />
+                                                                         <span className="text-xs font-bold text-violet-700 bg-violet-50 border border-violet-100 px-2 py-1 rounded">
+                                                                             {item.nas_category_name || `Category #${item.nas_category_id}`}
+                                                                         </span>
+                                                                     </>
+                                                                 ) : (
+                                                                     <>
+                                                                         <Server size={14} className="text-slate-400 flex-shrink-0" />
+                                                                         <span className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded">
+                                                                             {item.nas_ip}
+                                                                         </span>
+                                                                     </>
+                                                                 )}
+                                                             </div>
+                                                             {item.nas_identifier && (
+                                                                 <div className="text-[10px] text-slate-400 mt-0.5 pl-5">{item.nas_identifier}</div>
+                                                             )}
+                                                         </td>
                                                         <td className="px-6 py-4 whitespace-nowrap">
                                                             {item.nas_vendor ? (
                                                                 <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${vendorBadge(item.nas_vendor)}`}>
@@ -508,8 +553,9 @@ const PrivilegeMapPage = () => {
                                 {/* Left: username + NAS selection */}
                                 <div className="space-y-4">
                                     <div>
-                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Username *</label>
+                                        <label htmlFor="pm-username" className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Username *</label>
                                         <select
+                                            id="pm-username"
                                             required
                                             className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
                                             value={form.username}
@@ -525,18 +571,73 @@ const PrivilegeMapPage = () => {
 
                                     <div>
                                         <label className="flex items-center justify-between text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
-                                            <span>NAS IPs *</span>
-                                            {!editItem && (
+                                            {editItem ? (
+                                                <span>NAS Target</span>
+                                            ) : (
+                                                <>
+                                                    <span>NAS Target *</span>
+                                                    <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setForm(f => ({ ...f, mapping_mode: 'ip', nas_category_id: null }))}
+                                                            className={`px-3 py-1 rounded-md text-[10px] font-black transition-colors normal-case tracking-normal ${
+                                                                form.mapping_mode === 'ip' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                                                            }`}
+                                                        >
+                                                            Specific IPs
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setForm(f => ({ ...f, mapping_mode: 'category', nas_ips: [] }))}
+                                                            className={`px-3 py-1 rounded-md text-[10px] font-black transition-colors normal-case tracking-normal ${
+                                                                form.mapping_mode === 'category' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                                                            }`}
+                                                        >
+                                                            By Category
+                                                        </button>
+                                                    </div>
+                                                </>
+                                            )}
+                                            {!editItem && form.mapping_mode === 'ip' && (
                                                 <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{form.nas_ips.length} selected</span>
                                             )}
                                         </label>
+
                                         {editItem ? (
-                                            <input
-                                                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none text-sm font-mono bg-slate-50 text-slate-500 cursor-not-allowed"
-                                                value={form.nas_ip}
-                                                disabled
-                                            />
+                                            /* Edit mode: show current target (IP or category) as read-only */
+                                            editItem.nas_category_id ? (
+                                                <div className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-xl bg-slate-50">
+                                                    <Tag size={13} className="text-violet-400" />
+                                                    <span className="text-sm font-bold text-violet-700">
+                                                        {editItem.nas_category_name || `Category #${editItem.nas_category_id}`}
+                                                    </span>
+                                                    <span className="text-xs text-slate-400 ml-1">(category rule)</span>
+                                                </div>
+                                            ) : (
+                                                <input
+                                                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none text-sm font-mono bg-slate-50 text-slate-500 cursor-not-allowed"
+                                                    value={form.nas_ip}
+                                                    disabled
+                                                />
+                                            )
+                                        ) : form.mapping_mode === 'category' ? (
+                                            /* Category selector */
+                                            <select
+                                                id="pm-category"
+                                                required
+                                                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-violet-500 text-sm bg-white"
+                                                value={form.nas_category_id || ''}
+                                                onChange={e => setForm(f => ({ ...f, nas_category_id: e.target.value ? parseInt(e.target.value, 10) : null }))}
+                                            >
+                                                <option value="">-- Select Category --</option>
+                                                {categoriesList.map(c => (
+                                                    <option key={c.id} value={c.id}>
+                                                        {c.name} ({c.criticality})
+                                                    </option>
+                                                ))}
+                                            </select>
                                         ) : (
+                                            /* IP multi-select list */
                                             <div className="border border-slate-200 rounded-xl overflow-hidden bg-white flex flex-col h-64">
                                                 <div className="p-2 border-b border-slate-100 bg-slate-50">
                                                     <input
@@ -569,7 +670,14 @@ const PrivilegeMapPage = () => {
                                                                 />
                                                                 <div className="flex flex-col">
                                                                     <span className="text-sm font-mono font-bold text-slate-700">{n.nasname}</span>
-                                                                    <span className="text-xs text-slate-500">{n.shortname || 'Unnamed'} · {n.type}</span>
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <span className="text-xs text-slate-500">{n.shortname || 'Unnamed'} · {n.type}</span>
+                                                                        {n.category_name && (
+                                                                            <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-600">
+                                                                                {n.category_name}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
                                                             </label>
                                                         ))
@@ -594,8 +702,9 @@ const PrivilegeMapPage = () => {
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">RADIUS Group *</label>
+                                            <label htmlFor="pm-radius-group" className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">RADIUS Group *</label>
                                             <select
+                                                id="pm-radius-group"
                                                 required
                                                 className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white"
                                                 value={form.radius_group}
@@ -630,8 +739,9 @@ const PrivilegeMapPage = () => {
 
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Approved By *</label>
+                                            <label htmlFor="pm-approved-by" className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Approved By *</label>
                                             <input
+                                                id="pm-approved-by"
                                                 required
                                                 className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
                                                 value={form.approved_by}
@@ -663,9 +773,12 @@ const PrivilegeMapPage = () => {
                                 </div>
                             </div>
 
-                            {(createMutation.isError || updateMutation.isError) && (
+                            {(createMutation.isError || updateMutation.isError || createCategoryMutation.isError) && (
                                 <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-sm text-rose-700 font-semibold">
-                                    Error saving mapping. Please try again.
+                                    {createCategoryMutation.error?.response?.data?.detail ||
+                                        createMutation.error?.response?.data?.detail ||
+                                        updateMutation.error?.response?.data?.detail ||
+                                        'Error saving mapping. Please try again.'}
                                 </div>
                             )}
 
@@ -700,8 +813,11 @@ const PrivilegeMapPage = () => {
                         <div>
                             <h3 className="text-xl font-black text-slate-800">Delete Mapping?</h3>
                             <p className="text-sm text-slate-500 mt-2">
-                                Remove NAS <span className="font-mono font-bold text-slate-800">{deleteTarget.nas_ip}</span> from{' '}
-                                <span className="font-bold text-slate-800">{deleteTarget.username}</span>?
+                                Remove{' '}
+                                {deleteTarget.nas_category_id
+                                    ? <><span className="font-bold text-violet-700">{deleteTarget.nas_category_name || `Category #${deleteTarget.nas_category_id}`}</span>{' '}(category rule)</>                                        
+                                    : <span className="font-mono font-bold text-slate-800">{deleteTarget.nas_ip}</span>}{' '}
+                                from <span className="font-bold text-slate-800">{deleteTarget.username}</span>?{' '}
                                 This action cannot be undone.
                             </p>
                         </div>
