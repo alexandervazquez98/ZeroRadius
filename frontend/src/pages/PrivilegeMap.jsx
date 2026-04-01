@@ -1,37 +1,49 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Shield, Plus, Trash2, Edit2, X, AlertTriangle, Clock, Server, User, CheckCircle } from 'lucide-react';
+import {
+    Shield, Plus, Trash2, Edit2, X, AlertTriangle, Clock,
+    Server, User, CheckCircle, ChevronRight, Search,
+} from 'lucide-react';
 import dayjs from 'dayjs';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
 import PrivilegeMapService from '../services/privilegeMapService';
 import GroupsService from '../services/groups';
 
-// Review badge helper
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
 const ReviewBadge = ({ reviewDate }) => {
     if (!reviewDate) return null;
     const daysUntil = dayjs(reviewDate).diff(dayjs(), 'day');
-    if (daysUntil < 0) {
+    if (daysUntil < 0)
         return (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-100 text-rose-700 border border-rose-200">
                 <AlertTriangle size={10} /> Overdue
             </span>
         );
-    }
-    if (daysUntil <= 30) {
+    if (daysUntil <= 30)
         return (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-200">
                 <Clock size={10} /> Review Soon
             </span>
         );
-    }
     return null;
+};
+
+const vendorBadge = (vendor) => {
+    if (!vendor) return 'bg-slate-100 text-slate-500';
+    const v = vendor.toLowerCase();
+    if (v.includes('cisco'))    return 'bg-blue-100 text-blue-700';
+    if (v.includes('cambium'))  return 'bg-emerald-100 text-emerald-700';
+    if (v.includes('juniper'))  return 'bg-orange-100 text-orange-700';
+    if (v.includes('mikrotik')) return 'bg-purple-100 text-purple-700';
+    return 'bg-slate-100 text-slate-500';
 };
 
 const EMPTY_FORM = {
     username: '',
-    nas_ips: [], // Used for bulk create
-    nas_ip: '',  // Used for edit
+    nas_ips: [],
+    nas_ip: '',
     nas_vendor: '',
     radius_group: '',
     privilege_level: '',
@@ -41,30 +53,30 @@ const EMPTY_FORM = {
     is_active: true,
 };
 
+// ── Page ─────────────────────────────────────────────────────────────────────
+
 const PrivilegeMapPage = () => {
     const { user, hasRole } = useAuth();
-    const canWrite = hasRole(['superadmin', 'admin']);
+    const canWrite  = hasRole(['superadmin', 'admin']);
     const canDelete = hasRole(['superadmin']);
-
     const queryClient = useQueryClient();
-    const [showModal, setShowModal] = useState(false);
-    const [editItem, setEditItem] = useState(null);
-    const [form, setForm] = useState(EMPTY_FORM);
-    const [deleteTarget, setDeleteTarget] = useState(null);
-    const [filterUsername, setFilterUsername] = useState('');
-    const [filterNasIp, setFilterNasIp] = useState('');
+
+    // UI state
+    const [selectedUser,  setSelectedUser]  = useState(null);
+    const [userSearch,    setUserSearch]    = useState('');
+    const [showModal,     setShowModal]     = useState(false);
+    const [editItem,      setEditItem]      = useState(null);
+    const [form,          setForm]          = useState(EMPTY_FORM);
+    const [deleteTarget,  setDeleteTarget]  = useState(null);
     const [nasSearchTerm, setNasSearchTerm] = useState('');
 
-    // Fetch mappings
-    const { data: items = [], isLoading } = useQuery({
-        queryKey: ['privilege-map', filterUsername, filterNasIp],
-        queryFn: () => PrivilegeMapService.getAll({
-            username: filterUsername || undefined,
-            nas_ip: filterNasIp || undefined,
-        }),
+    // ── Data ──────────────────────────────────────────────────────────────────
+
+    const { data: allMappings = [], isLoading } = useQuery({
+        queryKey: ['privilege-map'],
+        queryFn: () => PrivilegeMapService.getAll({}),
     });
 
-    // Fetch reference data for dropdowns
     const { data: usersList = [] } = useQuery({
         queryKey: ['users'],
         queryFn: () => api.get('/users').then(r => r.data),
@@ -80,29 +92,67 @@ const PrivilegeMapPage = () => {
         queryFn: GroupsService.getAllGroups,
     });
 
+    // ── Derived state ─────────────────────────────────────────────────────────
+
+    // Group all mappings by username for the left panel
+    const userGroups = useMemo(() => {
+        const map = {};
+        allMappings.forEach(m => {
+            if (!map[m.username]) map[m.username] = { total: 0, active: 0, overdue: 0 };
+            map[m.username].total++;
+            if (m.is_active) map[m.username].active++;
+            if (m.review_date && dayjs(m.review_date).isBefore(dayjs())) map[m.username].overdue++;
+        });
+        return map;
+    }, [allMappings]);
+
+    const filteredUsers = useMemo(() =>
+        Object.keys(userGroups)
+            .filter(u => u.toLowerCase().includes(userSearch.toLowerCase()))
+            .sort(),
+        [userGroups, userSearch]
+    );
+
+    const selectedMappings = useMemo(() =>
+        selectedUser ? allMappings.filter(m => m.username === selectedUser) : [],
+        [allMappings, selectedUser]
+    );
+
+    const totalOverdue = allMappings.filter(
+        m => m.review_date && dayjs(m.review_date).isBefore(dayjs())
+    ).length;
+
+    const filteredNasList = nasList.filter(n => {
+        const term = nasSearchTerm.toLowerCase();
+        return n.nasname.toLowerCase().includes(term) ||
+            (n.shortname && n.shortname.toLowerCase().includes(term));
+    });
+
+    // ── Mutations ─────────────────────────────────────────────────────────────
+
+    const invalidate = () => queryClient.invalidateQueries({ queryKey: ['privilege-map'] });
+
     const createMutation = useMutation({
         mutationFn: PrivilegeMapService.create,
-        onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['privilege-map'] }); closeModal(); },
+        onSuccess: () => { invalidate(); closeModal(); },
     });
 
     const updateMutation = useMutation({
         mutationFn: ({ id, data }) => PrivilegeMapService.update(id, data),
-        onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['privilege-map'] }); closeModal(); },
+        onSuccess: () => { invalidate(); closeModal(); },
     });
 
     const deleteMutation = useMutation({
         mutationFn: PrivilegeMapService.remove,
-        onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['privilege-map'] }); setDeleteTarget(null); },
+        onSuccess: () => { invalidate(); setDeleteTarget(null); },
     });
 
-    const openCreate = () => {
+    // ── Modal helpers ─────────────────────────────────────────────────────────
+
+    const openCreate = (preselectedUser = null) => {
         setEditItem(null);
         setNasSearchTerm('');
-        setForm({
-            ...EMPTY_FORM,
-            nas_ips: [],
-            approved_by: user?.sub || '', // user.sub usually holds the username in JWT
-        });
+        setForm({ ...EMPTY_FORM, nas_ips: [], username: preselectedUser || '', approved_by: user?.sub || '' });
         setShowModal(true);
     };
 
@@ -111,8 +161,8 @@ const PrivilegeMapPage = () => {
         setNasSearchTerm('');
         setForm({
             username: item.username,
-            nas_ip: item.nas_ip, // Edit uses single IP
-            nas_ips: [], // Reset just in case
+            nas_ip: item.nas_ip,
+            nas_ips: [],
             nas_vendor: item.nas_vendor || '',
             radius_group: item.radius_group,
             privilege_level: item.privilege_level || '',
@@ -124,76 +174,51 @@ const PrivilegeMapPage = () => {
         setShowModal(true);
     };
 
-    const closeModal = () => {
-        setShowModal(false);
-        setEditItem(null);
-        setNasSearchTerm('');
-        setForm(EMPTY_FORM);
-    };
+    const closeModal = () => { setShowModal(false); setEditItem(null); setNasSearchTerm(''); setForm(EMPTY_FORM); };
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        const payload = {
-            ...form,
-            review_date: form.review_date || null,
-        };
+        const payload = { ...form, review_date: form.review_date || null };
         if (editItem) {
-            // Remove bulk field
             delete payload.nas_ips;
             updateMutation.mutate({ id: editItem.id, data: payload });
         } else {
-            // Remove edit field
             delete payload.nas_ip;
             createMutation.mutate(payload);
         }
     };
 
-    // Filter NAS list based on search
-    const filteredNasList = nasList.filter(n => {
-        const term = nasSearchTerm.toLowerCase();
-        return n.nasname.toLowerCase().includes(term) || (n.shortname && n.shortname.toLowerCase().includes(term));
-    });
-
     const toggleNasSelection = (ip, vendor) => {
         setForm(f => {
             const isSelected = f.nas_ips.includes(ip);
-            let newIps;
-            if (isSelected) {
-                newIps = f.nas_ips.filter(val => val !== ip);
-            } else {
-                newIps = [...f.nas_ips, ip];
-            }
-            // For multiple, vendor field might not make sense if mixed, but we set it to the last selected or Generic
+            const newIps = isSelected ? f.nas_ips.filter(v => v !== ip) : [...f.nas_ips, ip];
             return {
                 ...f,
                 nas_ips: newIps,
-                nas_vendor: newIps.length === 1 && !isSelected ? vendor : (newIps.length > 1 ? 'Multiple' : '')
+                nas_vendor: newIps.length === 1 && !isSelected ? vendor : (newIps.length > 1 ? 'Multiple' : ''),
             };
         });
     };
 
     const toggleSelectAllFiltered = () => {
         setForm(f => {
-            const allFilteredIps = filteredNasList.map(n => n.nasname);
-            const allSelected = allFilteredIps.every(ip => f.nas_ips.includes(ip));
-            
-            if (allSelected) {
-                // Deselect all filtered
-                return { ...f, nas_ips: f.nas_ips.filter(ip => !allFilteredIps.includes(ip)) };
-            } else {
-                // Select all filtered (merge avoiding duplicates)
-                const newIps = Array.from(new Set([...f.nas_ips, ...allFilteredIps]));
-                return { ...f, nas_ips: newIps, nas_vendor: 'Multiple' };
-            }
+            const allIps = filteredNasList.map(n => n.nasname);
+            const allSel = allIps.every(ip => f.nas_ips.includes(ip));
+            if (allSel) return { ...f, nas_ips: f.nas_ips.filter(ip => !allIps.includes(ip)) };
+            return { ...f, nas_ips: Array.from(new Set([...f.nas_ips, ...allIps])), nas_vendor: 'Multiple' };
         });
     };
 
     const isMutating = createMutation.isPending || updateMutation.isPending;
+    const isUsernameLocked = editItem !== null || (selectedUser !== null && form.username === selectedUser);
+
+    // ── Render ────────────────────────────────────────────────────────────────
 
     return (
-        <div className="space-y-6 max-w-7xl mx-auto pb-10 px-4">
+        <div className="space-y-6 pb-10 px-4">
+
             {/* Header */}
-            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 py-4">
+            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 py-4">
                 <div>
                     <h2 className="text-3xl font-extrabold text-slate-800 tracking-tight flex items-center gap-3">
                         <Shield className="text-indigo-600" size={32} />
@@ -203,31 +228,30 @@ const PrivilegeMapPage = () => {
                         User–NAS Authorization Matrix
                     </p>
                 </div>
-
-                <div className="flex flex-col sm:flex-row gap-3 items-center">
-                    {/* Filters */}
-                    <div className="relative">
-                        <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-                        <input
-                            className="pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm shadow-sm"
-                            placeholder="Filter username..."
-                            value={filterUsername}
-                            onChange={e => setFilterUsername(e.target.value)}
-                        />
+                <div className="flex items-center gap-3">
+                    {/* Global stats */}
+                    <div className="flex items-center gap-4 px-5 py-2.5 bg-white border border-slate-200 rounded-2xl shadow-sm text-xs font-black text-slate-500 uppercase tracking-widest">
+                        <span className="flex items-center gap-1.5">
+                            <User size={13} className="text-indigo-400" />
+                            {Object.keys(userGroups).length} Users
+                        </span>
+                        <span className="w-px h-4 bg-slate-200" />
+                        <span className="flex items-center gap-1.5">
+                            <Server size={13} className="text-indigo-400" />
+                            {allMappings.length} Mappings
+                        </span>
+                        {totalOverdue > 0 && (
+                            <>
+                                <span className="w-px h-4 bg-slate-200" />
+                                <span className="flex items-center gap-1.5 text-rose-600">
+                                    <AlertTriangle size={13} /> {totalOverdue} Overdue
+                                </span>
+                            </>
+                        )}
                     </div>
-                    <div className="relative">
-                        <Server className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-                        <input
-                            className="pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm shadow-sm"
-                            placeholder="Filter NAS IP..."
-                            value={filterNasIp}
-                            onChange={e => setFilterNasIp(e.target.value)}
-                        />
-                    </div>
-
                     {canWrite && (
                         <button
-                            onClick={openCreate}
+                            onClick={() => openCreate(selectedUser)}
                             className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-black text-xs hover:bg-indigo-700 transition-colors shadow-sm"
                         >
                             <Plus size={16} /> Add Mapping
@@ -236,120 +260,244 @@ const PrivilegeMapPage = () => {
                 </div>
             </div>
 
-            {/* Table */}
-            <div className="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden ring-1 ring-slate-100">
-                <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-slate-200">
-                        <thead className="bg-slate-50">
-                            <tr>
-                                <th className="px-6 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b">Username</th>
-                                <th className="px-6 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b">NAS IP</th>
-                                <th className="px-6 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b">Vendor</th>
-                                <th className="px-6 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b">RADIUS Group</th>
-                                <th className="px-6 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b">Priv Level</th>
-                                <th className="px-6 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b">Review Date</th>
-                                <th className="px-6 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b">Status</th>
-                                {(canWrite || canDelete) && (
-                                    <th className="px-6 py-5 text-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b w-28">Actions</th>
-                                )}
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 bg-white">
-                            {isLoading ? (
-                                <tr><td colSpan="8" className="px-6 py-24 text-center">
-                                    <div className="flex flex-col items-center gap-4">
-                                        <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                                        <span className="font-bold text-slate-500">Loading mappings...</span>
-                                    </div>
-                                </td></tr>
-                            ) : items.length === 0 ? (
-                                <tr><td colSpan="8" className="px-6 py-24 text-center">
-                                    <div className="flex flex-col items-center gap-4 opacity-40">
-                                        <div className="p-5 bg-slate-100 rounded-3xl"><Shield size={64} /></div>
-                                        <span className="text-xl font-bold">No privilege mappings defined</span>
-                                    </div>
-                                </td></tr>
-                            ) : (
-                                items.map(item => (
-                                    <tr key={item.id} className="hover:bg-slate-50/70 transition-colors group">
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className="text-sm font-black text-slate-800">{item.username}</span>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className="text-xs font-mono text-slate-700 bg-slate-100 px-2 py-1 rounded">{item.nas_ip}</span>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                                            {item.nas_vendor || <span className="text-slate-300 italic">—</span>}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className="text-xs font-bold bg-indigo-50 text-indigo-700 px-2 py-1 rounded-full">{item.radius_group}</span>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                                            {item.privilege_level || <span className="text-slate-300 italic">—</span>}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="flex flex-col gap-1">
-                                                <span className="text-sm text-slate-600">
-                                                    {item.review_date ? dayjs(item.review_date).format('DD MMM YYYY') : <span className="text-slate-300 italic">—</span>}
-                                                </span>
-                                                <ReviewBadge reviewDate={item.review_date} />
+            {/* Split pane */}
+            <div className="flex gap-6 items-start">
+
+                {/* ── LEFT: User list ── */}
+                <div className="w-72 flex-shrink-0 bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden sticky top-6">
+                    {/* Search */}
+                    <div className="p-3 border-b border-slate-100 bg-slate-50">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                            <input
+                                className="w-full pl-8 pr-3 py-2 text-sm bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
+                                placeholder="Search users..."
+                                value={userSearch}
+                                onChange={e => setUserSearch(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    {/* List */}
+                    <div className="overflow-y-auto max-h-[calc(100vh-260px)]">
+                        {isLoading ? (
+                            <div className="flex items-center justify-center py-12">
+                                <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                            </div>
+                        ) : filteredUsers.length === 0 ? (
+                            <div className="text-center py-10 text-slate-400">
+                                <User size={32} className="mx-auto mb-2 opacity-40" />
+                                <p className="text-xs font-bold">No users with mappings</p>
+                            </div>
+                        ) : (
+                            filteredUsers.map(username => {
+                                const stats = userGroups[username];
+                                const isSelected = selectedUser === username;
+                                return (
+                                    <button
+                                        key={username}
+                                        onClick={() => setSelectedUser(username)}
+                                        className={`w-full flex items-center gap-3 px-4 py-3.5 text-left transition-all border-b border-slate-100 last:border-0 group ${
+                                            isSelected
+                                                ? 'bg-indigo-600 text-white'
+                                                : 'hover:bg-slate-50 text-slate-700'
+                                        }`}
+                                    >
+                                        {/* Avatar */}
+                                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0 ${
+                                            isSelected ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-700'
+                                        }`}>
+                                            {username[0].toUpperCase()}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className={`text-sm font-black truncate ${isSelected ? 'text-white' : 'text-slate-800'}`}>
+                                                {username}
                                             </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            {item.is_active ? (
-                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-50 text-emerald-700 border border-emerald-100">
-                                                    <CheckCircle size={10} /> Active
-                                                </span>
-                                            ) : (
-                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-slate-100 text-slate-500 border border-slate-200">
-                                                    Inactive
+                                            <div className={`text-[10px] mt-0.5 font-bold ${isSelected ? 'text-white/70' : 'text-slate-400'}`}>
+                                                {stats.total} NAS · {stats.active} active
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                                            {stats.overdue > 0 && (
+                                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-black ${
+                                                    isSelected ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-700'
+                                                }`}>
+                                                    ⚠ {stats.overdue}
                                                 </span>
                                             )}
-                                        </td>
-                                        {(canWrite || canDelete) && (
-                                            <td className="px-6 py-4 text-center">
-                                                <div className="flex items-center justify-center gap-2">
-                                                    {canWrite && (
-                                                        <button
-                                                            onClick={() => openEdit(item)}
-                                                            className="p-2 text-slate-400 hover:text-indigo-600 bg-slate-100 hover:bg-indigo-50 rounded-lg transition-colors"
-                                                            title="Edit"
-                                                        >
-                                                            <Edit2 size={15} />
-                                                        </button>
-                                                    )}
-                                                    {canDelete && (
-                                                        <button
-                                                            onClick={() => setDeleteTarget(item)}
-                                                            className="p-2 text-slate-400 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 rounded-lg transition-colors"
-                                                            title="Delete"
-                                                        >
-                                                            <Trash2 size={15} />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </td>
-                                        )}
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-                <div className="px-10 py-4 bg-slate-50 border-t border-slate-100">
-                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">
-                        Total mappings: {items.length}
+                                            <ChevronRight size={14} className={isSelected ? 'text-white/60' : 'text-slate-300 group-hover:text-slate-500'} />
+                                        </div>
+                                    </button>
+                                );
+                            })
+                        )}
                     </div>
+                </div>
+
+                {/* ── RIGHT: Detail panel ── */}
+                <div className="flex-1 min-w-0">
+                    {!selectedUser ? (
+                        <div className="bg-white rounded-2xl shadow-lg border border-slate-200 flex flex-col items-center justify-center py-28 gap-4 opacity-40">
+                            <div className="p-6 bg-slate-100 rounded-3xl">
+                                <Shield size={56} className="text-slate-400" />
+                            </div>
+                            <div className="text-center">
+                                <p className="text-lg font-black text-slate-600">Select a user</p>
+                                <p className="text-sm text-slate-400 mt-1">Choose a user from the left panel to view their NAS mappings</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {/* User header bar */}
+                            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-5 flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-12 h-12 rounded-2xl bg-indigo-100 flex items-center justify-center text-xl font-black text-indigo-700">
+                                        {selectedUser[0].toUpperCase()}
+                                    </div>
+                                    <div>
+                                        <h3 className="text-xl font-black text-slate-800">{selectedUser}</h3>
+                                        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-0.5">
+                                            {selectedMappings.length} NAS mapping{selectedMappings.length !== 1 ? 's' : ''} &nbsp;·&nbsp;
+                                            {selectedMappings.filter(m => m.is_active).length} active
+                                        </p>
+                                    </div>
+                                </div>
+                                {canWrite && (
+                                    <button
+                                        onClick={() => openCreate(selectedUser)}
+                                        className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl font-black text-xs hover:bg-indigo-700 transition-colors shadow-sm"
+                                    >
+                                        <Plus size={15} /> Add NAS
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* NAS mappings table */}
+                            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
+                                {selectedMappings.length === 0 ? (
+                                    <div className="text-center py-16 opacity-50">
+                                        <Server size={40} className="mx-auto mb-3 text-slate-400" />
+                                        <p className="font-black text-slate-500">No NAS mappings for this user</p>
+                                        {canWrite && (
+                                            <button
+                                                onClick={() => openCreate(selectedUser)}
+                                                className="mt-3 text-sm text-indigo-600 font-bold hover:underline"
+                                            >
+                                                + Add first mapping
+                                            </button>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        <table className="min-w-full divide-y divide-slate-100">
+                                            <thead className="bg-slate-50">
+                                                <tr>
+                                                    <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">NAS IP</th>
+                                                    <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Vendor</th>
+                                                    <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">RADIUS Group</th>
+                                                    <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Priv Level</th>
+                                                    <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Review</th>
+                                                    <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Status</th>
+                                                    {(canWrite || canDelete) && (
+                                                        <th className="px-6 py-4 text-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] w-24">Actions</th>
+                                                    )}
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {selectedMappings.map(item => (
+                                                    <tr key={item.id} className="hover:bg-slate-50/70 transition-colors group">
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            <div className="flex items-center gap-2">
+                                                                <Server size={14} className="text-slate-400" />
+                                                                <span className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded">
+                                                                    {item.nas_ip}
+                                                                </span>
+                                                            </div>
+                                                            {item.nas_identifier && (
+                                                                <div className="text-[10px] text-slate-400 mt-0.5 pl-5">{item.nas_identifier}</div>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            {item.nas_vendor ? (
+                                                                <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${vendorBadge(item.nas_vendor)}`}>
+                                                                    {item.nas_vendor}
+                                                                </span>
+                                                            ) : <span className="text-slate-300 italic text-sm">—</span>}
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            <span className="text-xs font-bold bg-indigo-50 text-indigo-700 px-2 py-1 rounded-full">
+                                                                {item.radius_group}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-slate-600">
+                                                            {item.privilege_level || <span className="text-slate-300 italic">—</span>}
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            <div className="flex flex-col gap-1">
+                                                                <span className="text-sm text-slate-600">
+                                                                    {item.review_date
+                                                                        ? dayjs(item.review_date).format('DD MMM YYYY')
+                                                                        : <span className="text-slate-300 italic">—</span>}
+                                                                </span>
+                                                                <ReviewBadge reviewDate={item.review_date} />
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            {item.is_active ? (
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                                                    <CheckCircle size={10} /> Active
+                                                                </span>
+                                                            ) : (
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-slate-100 text-slate-500 border border-slate-200">
+                                                                    Inactive
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        {(canWrite || canDelete) && (
+                                                            <td className="px-6 py-4 text-center">
+                                                                <div className="flex items-center justify-center gap-2">
+                                                                    {canWrite && (
+                                                                        <button
+                                                                            onClick={() => openEdit(item)}
+                                                                            className="p-2 text-slate-400 hover:text-indigo-600 bg-slate-100 hover:bg-indigo-50 rounded-lg transition-colors"
+                                                                            title="Edit"
+                                                                        >
+                                                                            <Edit2 size={14} />
+                                                                        </button>
+                                                                    )}
+                                                                    {canDelete && (
+                                                                        <button
+                                                                            onClick={() => setDeleteTarget(item)}
+                                                                            className="p-2 text-slate-400 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 rounded-lg transition-colors"
+                                                                            title="Delete"
+                                                                        >
+                                                                            <Trash2 size={14} />
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                        )}
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
-            {/* Create/Edit Modal */}
+            {/* ── Modal: Create / Edit ── */}
             {showModal && (
                 <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
                     <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden">
                         <div className="p-8 bg-slate-50 border-b flex justify-between items-center">
                             <h3 className="text-xl font-black text-slate-800">
-                                {editItem ? 'Edit Mapping' : 'New Privilege Mapping'}
+                                {editItem
+                                    ? 'Edit NAS Mapping'
+                                    : `Add Mapping${form.username ? ` for ${form.username}` : ''}`}
                             </h3>
                             <button onClick={closeModal} className="p-3 hover:bg-slate-200 rounded-full transition-colors text-slate-500">
                                 <X size={20} />
@@ -357,22 +505,20 @@ const PrivilegeMapPage = () => {
                         </div>
                         <form onSubmit={handleSubmit} className="p-8 space-y-5 max-h-[70vh] overflow-y-auto">
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                {/* Left Column: Username and NAS Selection */}
+                                {/* Left: username + NAS selection */}
                                 <div className="space-y-4">
                                     <div>
                                         <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Username *</label>
                                         <select
                                             required
-                                            className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white"
+                                            className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
                                             value={form.username}
                                             onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
-                                            disabled={editItem !== null} 
+                                            disabled={isUsernameLocked}
                                         >
                                             <option value="">-- Select User --</option>
                                             {usersList.map(u => (
-                                                <option key={u.id || u.username} value={u.username}>
-                                                    {u.username}
-                                                </option>
+                                                <option key={u.id || u.username} value={u.username}>{u.username}</option>
                                             ))}
                                         </select>
                                     </div>
@@ -384,16 +530,13 @@ const PrivilegeMapPage = () => {
                                                 <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{form.nas_ips.length} selected</span>
                                             )}
                                         </label>
-
                                         {editItem ? (
-                                            // Edit mode: single NAS IP readonly
                                             <input
                                                 className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none text-sm font-mono bg-slate-50 text-slate-500 cursor-not-allowed"
                                                 value={form.nas_ip}
                                                 disabled
                                             />
                                         ) : (
-                                            // Create mode: Multi-select NAS with search
                                             <div className="border border-slate-200 rounded-xl overflow-hidden bg-white flex flex-col h-64">
                                                 <div className="p-2 border-b border-slate-100 bg-slate-50">
                                                     <input
@@ -407,12 +550,8 @@ const PrivilegeMapPage = () => {
                                                 {filteredNasList.length > 0 && (
                                                     <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
                                                         <span className="text-xs text-slate-500 font-medium">Select devices:</span>
-                                                        <button 
-                                                            type="button" 
-                                                            onClick={toggleSelectAllFiltered}
-                                                            className="text-xs font-bold text-indigo-600 hover:text-indigo-700"
-                                                        >
-                                                            Toggle All Filtered
+                                                        <button type="button" onClick={toggleSelectAllFiltered} className="text-xs font-bold text-indigo-600 hover:text-indigo-700">
+                                                            Toggle All
                                                         </button>
                                                     </div>
                                                 )}
@@ -430,7 +569,7 @@ const PrivilegeMapPage = () => {
                                                                 />
                                                                 <div className="flex flex-col">
                                                                     <span className="text-sm font-mono font-bold text-slate-700">{n.nasname}</span>
-                                                                    <span className="text-xs text-slate-500">{n.shortname || 'Unnamed'} • {n.type}</span>
+                                                                    <span className="text-xs text-slate-500">{n.shortname || 'Unnamed'} · {n.type}</span>
                                                                 </div>
                                                             </label>
                                                         ))
@@ -441,7 +580,7 @@ const PrivilegeMapPage = () => {
                                     </div>
                                 </div>
 
-                                {/* Right Column: Details */}
+                                {/* Right: details */}
                                 <div className="space-y-4">
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
@@ -451,7 +590,7 @@ const PrivilegeMapPage = () => {
                                                 className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
                                                 value={form.nas_vendor}
                                                 disabled
-                                                placeholder={editItem ? "" : "Auto-filled"}
+                                                placeholder={editItem ? '' : 'Auto-filled'}
                                             />
                                         </div>
                                         <div>
@@ -463,9 +602,7 @@ const PrivilegeMapPage = () => {
                                                 onChange={e => setForm(f => ({ ...f, radius_group: e.target.value }))}
                                             >
                                                 <option value="">-- Select Group --</option>
-                                                {groupsList.map(g => (
-                                                    <option key={g} value={g}>{g}</option>
-                                                ))}
+                                                {groupsList.map(g => <option key={g} value={g}>{g}</option>)}
                                             </select>
                                         </div>
                                     </div>
@@ -477,7 +614,7 @@ const PrivilegeMapPage = () => {
                                                 className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
                                                 value={form.privilege_level}
                                                 onChange={e => setForm(f => ({ ...f, privilege_level: e.target.value }))}
-                                                placeholder="e.g. level-1"
+                                                placeholder="e.g. 15"
                                             />
                                         </div>
                                         <div>
@@ -553,7 +690,7 @@ const PrivilegeMapPage = () => {
                 </div>
             )}
 
-            {/* Delete Confirmation */}
+            {/* ── Delete confirmation ── */}
             {deleteTarget && (
                 <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
                     <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-8 text-center space-y-6">
@@ -563,7 +700,8 @@ const PrivilegeMapPage = () => {
                         <div>
                             <h3 className="text-xl font-black text-slate-800">Delete Mapping?</h3>
                             <p className="text-sm text-slate-500 mt-2">
-                                Remove privilege mapping for <span className="font-bold text-slate-800">{deleteTarget.username}</span> on NAS <span className="font-mono font-bold text-slate-800">{deleteTarget.nas_ip}</span>?
+                                Remove NAS <span className="font-mono font-bold text-slate-800">{deleteTarget.nas_ip}</span> from{' '}
+                                <span className="font-bold text-slate-800">{deleteTarget.username}</span>?
                                 This action cannot be undone.
                             </p>
                         </div>
