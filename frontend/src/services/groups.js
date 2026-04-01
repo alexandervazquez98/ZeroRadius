@@ -32,6 +32,54 @@ const GroupsService = {
     getGroupMembers: async (groupname) => {
         const response = await api.get(`/groups/members/${groupname}`);
         return response.data;
+    },
+
+    // Get group by name (replies + checks)
+    getGroupByName: async (groupname) => {
+        const response = await api.get(`/groups/by-name/${groupname}`);
+        return response.data;
+    },
+
+    // Rename a group
+    renameGroup: async (oldGroupname, newGroupname) => {
+        const response = await api.put(`/groups/rename?old_groupname=${oldGroupname}&new_groupname=${newGroupname}`);
+        return response.data;
+    },
+
+    // Update group reply attribute
+    updateGroupReply: async (id, data) => {
+        const response = await api.put(`/groups/reply/${id}`, data);
+        return response.data;
+    },
+
+    // Update group check attribute
+    updateGroupCheck: async (id, data) => {
+        const response = await api.put(`/groups/check/${id}`, data);
+        return response.data;
+    },
+
+    // Delete group reply attribute
+    deleteGroupReply: async (id) => {
+        const response = await api.delete(`/groups/reply/${id}`);
+        return response.data;
+    },
+
+    // Delete group check attribute
+    deleteGroupCheck: async (id) => {
+        const response = await api.delete(`/groups/check/${id}`);
+        return response.data;
+    },
+
+    // Create group reply attribute
+    createGroupReply: async (data) => {
+        const response = await api.post('/groups/reply', data);
+        return response.data;
+    },
+
+    // Create group check attribute
+    createGroupCheck: async (data) => {
+        const response = await api.post('/groups/check', data);
+        return response.data;
     }
 };
 

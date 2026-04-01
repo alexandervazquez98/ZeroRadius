@@ -377,3 +377,101 @@ async def get_group_members(
         select(RadUserGroup).where(RadUserGroup.groupname == groupname)
     )
     return result.scalars().all()
+
+
+# --- Group Management: Rename and Get by Name ---
+@router.get("/by-name/{groupname}", response_model=None)
+async def get_group_by_name(
+    groupname: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = Depends(get_current_active_user),
+):
+    """Get all reply and check attributes for a specific group."""
+    reply_result = await db.execute(
+        select(RadGroupReply).where(RadGroupReply.groupname == groupname)
+    )
+    check_result = await db.execute(
+        select(RadGroupCheck).where(RadGroupCheck.groupname == groupname)
+    )
+
+    replies = reply_result.scalars().all()
+    checks = check_result.scalars().all()
+
+    if not replies and not checks:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    return {
+        "groupname": groupname,
+        "replies": [
+            {"id": r.id, "attribute": r.attribute, "op": r.op, "value": r.value}
+            for r in replies
+        ],
+        "checks": [
+            {"id": c.id, "attribute": c.attribute, "op": c.op, "value": c.value}
+            for c in checks
+        ],
+    }
+
+
+@router.put("/rename", response_model=None)
+async def rename_group(
+    old_groupname: str,
+    new_groupname: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
+):
+    """Rename a group - updates all references in reply, check, and usergroup tables."""
+    if not new_groupname or not old_groupname:
+        raise HTTPException(status_code=400, detail="Group names required")
+
+    # Check if old group exists
+    reply_result = await db.execute(
+        select(RadGroupReply).where(RadGroupReply.groupname == old_groupname)
+    )
+    check_result = await db.execute(
+        select(RadGroupCheck).where(RadGroupCheck.groupname == old_groupname)
+    )
+    user_result = await db.execute(
+        select(RadUserGroup).where(RadUserGroup.groupname == old_groupname)
+    )
+
+    if not (
+        reply_result.scalars().first()
+        or check_result.scalars().first()
+        or user_result.scalars().first()
+    ):
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    # Update all references
+    await db.execute(
+        RadGroupReply.__table__.update()
+        .where(RadGroupReply.groupname == old_groupname)
+        .values(groupname=new_groupname)
+    )
+    await db.execute(
+        RadGroupCheck.__table__.update()
+        .where(RadGroupCheck.groupname == old_groupname)
+        .values(groupname=new_groupname)
+    )
+    await db.execute(
+        RadUserGroup.__table__.update()
+        .where(RadUserGroup.groupname == old_groupname)
+        .values(groupname=new_groupname)
+    )
+
+    await db.commit()
+    await log_audit(
+        db,
+        current_user.username,
+        "RENAME",
+        "group",
+        old_groupname,
+        old_value={"old_name": old_groupname},
+        new_value={"new_name": new_groupname},
+        event_code=EventCode.ADMIN_006,
+    )
+
+    return {
+        "ok": True,
+        "message": f"Group renamed from {old_groupname} to {new_groupname}",
+    }
