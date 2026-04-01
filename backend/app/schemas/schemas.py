@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from typing import Optional, List, Any
 from datetime import datetime, date
 
@@ -104,10 +104,12 @@ class NasBase(BaseModel):
     secret: str = "secret"
     description: Optional[str] = None
     zone_id: Optional[int] = None
+    category_id: Optional[int] = None
 
 
 class NasOut(NasBase):
     id: int
+    category_name: Optional[str] = None  # populated by router from relationship
 
     class Config:
         from_attributes = True
@@ -211,6 +213,7 @@ class NasCreate(BaseModel):
     secret: str = "secret"
     description: Optional[str] = None
     zone_id: Optional[int] = None
+    category_id: Optional[int] = None
 
     @field_validator("secret")
     @classmethod
@@ -245,10 +248,37 @@ class NTPStatusResponse(BaseModel):
     alert: bool
 
 
+# nas-categories: NasCategory schemas
+class NasCategoryBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    criticality: str = "standard"  # critical | standard | restricted
+    vendor: Optional[str] = None
+
+
+class NasCategoryCreate(NasCategoryBase):
+    @field_validator("criticality")
+    @classmethod
+    def validate_criticality(cls, v: str) -> str:
+        valid = {"critical", "standard", "restricted"}
+        if v not in valid:
+            raise ValueError(f"criticality must be one of {valid}")
+        return v
+
+
+class NasCategoryOut(NasCategoryBase):
+    id: int
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
 # T23 — UserNasPrivilegeMap schemas
 class UserNasPrivilegeMapCreate(BaseModel):
     username: str
-    nas_ip: str
+    nas_ip: Optional[str] = None           # IP-based targeting
+    nas_category_id: Optional[int] = None  # Category-based targeting
     nas_identifier: Optional[str] = None
     nas_vendor: Optional[str] = None
     radius_group: str
@@ -258,8 +288,20 @@ class UserNasPrivilegeMapCreate(BaseModel):
     review_date: Optional[date] = None
     is_active: int = 1
 
+    @model_validator(mode="after")
+    def require_nas_target(self) -> "UserNasPrivilegeMapCreate":
+        """Exactly one of nas_ip or nas_category_id must be provided."""
+        has_ip = self.nas_ip is not None and self.nas_ip.strip() != ""
+        has_cat = self.nas_category_id is not None
+        if not has_ip and not has_cat:
+            raise ValueError("Either nas_ip or nas_category_id must be provided")
+        if has_ip and has_cat:
+            raise ValueError("Provide either nas_ip or nas_category_id, not both")
+        return self
+
 
 class UserNasPrivilegeMapBulkCreate(BaseModel):
+    """Bulk IP-based creation. For category-based entries use UserNasPrivilegeMapCreate."""
     username: str
     nas_ips: List[str]
     nas_identifier: Optional[str] = None
@@ -272,8 +314,20 @@ class UserNasPrivilegeMapBulkCreate(BaseModel):
     is_active: int = 1
 
 
-class UserNasPrivilegeMapOut(UserNasPrivilegeMapCreate):
+class UserNasPrivilegeMapOut(BaseModel):
     id: int
+    username: str
+    nas_ip: Optional[str] = None
+    nas_category_id: Optional[int] = None
+    nas_category_name: Optional[str] = None  # resolved from relationship in router
+    nas_identifier: Optional[str] = None
+    nas_vendor: Optional[str] = None
+    radius_group: str
+    privilege_level: Optional[str] = None
+    justification: Optional[str] = None
+    approved_by: Optional[str] = None
+    review_date: Optional[date] = None
+    is_active: int = 1
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     days_until_review: Optional[int] = None

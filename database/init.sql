@@ -1,5 +1,5 @@
 -- FreeRADIUS schema with ISO 27001:2022 compliance enhancements
--- Updated: 2026-03-15
+-- Updated: 2026-04-01 (nas-categories feature)
 
 CREATE TABLE IF NOT EXISTS radcheck (
   id int(11) unsigned NOT NULL auto_increment,
@@ -59,9 +59,11 @@ CREATE TABLE IF NOT EXISTS nas (
   community varchar(50),
   description varchar(200) DEFAULT 'RADIUS Client',
   zone_id int(11) NULL DEFAULT NULL,
+  category_id int(11) NULL DEFAULT NULL,
   PRIMARY KEY (id),
   KEY nasname (nasname),
-  KEY fk_nas_zone (zone_id)
+  KEY fk_nas_zone (zone_id),
+  KEY fk_nas_category (category_id)
 );
 
 -- T08: radacct enhanced with nasidentifier, privilege_level, vendor_reply_attrs (ISO 27001 A.8.15)
@@ -182,10 +184,13 @@ CREATE TABLE IF NOT EXISTS radius_reply_audit (
 ) ENGINE=InnoDB;
 
 -- T06: user_nas_privilege_map — NAS-based access control (ISO 27001 A.5.15, A.8.2)
+-- nas-categories: nas_ip extended to VARCHAR(50) and made nullable;
+--   nas_category_id added for category-based entries (either nas_ip OR nas_category_id required).
 CREATE TABLE IF NOT EXISTS user_nas_privilege_map (
     id              INT AUTO_INCREMENT PRIMARY KEY,
     username        VARCHAR(64)  NOT NULL,
-    nas_ip          VARCHAR(15)  NOT NULL,
+    nas_ip          VARCHAR(50)  NULL,                  -- NULL when using category-based mapping
+    nas_category_id INT          NULL DEFAULT NULL,     -- NULL when using IP-based mapping
     nas_identifier  VARCHAR(64)  NULL,
     nas_vendor      VARCHAR(64)  NULL,
     radius_group    VARCHAR(64)  NOT NULL,
@@ -196,10 +201,25 @@ CREATE TABLE IF NOT EXISTS user_nas_privilege_map (
     is_active       TINYINT(1)   NOT NULL DEFAULT 1,
     created_at      DATETIME(6)  DEFAULT CURRENT_TIMESTAMP(6),
     updated_at      DATETIME(6)  DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-    UNIQUE KEY uq_user_nas (username, nas_ip),
-    INDEX idx_unpm_nas_ip (nas_ip),
-    INDEX idx_unpm_is_active (is_active),
+    -- Separate unique keys per targeting mode
+    UNIQUE KEY uq_user_nas_ip  (username, nas_ip),
+    UNIQUE KEY uq_user_nas_cat (username, nas_category_id),
+    INDEX idx_unpm_nas_ip     (nas_ip),
+    INDEX idx_unpm_category   (nas_category_id),
+    INDEX idx_unpm_is_active  (is_active),
     INDEX idx_unpm_review_date (review_date)
+) ENGINE=InnoDB;
+
+-- T09: nas_categories — structured device categorization (nas-categories feature)
+CREATE TABLE IF NOT EXISTS nas_categories (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    name        VARCHAR(64)  NOT NULL UNIQUE,
+    description VARCHAR(200) NULL,
+    criticality ENUM('critical','standard','restricted') NOT NULL DEFAULT 'standard',
+    vendor      VARCHAR(64)  NULL,
+    created_at  DATETIME(6)  DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX idx_nc_name (name),
+    INDEX idx_nc_criticality (criticality)
 ) ENGINE=InnoDB;
 
 -- IAM & NAC RBAC tables
@@ -239,3 +259,34 @@ CREATE TABLE IF NOT EXISTS role_zone_policies (
 
 -- Add FK for nas.zone_id after hardware_zones is created
 ALTER TABLE nas ADD CONSTRAINT fk_nas_zone FOREIGN KEY (zone_id) REFERENCES hardware_zones(id) ON DELETE SET NULL;
+
+-- Add FK for nas.category_id to nas_categories
+ALTER TABLE nas ADD CONSTRAINT fk_nas_category FOREIGN KEY (category_id) REFERENCES nas_categories(id) ON DELETE SET NULL;
+
+-- Add FK for user_nas_privilege_map.nas_category_id to nas_categories
+ALTER TABLE user_nas_privilege_map ADD CONSTRAINT fk_unpm_category FOREIGN KEY (nas_category_id) REFERENCES nas_categories(id) ON DELETE SET NULL;
+
+-- nas_cidr_ranges VIEW: pre-computes network range boundaries for CIDR-aware policy lookup.
+-- Used by the FreeRADIUS nas_based_authorization policy (Step 2: category fallback).
+-- LOCATE check handles plain IPs (no slash) by defaulting prefix_len to 32.
+CREATE OR REPLACE VIEW nas_cidr_ranges AS
+SELECT
+    n.id,
+    n.nasname,
+    n.category_id,
+    nc.name        AS category_name,
+    nc.criticality AS category_criticality,
+    INET_ATON(SUBSTRING_INDEX(n.nasname, '/', 1)) AS net_start,
+    INET_ATON(SUBSTRING_INDEX(n.nasname, '/', 1))
+        + POW(2, 32 - CAST(
+            CASE WHEN LOCATE('/', n.nasname) > 0
+                THEN SUBSTRING_INDEX(n.nasname, '/', -1)
+                ELSE '32'
+            END AS UNSIGNED)) - 1              AS net_end,
+    CAST(
+        CASE WHEN LOCATE('/', n.nasname) > 0
+            THEN SUBSTRING_INDEX(n.nasname, '/', -1)
+            ELSE '32'
+        END AS UNSIGNED)                       AS prefix_len
+FROM nas n
+JOIN nas_categories nc ON n.category_id = nc.id;

@@ -91,6 +91,11 @@ class Nas(Base):
         Integer, ForeignKey("hardware_zones.id", ondelete="SET NULL"), nullable=True
     )
     zone: Mapped[Optional["HardwareZone"]] = relationship("HardwareZone", back_populates="nases")
+    # nas-categories feature: structured device classification
+    category_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("nas_categories.id", ondelete="SET NULL"), nullable=True
+    )
+    category: Mapped[Optional["NasCategory"]] = relationship("NasCategory", back_populates="nases")
 
 
 class RadAcct(Base):
@@ -243,7 +248,12 @@ class UserNasPrivilegeMap(Base):
     __tablename__ = "user_nas_privilege_map"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(64), nullable=False)
-    nas_ip: Mapped[str] = mapped_column(String(15), nullable=False)
+    # nas-categories: nas_ip is nullable when using category-based targeting
+    nas_ip: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    nas_category_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("nas_categories.id", ondelete="SET NULL"), nullable=True
+    )
+    category: Mapped[Optional["NasCategory"]] = relationship("NasCategory", foreign_keys=[nas_category_id])
     nas_identifier: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     nas_vendor: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     radius_group: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -261,7 +271,10 @@ class UserNasPrivilegeMap(Base):
         DateTime(timezone=False), server_default=func.now(), nullable=True
     )
 
-    __table_args__ = (UniqueConstraint("username", "nas_ip", name="uq_user_nas"),)
+    __table_args__ = (
+        UniqueConstraint("username", "nas_ip", name="uq_user_nas_ip"),
+        UniqueConstraint("username", "nas_category_id", name="uq_user_nas_cat"),
+    )
 
 
 # --- IAM & NAC RBAC Models ---
@@ -302,3 +315,25 @@ class RoleZonePolicy(Base):
     policy: Mapped["PolicyMacro"] = relationship("PolicyMacro")
     
     __table_args__ = (UniqueConstraint("role_id", "zone_id", name="uq_role_zone_policy"),)
+
+
+# nas-categories feature: structured NAS device classification
+class NasCategory(Base):
+    """Structured category for NAS devices (AP, SM, Camera, Switch, etc.).
+
+    criticality:
+        - critical:    Only privileged roles may access. Extra policy enforcement.
+        - standard:    Normal network devices.
+        - restricted:  Limited-access devices (read-only or no user access by default).
+    """
+    __tablename__ = "nas_categories"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    description: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    criticality: Mapped[str] = mapped_column(String(20), nullable=False, default="standard")
+    vendor: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=True
+    )
+
+    nases: Mapped[list["Nas"]] = relationship("Nas", back_populates="category")

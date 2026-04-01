@@ -1,6 +1,12 @@
+"""
+NAS router — nas-categories update (T2.3)
+Adds category_id pass-through on create/update and category_name resolution on reads.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from app.db.session import get_db
 from app.models.models import Nas, AdminUser
 from app.schemas.schemas import NasCreate, NasOut
@@ -31,13 +37,31 @@ def _reload_radius() -> None:
         logger.warning("Could not restart radius-server: %s", exc)
 
 
+def _nas_to_out(nas: Nas) -> NasOut:
+    """Serialize Nas ORM → NasOut, resolving category_name from the loaded relationship."""
+    return NasOut(
+        id=nas.id,
+        nasname=nas.nasname,
+        shortname=nas.shortname,
+        type=nas.type,
+        ports=nas.ports,
+        secret=nas.secret,
+        server=nas.server,
+        community=nas.community,
+        description=nas.description,
+        zone_id=nas.zone_id,
+        category_id=nas.category_id,
+        category_name=nas.category.name if nas.category else None,
+    )
+
+
 @router.get("", response_model=list[NasOut])
 async def get_nas(
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
 ):
-    result = await db.execute(select(Nas))
-    return result.scalars().all()
+    result = await db.execute(select(Nas).options(selectinload(Nas.category)))
+    return [_nas_to_out(n) for n in result.scalars().all()]
 
 
 @router.post("", response_model=NasOut)
@@ -51,6 +75,12 @@ async def create_nas(
     await db.commit()
     await db.refresh(new_nas)
 
+    # Reload relationship for the response
+    result = await db.execute(
+        select(Nas).options(selectinload(Nas.category)).where(Nas.id == new_nas.id)
+    )
+    new_nas = result.scalars().first()
+
     await log_audit(
         db,
         current_user.username,
@@ -61,7 +91,7 @@ async def create_nas(
         event_code=EventCode.ADMIN_005,
     )
     _reload_radius()
-    return new_nas
+    return _nas_to_out(new_nas)
 
 
 @router.put("/{id}", response_model=NasOut)
@@ -71,12 +101,14 @@ async def update_nas(
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
 ):
-    result = await db.execute(select(Nas).where(Nas.id == id))
+    result = await db.execute(
+        select(Nas).options(selectinload(Nas.category)).where(Nas.id == id)
+    )
     nas = result.scalars().first()
     if not nas:
         raise HTTPException(status_code=404, detail="NAS not found")
 
-    old_data = NasOut.model_validate(nas).model_dump()
+    old_data = _nas_to_out(nas).model_dump()
     update_data = nas_update.model_dump(exclude_unset=True)
 
     # Check if secret is being changed → log ADMIN-009
@@ -86,7 +118,12 @@ async def update_nas(
         setattr(nas, key, value)
 
     await db.commit()
-    await db.refresh(nas)
+
+    # Reload with category relationship
+    result = await db.execute(
+        select(Nas).options(selectinload(Nas.category)).where(Nas.id == id)
+    )
+    nas = result.scalars().first()
 
     if secret_changed:
         await log_audit(
@@ -108,7 +145,7 @@ async def update_nas(
         new_value={k: v for k, v in update_data.items() if k != "secret"},
     )
     _reload_radius()
-    return nas
+    return _nas_to_out(nas)
 
 
 @router.delete("/{id}")
@@ -117,12 +154,14 @@ async def delete_nas(
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
 ):
-    result = await db.execute(select(Nas).where(Nas.id == id))
+    result = await db.execute(
+        select(Nas).options(selectinload(Nas.category)).where(Nas.id == id)
+    )
     nas = result.scalars().first()
     if not nas:
         raise HTTPException(status_code=404, detail="NAS not found")
 
-    old_data = NasOut.model_validate(nas).model_dump()
+    old_data = _nas_to_out(nas).model_dump()
     await db.delete(nas)
     await db.commit()
 

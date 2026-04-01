@@ -1,11 +1,13 @@
 """
 PrivilegeMap router — ISO 27001 A.5.15, A.8.2
 CRUD for user-NAS privilege mappings with RBAC and audit trail.
+Supports both IP-based and category-based targeting (nas-categories feature).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
+from sqlalchemy.orm import selectinload
 from typing import Optional
 from datetime import datetime, date
 from app.db.session import get_db
@@ -32,11 +34,21 @@ def _compute_days_until_review(review_date: Optional[datetime]) -> Optional[int]
 
 
 def _to_out(record: UserNasPrivilegeMap) -> UserNasPrivilegeMapOut:
+    """Serialize UserNasPrivilegeMap ORM → Out schema, resolving category name."""
     days = _compute_days_until_review(record.review_date)
+    # Resolve category name if relationship is loaded
+    category_name = None
+    if record.nas_category_id is not None:
+        try:
+            category_name = record.category.name if record.category else None
+        except Exception:
+            category_name = None
     return UserNasPrivilegeMapOut(
         id=record.id,
         username=record.username,
         nas_ip=record.nas_ip,
+        nas_category_id=record.nas_category_id,
+        nas_category_name=category_name,
         nas_identifier=record.nas_identifier,
         nas_vendor=record.nas_vendor,
         radius_group=record.radius_group,
@@ -62,9 +74,13 @@ async def list_privilege_maps(
 ):
     """
     List privilege mappings. Supports filtering by username, nas_ip, is_active, overdue_review.
+    Returns both IP-based and category-based entries.
     Accessible by auditor, admin, and superadmin.
     """
-    stmt = select(UserNasPrivilegeMap)
+    from app.models.models import NasCategory
+    stmt = select(UserNasPrivilegeMap).options(
+        selectinload(UserNasPrivilegeMap.category)
+    )
     filters = []
 
     if username:
@@ -91,7 +107,8 @@ async def create_privilege_map_bulk(
     current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
 ):
     """
-    Create new user-NAS privilege mapping(s) in bulk.
+    Create privilege mapping(s) in bulk — IP-based only.
+    For category-based entries use POST /privilege-map/category.
     Requires admin or superadmin role.
     """
     review_dt = (
@@ -105,6 +122,7 @@ async def create_privilege_map_bulk(
         record = UserNasPrivilegeMap(
             username=payload.username,
             nas_ip=ip,
+            nas_category_id=None,
             nas_identifier=payload.nas_identifier,
             nas_vendor=payload.nas_vendor,
             radius_group=payload.radius_group,
@@ -118,7 +136,6 @@ async def create_privilege_map_bulk(
         records.append(record)
 
     await db.commit()
-
     for record in records:
         await db.refresh(record)
 
@@ -134,6 +151,65 @@ async def create_privilege_map_bulk(
     return [_to_out(r) for r in records]
 
 
+@router.post("/category", response_model=UserNasPrivilegeMapOut, status_code=201)
+async def create_privilege_map_category(
+    payload: UserNasPrivilegeMapCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
+):
+    """
+    Create a single privilege mapping targeting a NAS category (not a specific IP).
+    Requires admin or superadmin role.
+    """
+    if payload.nas_category_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail="nas_category_id is required for category-based entries",
+        )
+
+    review_dt = (
+        datetime.combine(payload.review_date, datetime.min.time())
+        if payload.review_date
+        else None
+    )
+
+    record = UserNasPrivilegeMap(
+        username=payload.username,
+        nas_ip=None,
+        nas_category_id=payload.nas_category_id,
+        nas_identifier=payload.nas_identifier,
+        nas_vendor=payload.nas_vendor,
+        radius_group=payload.radius_group,
+        privilege_level=payload.privilege_level,
+        justification=payload.justification,
+        approved_by=payload.approved_by,
+        review_date=review_dt,
+        is_active=payload.is_active,
+    )
+    db.add(record)
+    await db.commit()
+    await db.refresh(record)
+
+    # Load category relationship for the response
+    result = await db.execute(
+        select(UserNasPrivilegeMap)
+        .options(selectinload(UserNasPrivilegeMap.category))
+        .where(UserNasPrivilegeMap.id == record.id)
+    )
+    record = result.scalars().first()
+
+    await log_audit(
+        db,
+        current_user.username,
+        "CREATE_CATEGORY",
+        "user_nas_privilege_map",
+        payload.username,
+        new_value=payload.model_dump(mode="json"),
+        event_code=EventCode.ADMIN_002,
+    )
+    return _to_out(record)
+
+
 @router.put("/{id}", response_model=UserNasPrivilegeMapOut)
 async def update_privilege_map(
     id: int,
@@ -142,11 +218,13 @@ async def update_privilege_map(
     current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
 ):
     """
-    Update an existing privilege mapping.
+    Update an existing privilege mapping (IP-based or category-based).
     Requires admin or superadmin role.
     """
     result = await db.execute(
-        select(UserNasPrivilegeMap).where(UserNasPrivilegeMap.id == id)
+        select(UserNasPrivilegeMap)
+        .options(selectinload(UserNasPrivilegeMap.category))
+        .where(UserNasPrivilegeMap.id == id)
     )
     record = result.scalars().first()
     if not record:
@@ -162,6 +240,7 @@ async def update_privilege_map(
 
     record.username = payload.username
     record.nas_ip = payload.nas_ip
+    record.nas_category_id = payload.nas_category_id
     record.nas_identifier = payload.nas_identifier
     record.nas_vendor = payload.nas_vendor
     record.radius_group = payload.radius_group
@@ -173,7 +252,14 @@ async def update_privilege_map(
     record.updated_at = datetime.utcnow()
 
     await db.commit()
-    await db.refresh(record)
+
+    # Reload with relationship for response
+    result = await db.execute(
+        select(UserNasPrivilegeMap)
+        .options(selectinload(UserNasPrivilegeMap.category))
+        .where(UserNasPrivilegeMap.id == id)
+    )
+    record = result.scalars().first()
 
     await log_audit(
         db,
