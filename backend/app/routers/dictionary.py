@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.models.models import AdminUser
-from app.services.dictionary_loader import dictionary_service
+from app.services.dictionary_loader import dictionary_service, _parse_builtin_attr_grep_output
 from app.services.audit import log_audit
 from app.core.security import get_current_active_user
 import logging
@@ -12,7 +12,43 @@ import docker as docker_sdk
 
 logger = logging.getLogger(__name__)
 
+# Module-level cache for built-in RADIUS attributes.
+# Populated lazily on first request; survives for the process lifetime because
+# built-in dictionaries never change while the container is running.
+_builtin_attr_cache: Optional[List] = None
+
 router = APIRouter(prefix="/dictionary", tags=["dictionary"])
+
+
+def _get_builtin_attributes_cached() -> List:
+    """Return RADIUS attributes from FreeRADIUS built-in vendor dictionaries.
+
+    Uses Docker exec to grep the radius-server container once; subsequent calls
+    return the in-memory result without touching Docker again.
+
+    Gracefully returns an empty list when the container is unavailable (e.g.
+    in unit-test environments or during local development without Docker).
+    """
+    global _builtin_attr_cache
+    if _builtin_attr_cache is not None:
+        return _builtin_attr_cache
+
+    try:
+        grep_output = _exec_in_radius([
+            "grep", "-rE",
+            "^(ATTRIBUTE|VENDOR|BEGIN-VENDOR|END-VENDOR)",
+            "/usr/share/freeradius/",
+        ])
+        _builtin_attr_cache = _parse_builtin_attr_grep_output(grep_output)
+        logger.info(
+            "Loaded %d built-in RADIUS attributes from radius-server container",
+            len(_builtin_attr_cache),
+        )
+    except Exception as exc:
+        logger.warning("Could not load built-in RADIUS attributes: %s", exc)
+        _builtin_attr_cache = []
+
+    return _builtin_attr_cache
 
 
 def _reload_radius() -> None:
@@ -288,8 +324,23 @@ async def get_builtin_dictionary_content(
 async def get_attributes(
     current_user: AdminUser = Depends(get_current_active_user),
 ):
-    """Get all available RADIUS attributes from loaded dictionaries."""
-    return dictionary_service.get_attributes()
+    """Get all available RADIUS attributes from custom and built-in dictionaries.
+
+    Merges attributes from:
+    1. Custom dictionaries uploaded by the user (``backend/dictionaries/``)
+    2. FreeRADIUS built-in vendor dictionaries (``/usr/share/freeradius/``)
+
+    Custom attributes always take precedence over built-ins with the same name.
+    Built-in attributes are tagged with a ``[Sistema] dictionary.*`` prefix in
+    the ``dictionary`` field so the UI can group them separately.
+    """
+    custom_attrs = dictionary_service.get_attributes()
+    builtin_attrs = _get_builtin_attributes_cached()
+
+    # Custom attrs win on name collision — avoids duplicates in the selector
+    custom_names = {a["name"] for a in custom_attrs}
+    merged = custom_attrs + [a for a in builtin_attrs if a["name"] not in custom_names]
+    return sorted(merged, key=lambda x: x["name"])
 
 
 @router.get("/values/{attribute_name}", response_model=List[AttributeValue])

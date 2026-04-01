@@ -77,6 +77,102 @@ _VENDOR_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+# ---------- Built-in dictionary attribute parser ----------
+
+# Matches:  ATTRIBUTE <name> <code> <type>  [optional-extras...]
+_BUILTIN_ATTR_LINE_RE = re.compile(
+    r"^ATTRIBUTE\s+(\S+)\s+(\d+)\s+(\S+)",
+    re.IGNORECASE,
+)
+_BUILTIN_BEGIN_VENDOR_RE = re.compile(r"^BEGIN-VENDOR\s+(\S+)", re.IGNORECASE)
+_BUILTIN_END_VENDOR_RE = re.compile(r"^END-VENDOR", re.IGNORECASE)
+
+
+def _parse_builtin_attr_grep_output(grep_output: str) -> List[Dict]:
+    """Parse ``grep -rE`` output into RADIUS attribute dicts compatible with
+    ``DictionaryService.get_attributes()``.
+
+    Expected input is the combined stdout of::
+
+        grep -rE "^(ATTRIBUTE|VENDOR|BEGIN-VENDOR|END-VENDOR)" \\
+             /usr/share/freeradius/
+
+    Each input line has the form::
+
+        /usr/share/freeradius/dictionary.cisco:ATTRIBUTE  Cisco-AVPair  1  string
+
+    The function tracks BEGIN-VENDOR / END-VENDOR state **per source file**
+    because ``grep -r`` interleaves lines from multiple files.
+
+    Returns a list of dicts with keys:
+        name, code (int), type (str), vendor (str), dictionary (str)
+
+    The ``dictionary`` value is prefixed with ``[Sistema]`` so the
+    AttributeSelector component groups built-ins separately from custom files.
+
+    Duplicate attribute names across built-in files are deduplicated; the
+    first occurrence wins (files are processed in filesystem order).
+    """
+    # vendor_ctx maps filename → current vendor name (None if outside a BEGIN-VENDOR block)
+    vendor_ctx: Dict[str, Optional[str]] = {}
+    attrs: List[Dict] = []
+    seen_names: Set[str] = set()
+
+    for raw_line in grep_output.splitlines():
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+
+        # grep -r format: /path/to/file:content
+        colon_idx = raw_line.find(":")
+        if colon_idx == -1:
+            continue
+
+        filepath = raw_line[:colon_idx]
+        content = raw_line[colon_idx + 1:].strip()
+
+        if not content or content.startswith("#"):
+            continue
+
+        filename = os.path.basename(filepath)
+
+        # Track BEGIN-VENDOR / END-VENDOR state per file
+        bm = _BUILTIN_BEGIN_VENDOR_RE.match(content)
+        if bm:
+            vendor_ctx[filename] = bm.group(1)
+            continue
+
+        if _BUILTIN_END_VENDOR_RE.match(content):
+            vendor_ctx[filename] = None
+            continue
+
+        # VENDOR declaration lines carry no attribute data — skip
+        if re.match(r"^VENDOR\s", content, re.IGNORECASE):
+            continue
+
+        am = _BUILTIN_ATTR_LINE_RE.match(content)
+        if not am:
+            continue
+
+        name, code, attr_type = am.group(1), am.group(2), am.group(3)
+
+        # Dedup: first occurrence wins (alphabetical file order via grep -r)
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+
+        vendor = vendor_ctx.get(filename) or "IETF (Standard)"
+        attrs.append({
+            "name": name,
+            "code": int(code),
+            "type": attr_type,
+            "vendor": vendor,
+            "dictionary": f"[Sistema] {filename}",
+        })
+
+    return attrs
+
+
 
 def _load_base_attribute_names() -> Set[str]:
     """Load all attribute names from pyrad's built-in dictionary.
