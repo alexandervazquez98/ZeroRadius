@@ -225,3 +225,76 @@ class TestGroupsUpdate:
             headers={"Authorization": f"Bearer {readonly_token}"},
         )
         assert resp.status_code == 403
+
+
+class TestGroupsManagement:
+    """Group management endpoints: rename and by-name."""
+
+    async def test_get_group_by_name(self, async_client, superadmin_token):
+        # First create a reply
+        create_payload = {
+            "groupname": "test_mgmt_group",
+            "attribute": "Service-Type",
+            "op": ":=",
+            "value": "NAS-Prompt-User",
+        }
+        await async_client.post(
+            "/groups/reply",
+            json=create_payload,
+            headers={"Authorization": f"Bearer {superadmin_token}"},
+        )
+
+        # Now get it by name
+        resp = await async_client.get(
+            "/groups/by-name/test_mgmt_group",
+            headers={"Authorization": f"Bearer {superadmin_token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["groupname"] == "test_mgmt_group"
+        assert len(data["replies"]) == 1
+        assert data["replies"][0]["attribute"] == "Service-Type"
+
+    async def test_rename_group(self, async_client, superadmin_token):
+        # First create a reply
+        create_payload = {
+            "groupname": "test_old_name",
+            "attribute": "Service-Type",
+            "op": ":=",
+            "value": "NAS-Prompt-User",
+        }
+        await async_client.post(
+            "/groups/reply",
+            json=create_payload,
+            headers={"Authorization": f"Bearer {superadmin_token}"},
+        )
+
+        # Now rename it
+        resp = await async_client.put(
+            "/groups/rename?old_groupname=test_old_name&new_groupname=test_new_name",
+            headers={"Authorization": f"Bearer {superadmin_token}"},
+        )
+        assert resp.status_code == 200
+        assert "renamed" in resp.json()["message"]
+
+        # Verify it's gone under old name
+        get_resp = await async_client.get(
+            "/groups/by-name/test_old_name",
+            headers={"Authorization": f"Bearer {superadmin_token}"},
+        )
+        assert get_resp.status_code == 404
+
+        # Verify it exists under new name
+        get_resp2 = await async_client.get(
+            "/groups/by-name/test_new_name",
+            headers={"Authorization": f"Bearer {superadmin_token}"},
+        )
+        assert get_resp2.status_code == 200
+        assert get_resp2.json()["groupname"] == "test_new_name"
+
+    async def test_helpdesk_cannot_rename_group(self, async_client, helpdesk_token):
+        resp = await async_client.put(
+            "/groups/rename?old_groupname=test&new_groupname=test2",
+            headers={"Authorization": f"Bearer {helpdesk_token}"},
+        )
+        assert resp.status_code == 403
