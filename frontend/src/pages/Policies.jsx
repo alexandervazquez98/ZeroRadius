@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
 import GroupsService from '../services/groups';
-import { Plus, Trash2, Search, ShieldAlert, Edit2, Folder } from 'lucide-react';
+import { Plus, Trash2, Search, ShieldAlert, Edit2, Folder, BookOpen } from 'lucide-react';
 
 const PoliciesPage = () => {
     const queryClient = useQueryClient();
@@ -19,6 +19,28 @@ const PoliciesPage = () => {
         value: '',
         editId: null
     });
+    
+    // Dictionary selector state
+    const [selectedVendor, setSelectedVendor] = useState('');
+
+    // Fetch dictionary attributes
+    const { data: dictionaryAttributes } = useQuery({
+        queryKey: ['dictionary', 'attributes'],
+        queryFn: () => api.get('/dictionary/attributes').then(r => r.data)
+    });
+
+    // Get unique vendors from dictionary
+    const vendors = useMemo(() => {
+        if (!dictionaryAttributes) return [];
+        const vSet = new Set(dictionaryAttributes.map(d => d.dictionary || 'Unknown'));
+        return Array.from(vSet).sort();
+    }, [dictionaryAttributes]);
+
+    // Get attributes for selected vendor
+    const vendorAttributes = useMemo(() => {
+        if (!dictionaryAttributes || !selectedVendor) return [];
+        return dictionaryAttributes.filter(d => d.dictionary === selectedVendor);
+    }, [dictionaryAttributes, selectedVendor]);
 
     const { data: rawGroups, isLoading } = useQuery({
         queryKey: ['groups', 'list'],
