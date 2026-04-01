@@ -74,9 +74,28 @@ export const handlers = [
   // -------------------------------------------------------------------------
   http.get('/api/nas', () => {
     return HttpResponse.json([
-      { id: 1, nasname: '10.0.0.1', shortname: 'router-core', secret: '***', type: 'cisco' },
-      { id: 2, nasname: '10.0.0.2', shortname: 'switch-access', secret: '***', type: 'other' },
+      { id: 1, nasname: '10.0.0.1', shortname: 'router-core', secret: '***', type: 'cisco', category_id: 1, category_name: 'AP_CAMBIUM' },
+      { id: 2, nasname: '10.0.0.2', shortname: 'switch-access', secret: '***', type: 'other', category_id: null, category_name: null },
     ])
+  }),
+
+  // -------------------------------------------------------------------------
+  // NAS Categories
+  // -------------------------------------------------------------------------
+  http.get('/api/nas-categories', () => {
+    return HttpResponse.json([
+      { id: 1, name: 'AP_CAMBIUM', criticality: 'critical', vendor: 'Cambium', description: 'Access Points Cambium 450i' },
+      { id: 2, name: 'SM_CAMBIUM', criticality: 'standard', vendor: 'Cambium', description: 'Subscriber Modules Cambium 450i' },
+    ])
+  }),
+
+  http.post('/api/nas-categories', async ({ request }) => {
+    const body = await request.json()
+    return HttpResponse.json({ id: 99, ...body }, { status: 201 })
+  }),
+
+  http.delete('/api/nas-categories/:id', () => {
+    return HttpResponse.json({ ok: true })
   }),
 
   // -------------------------------------------------------------------------

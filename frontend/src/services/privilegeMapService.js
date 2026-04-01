@@ -25,7 +25,13 @@ const PrivilegeMapService = {
     remove: async (id) => {
         const response = await api.delete(`/privilege-map/${id}`);
         return response.data;
-    }
+    },
+
+    /** Category-based mapping — POST /privilege-map/category */
+    createCategory: async (data) => {
+        const response = await api.post('/privilege-map/category', data);
+        return response.data;
+    },
 };
 
 export default PrivilegeMapService;
