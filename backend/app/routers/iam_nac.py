@@ -154,7 +154,7 @@ async def compile_policy_to_radius(policy_id: int, db: AsyncSession = Depends(ge
     stmt = select(RadGroupReply).where(RadGroupReply.groupname == group_name)
     existing_rows = (await db.execute(stmt)).scalars().all()
     for row in existing_rows:
-        db.delete(row)
+        await db.delete(row)
     
     # Insert new compiled attributes
     for item in valid_attrs:
