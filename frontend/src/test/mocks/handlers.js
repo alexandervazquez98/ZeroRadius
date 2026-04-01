@@ -126,4 +126,23 @@ export const handlers = [
       },
     ])
   }),
+
+  // -------------------------------------------------------------------------
+  // Dictionary — built-in vendor dicts (read-only view)
+  // -------------------------------------------------------------------------
+  http.get('/api/dictionary/builtin', () => {
+    return HttpResponse.json([
+      { filename: 'dictionary.cisco',     vendor: 'cisco' },
+      { filename: 'dictionary.microsoft', vendor: 'microsoft' },
+      { filename: 'dictionary.mikrotik',  vendor: 'mikrotik' },
+    ])
+  }),
+
+  http.get('/api/dictionary/builtin/:filename', ({ params }) => {
+    return HttpResponse.json({
+      filename: params.filename,
+      content: `# Mock built-in dictionary: ${params.filename}\nATTRIBUTE\tTest-Attr\t1\tstring\n`,
+      builtin: true,
+    })
+  }),
 ]
