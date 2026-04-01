@@ -48,6 +48,35 @@ _V4_KEYWORD_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+# Built-in FreeRADIUS vendor IDs that are already loaded from /usr/share/freeradius/.
+# Uploading a custom dictionary with any of these IDs would cause a collision.
+# Source: freeradius-server 3.2 dictionary files.
+_BUILTIN_VENDOR_IDS: Dict[int, str] = {
+    9: "Cisco",
+    43: "3Com",
+    # 161 intentionally excluded: the Dockerfile disables dictionary.motorola.wimax,
+    # so Cambium custom dictionaries (vendor 161) are allowed without conflict.
+    311: "Microsoft",
+    529: "Ascend",
+    562: "USR",
+    1584: "Cosine",
+    2352: "Foundry",
+    2636: "Juniper",
+    3076: "Altiga/Cisco-VPN",
+    4874: "Extreme",
+    5003: "Colubris",
+    6527: "Alcatel",
+    8164: "Starent",
+    10415: "3GPP",
+    25053: "Ruckus",
+}
+
+# Regex to match VENDOR lines: VENDOR <name> <id>  OR  VENDOR <id> <name>
+_VENDOR_RE = re.compile(
+    r"^\s*VENDOR\s+(\S+)\s+(\d+)",
+    re.IGNORECASE | re.MULTILINE,
+)
+
 
 def _load_base_attribute_names() -> Set[str]:
     """Load all attribute names from pyrad's built-in dictionary.
@@ -291,6 +320,76 @@ def _find_duplicate_attributes(content: str) -> List[str]:
     return duplicates
 
 
+def _extract_vendor_ids(content: str) -> Dict[int, str]:
+    """Parse all VENDOR declarations from dictionary content.
+
+    Supports both formats used in practice:
+      VENDOR  <name>  <id>    (FreeRADIUS format)
+
+    Returns a dict mapping vendor_id -> vendor_name.
+    """
+    vendors: Dict[int, str] = {}
+    for m in _VENDOR_RE.finditer(content):
+        name, raw_id = m.group(1), m.group(2)
+        try:
+            vid = int(raw_id)
+            vendors[vid] = name
+        except ValueError:
+            pass
+    return vendors
+
+
+def _check_vendor_id_collision(
+    new_content: str,
+    existing_files: List[str],
+    skip_filename: str = "",
+) -> List[str]:
+    """Check if new_content declares a vendor ID already in use.
+
+    Compares against:
+    1. Built-in FreeRADIUS vendor IDs (_BUILTIN_VENDOR_IDS).
+    2. Vendor IDs declared in every existing custom dictionary file
+       (skip_filename is excluded to allow overwrites on edit).
+
+    Returns a list of human-readable collision descriptions.
+    """
+    new_vendors = _extract_vendor_ids(new_content)
+    if not new_vendors:
+        return []
+
+    collisions: List[str] = []
+
+    # Check against built-ins
+    for vid, vname in new_vendors.items():
+        if vid in _BUILTIN_VENDOR_IDS:
+            collisions.append(
+                f"Vendor ID {vid} ({vname}) conflicts with built-in "
+                f"FreeRADIUS vendor '{_BUILTIN_VENDOR_IDS[vid]}'. "
+                f"Use this vendor's official dictionary or rename your vendor."
+            )
+
+    # Check against existing custom dictionaries
+    for filepath in existing_files:
+        fname = os.path.basename(filepath)
+        if fname == skip_filename:
+            continue
+        try:
+            with open(filepath, "r", encoding="utf-8", errors="replace") as fh:
+                existing_content = fh.read()
+            existing_vendors = _extract_vendor_ids(existing_content)
+            for vid, vname in new_vendors.items():
+                if vid in existing_vendors:
+                    collisions.append(
+                        f"Vendor ID {vid} ({vname}) is already declared in "
+                        f"'{fname}' as vendor '{existing_vendors[vid]}'. "
+                        f"Each dictionary must use a unique vendor ID."
+                    )
+        except OSError:
+            pass
+
+    return collisions
+
+
 # Regex to match BEGIN-VENDOR lines and capture the vendor name.
 _BEGIN_VENDOR_RE = re.compile(r"^\s*BEGIN-VENDOR\s+(\S+)", re.IGNORECASE)
 
@@ -473,6 +572,20 @@ class DictionaryService:
                 f"Remove these attributes — they are already built-in."
             )
 
+        # Check for vendor ID collisions against built-ins and existing dictionaries.
+        # Use skip_filename=filename so editing an existing file doesn't reject itself.
+        existing = [
+            os.path.join(self.dict_dir, f)
+            for f in os.listdir(self.dict_dir)
+            if os.path.isfile(os.path.join(self.dict_dir, f))
+        ]
+        collisions = _check_vendor_id_collision(converted, existing, skip_filename=filename)
+        if collisions:
+            raise ValueError(
+                "Vendor ID conflict detected — FreeRADIUS would fail to start: "
+                + " | ".join(collisions)
+            )
+
         # Validate by writing to a temp file and parsing with pyrad
         with tempfile.NamedTemporaryFile(
             delete=False, mode="w", encoding="utf-8", suffix=".dict"
@@ -499,6 +612,8 @@ class DictionaryService:
         Auto-renames vendor attributes that collide with standard names.
         Rejects files that still redefine standard RADIUS attributes
         at the top level after auto-rename.
+        Rejects files whose vendor ID collides with a built-in or existing
+        custom dictionary to prevent FreeRADIUS startup failures.
         Returns {"conversions": int, "renames": list}.
         """
         text = content.decode("utf-8", errors="replace")
@@ -515,6 +630,20 @@ class DictionaryService:
                 f"already exist in the FreeRADIUS base dictionary: "
                 f"{', '.join(duplicates)}. "
                 f"Remove these attributes — they are already built-in."
+            )
+
+        # Check for vendor ID collisions against built-ins and existing dictionaries.
+        # Pass filename so an overwrite of the same file isn't falsely rejected.
+        existing = [
+            os.path.join(self.dict_dir, f)
+            for f in os.listdir(self.dict_dir)
+            if os.path.isfile(os.path.join(self.dict_dir, f))
+        ]
+        collisions = _check_vendor_id_collision(converted, existing, skip_filename=filename)
+        if collisions:
+            raise ValueError(
+                "Vendor ID conflict detected — FreeRADIUS would fail to start: "
+                + " | ".join(collisions)
             )
 
         with tempfile.NamedTemporaryFile(
