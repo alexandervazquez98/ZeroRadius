@@ -18,24 +18,28 @@ nas_based_authorization {
     # Only run if NAS-IP-Address is present
     if (&NAS-IP-Address) {
 
-        # Query user_nas_privilege_map for a matching active entry
-        # The SQL module must be configured with authorize_nas_query (see radius/sql)
-        %{sql:SELECT radius_group FROM user_nas_privilege_map \
-            WHERE username='%{User-Name}' \
-            AND nas_ip='%{NAS-IP-Address}' \
-            AND is_active=1 \
-            LIMIT 1}
+        # Query user_nas_privilege_map for a matching active entry.
+        # %{sql:} is an xlat — it returns the value as a string but does NOT
+        # populate any control attribute automatically. We must capture the
+        # result explicitly into a temporary attribute (Tmp-String-0).
+        update control {
+            Tmp-String-0 := "%{sql:SELECT radius_group FROM user_nas_privilege_map \
+                WHERE username='%{User-Name}' \
+                AND nas_ip='%{NAS-IP-Address}' \
+                AND is_active=1 \
+                LIMIT 1}"
+        }
 
-        # If a group was found, override SQL-Group with the NAS-specific group
-        if (&control:SQL-Group) {
+        # If the query returned a non-empty group name, override SQL-Group
+        # so the standard SQL group-reply lookup uses the NAS-specific group.
+        if (&control:Tmp-String-0 && "%{control:Tmp-String-0}" != "") {
             update control {
-                SQL-Group := &control:SQL-Group
+                SQL-Group := "%{control:Tmp-String-0}"
             }
-            # Grant access — NAS-specific group applies
+            # Grant access — NAS-specific group applies, fall through to sql module
         }
         else {
-            # No mapping found for this user+NAS combination
-            # Log and reject
+            # No mapping found for this user+NAS combination — reject (Zero Trust)
             update reply {
                 Reply-Message := "Access denied: NAS not authorized for this user"
             }
