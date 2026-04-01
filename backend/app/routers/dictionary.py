@@ -207,6 +207,80 @@ async def update_dictionary_content(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ---------- Built-in dictionaries (read-only view) ----------
+
+
+def _exec_in_radius(cmd: list) -> str:
+    """Run a command inside the radius-server container and return stdout.
+
+    Uses the Docker SDK that is already a project dependency and already
+    used by _reload_radius().  Raises RuntimeError if the container is
+    unavailable or the command fails.
+    """
+    client = docker_sdk.from_env()
+    container = client.containers.get("radius-server")
+    exit_code, output = container.exec_run(cmd)
+    if exit_code != 0:
+        raise RuntimeError(f"Command {cmd} exited with code {exit_code}")
+    return output.decode("utf-8", errors="replace")
+
+
+class BuiltinDictInfo(BaseModel):
+    filename: str
+    vendor: str
+
+
+@router.get("/builtin", response_model=List[BuiltinDictInfo])
+async def list_builtin_dictionaries(
+    current_user: AdminUser = Depends(get_current_active_user),
+):
+    """List built-in FreeRADIUS vendor dictionaries from the radius-server container.
+
+    Reads /usr/share/freeradius/ inside the container and returns every
+    'dictionary.<vendor>' file (skipping the top-level 'dictionary' index file
+    which just $INCLUDEs the others — it is too large and not useful to display).
+    """
+    try:
+        raw = _exec_in_radius(["ls", "/usr/share/freeradius/"])
+        results = []
+        for name in sorted(raw.splitlines()):
+            name = name.strip()
+            # Only vendor-specific dictionary files
+            if not name.startswith("dictionary."):
+                continue
+            vendor = name[len("dictionary."):]  # e.g. "cisco", "cisco.asa"
+            results.append(BuiltinDictInfo(filename=name, vendor=vendor))
+        return results
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Could not read built-in dictionaries from radius-server: {exc}",
+        )
+
+
+@router.get("/builtin/{filename}")
+async def get_builtin_dictionary_content(
+    filename: str,
+    current_user: AdminUser = Depends(get_current_active_user),
+):
+    """Return the raw content of a built-in FreeRADIUS dictionary file.
+
+    Validates that the requested filename follows the expected pattern to
+    prevent path traversal attacks before exec-ing into the container.
+    """
+    import re as _re
+    if not _re.fullmatch(r"dictionary\.[a-zA-Z0-9._-]+", filename):
+        raise HTTPException(status_code=400, detail="Invalid built-in dictionary filename.")
+    try:
+        content = _exec_in_radius(["cat", f"/usr/share/freeradius/{filename}"])
+        return {"filename": filename, "content": content, "builtin": True}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Could not read {filename} from radius-server: {exc}",
+        )
+
+
 # ---------- Attribute queries ----------
 
 
