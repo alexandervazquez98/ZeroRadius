@@ -55,6 +55,9 @@ RUN sed -i 's/\$INCLUDE dictionary.motorola.wimax/# $INCLUDE dictionary.motorola
 # we MUST enable use_tunneled_reply = yes.
 RUN sed -i 's/use_tunneled_reply = no/use_tunneled_reply = yes/g' /etc/raddb/mods-available/eap
 
+# Enable TLS 1.3 support (Cambium PMP 450 clients use TLS 1.3)
+RUN sed -i 's/tls_max_version = "1.2"/tls_max_version = "1.3"/g' /etc/raddb/mods-available/eap
+
 # Enable group reading in SQL module config
 RUN sed -i 's/#\s*read_groups = yes/read_groups = yes/g' /etc/raddb/mods-available/sql
 
