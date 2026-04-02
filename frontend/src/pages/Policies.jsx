@@ -1,8 +1,144 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
 import GroupsService from '../services/groups';
-import { Plus, Trash2, Search, ShieldAlert, Edit2, Folder, BookOpen } from 'lucide-react';
+import { Plus, Trash2, Search, ShieldAlert, Edit2, Folder, BookOpen, ChevronDown, X } from 'lucide-react';
+
+// Combobox con búsqueda para atributos del diccionario
+const AttributeCombobox = ({ options, value, onChange, disabled }) => {
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState('');
+    const containerRef = useRef(null);
+    const inputRef = useRef(null);
+
+    // Cerrar al clickar afuera
+    useEffect(() => {
+        const handler = (e) => {
+            if (containerRef.current && !containerRef.current.contains(e.target)) {
+                setOpen(false);
+                setQuery('');
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    // Al abrir, hacer foco en el input de búsqueda
+    useEffect(() => {
+        if (open && inputRef.current) inputRef.current.focus();
+    }, [open]);
+
+    const filtered = useMemo(() => {
+        if (!query) return options;
+        const q = query.toLowerCase();
+        return options.filter(o => o.name.toLowerCase().includes(q));
+    }, [options, query]);
+
+    const sistemaPart = filtered.filter(d => d.dictionary?.startsWith('[Sistema]'));
+    const customPart  = filtered.filter(d => !d.dictionary?.startsWith('[Sistema]'));
+
+    const selectedLabel = value
+        ? options.find(o => o.name === value)?.name ?? value
+        : 'Seleccionar atributo...';
+
+    const handleSelect = (name) => {
+        onChange(name);
+        setOpen(false);
+        setQuery('');
+    };
+
+    const handleClear = (e) => {
+        e.stopPropagation();
+        onChange('');
+        setQuery('');
+    };
+
+    return (
+        <div ref={containerRef} className="relative">
+            {/* Trigger */}
+            <button
+                type="button"
+                disabled={disabled}
+                onClick={() => setOpen(o => !o)}
+                className={`w-full mt-1 border rounded-lg p-2 flex items-center justify-between text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white
+                    ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-indigo-400'}
+                    ${value ? 'text-slate-800' : 'text-slate-400'}`}
+            >
+                <span className="font-mono truncate">{selectedLabel}</span>
+                <span className="flex items-center gap-1 ml-2 shrink-0">
+                    {value && (
+                        <span onClick={handleClear} className="text-slate-400 hover:text-rose-500 p-0.5 rounded">
+                            <X size={12} />
+                        </span>
+                    )}
+                    <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+                </span>
+            </button>
+
+            {/* Dropdown */}
+            {open && (
+                <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden">
+                    {/* Search input */}
+                    <div className="p-2 border-b border-slate-100">
+                        <div className="relative">
+                            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input
+                                ref={inputRef}
+                                type="text"
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                                placeholder="Buscar atributo..."
+                                className="w-full pl-7 pr-3 py-1.5 text-sm border rounded-md outline-none focus:ring-2 focus:ring-indigo-400"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Lista */}
+                    <div className="max-h-52 overflow-y-auto text-sm">
+                        {filtered.length === 0 ? (
+                            <div className="px-3 py-4 text-center text-slate-400 text-xs">Sin resultados para "{query}"</div>
+                        ) : (
+                            <>
+                                {sistemaPart.length > 0 && (
+                                    <>
+                                        <div className="px-3 py-1 text-xs font-black text-slate-400 uppercase tracking-widest bg-slate-50 sticky top-0">Sistema</div>
+                                        {sistemaPart.map(o => (
+                                            <button
+                                                key={o.name}
+                                                type="button"
+                                                onClick={() => handleSelect(o.name)}
+                                                className={`w-full text-left px-3 py-1.5 font-mono hover:bg-indigo-50 hover:text-indigo-700 transition-colors
+                                                    ${value === o.name ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-700'}`}
+                                            >
+                                                {o.name}
+                                            </button>
+                                        ))}
+                                    </>
+                                )}
+                                {customPart.length > 0 && (
+                                    <>
+                                        <div className="px-3 py-1 text-xs font-black text-slate-400 uppercase tracking-widest bg-slate-50 sticky top-0">Custom</div>
+                                        {customPart.map(o => (
+                                            <button
+                                                key={o.name}
+                                                type="button"
+                                                onClick={() => handleSelect(o.name)}
+                                                className={`w-full text-left px-3 py-1.5 font-mono hover:bg-indigo-50 hover:text-indigo-700 transition-colors
+                                                    ${value === o.name ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-700'}`}
+                                            >
+                                                {o.name}
+                                            </button>
+                                        ))}
+                                    </>
+                                )}
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
 
 const PoliciesPage = () => {
     const queryClient = useQueryClient();
@@ -369,37 +505,12 @@ const PoliciesPage = () => {
                             </div>
                             <div>
                                 <label className="text-xs font-black text-slate-500 uppercase">Atributo</label>
-                                <select
-                                    className="w-full mt-1 border rounded-lg p-2 outline-none focus:ring-2 focus:ring-indigo-500"
+                                <AttributeCombobox
+                                    options={allAttributeOptions}
                                     value={attributeFormData.attribute}
-                                    onChange={(e) => setAttributeFormData({ ...attributeFormData, attribute: e.target.value })}
+                                    onChange={(val) => setAttributeFormData({ ...attributeFormData, attribute: val })}
                                     disabled={allAttributeOptions.length === 0}
-                                    required
-                                >
-                                    <option value="">Seleccionar atributo...</option>
-                                    {allAttributeOptions.length === 0 ? (
-                                        <option value="" disabled>Sin atributos disponibles</option>
-                                    ) : (
-                                        <>
-                                            <optgroup label="Sistema">
-                                                {allAttributeOptions
-                                                    .filter(d => d.dictionary?.startsWith('[Sistema]'))
-                                                    .map(d => (
-                                                        <option key={d.name} value={d.name}>{d.name}</option>
-                                                    ))
-                                                }
-                                            </optgroup>
-                                            <optgroup label="Custom">
-                                                {allAttributeOptions
-                                                    .filter(d => !d.dictionary?.startsWith('[Sistema]'))
-                                                    .map(d => (
-                                                        <option key={d.name} value={d.name}>{d.name}</option>
-                                                    ))
-                                                }
-                                            </optgroup>
-                                        </>
-                                    )}
-                                </select>
+                                />
                             </div>
                             <div>
                                 <label className="text-xs font-black text-slate-500 uppercase">Operador</label>
