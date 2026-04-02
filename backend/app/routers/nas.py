@@ -183,18 +183,36 @@ async def get_ca_certificate(
 ):
     """Download the RADIUS server CA certificate for client configuration."""
     try:
-        import subprocess
+        import os
 
-        result = subprocess.run(
-            ["docker", "exec", "radius-server", "cat", "/etc/freeradius/certs/ca.pem"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            raise HTTPException(status_code=500, detail="Failed to read CA certificate")
+        # Read from mounted certs directory (not inside container)
+        cert_path = "/app/radius-certs/ca.pem"
 
-        ca_cert = result.stdout
+        if not os.path.exists(cert_path):
+            # Fallback: try to read from radius-server container (if docker available from host)
+            import subprocess
+
+            result = subprocess.run(
+                [
+                    "docker",
+                    "exec",
+                    "radius-server",
+                    "cat",
+                    "/etc/freeradius/certs/ca.pem",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                raise HTTPException(
+                    status_code=500, detail="Failed to read CA certificate"
+                )
+            ca_cert = result.stdout
+        else:
+            with open(cert_path, "r") as f:
+                ca_cert = f.read()
+
         if not ca_cert:
             raise HTTPException(status_code=404, detail="CA certificate not found")
 

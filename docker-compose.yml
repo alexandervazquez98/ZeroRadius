@@ -46,6 +46,7 @@ services:
       - ./radius/sql:/etc/raddb/mods-available/sql
       - ./radius/clients.conf:/etc/raddb/clients.conf
       - ./radius/default.conf:/etc/freeradius/sites-enabled/default
+      - ./radius/certs:/etc/raddb/certs:ro
     depends_on:
       db:
         condition: service_healthy
@@ -58,6 +59,7 @@ services:
     volumes:
       - ./backend:/app
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./radius/certs:/app/radius-certs:ro
     ports:
       - "8000:8000"
     env_file:
