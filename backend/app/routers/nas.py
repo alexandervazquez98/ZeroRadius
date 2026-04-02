@@ -202,11 +202,14 @@ async def get_ca_certificate(
         if not ca_cert:
             raise HTTPException(status_code=404, detail="CA certificate not found")
 
-        return {
-            "content": ca_cert,
-            "filename": "radius-ca.pem",
-            "content_type": "application/x-x509-ca-cert",
-        }
+        # Return as plain text - the frontend will handle the download
+        from fastapi.responses import PlainTextResponse
+
+        return PlainTextResponse(
+            ca_cert,
+            media_type="application/x-x509-ca-cert",
+            headers={"Content-Disposition": "attachment; filename=radius-ca.pem"},
+        )
     except Exception as exc:
         logger.error("Error getting CA certificate: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to get CA certificate")
