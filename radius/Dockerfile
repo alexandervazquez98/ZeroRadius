@@ -79,6 +79,13 @@ RUN sed -i 's/tls_min_version = "1.2"/tls_min_version = "1.0"/g' /etc/raddb/mods
 RUN sed -i '/\[system_default_sect\]/,/^$/s/CipherString = .*/CipherString = DEFAULT:@SECLEVEL=0/' /etc/ssl/openssl.cnf && \
     sed -i '/\[system_default_sect\]/,/^$/s/MinProtocol = .*/MinProtocol = TLSv1/' /etc/ssl/openssl.cnf
 
+# Disable certificate verification (LAB ONLY - insecure for production)
+# Required for Cambium SMs without CA certificate installed
+RUN sed -i 's/#\s*verify_peer = yes/verify_peer = no/g' /etc/raddb/mods-available/eap && \
+    sed -i 's/verify_peer = yes/verify_peer = no/g' /etc/raddb/mods-available/eap && \
+    sed -i 's/#\s*verify_peer = yes/verify_peer = no/g' /etc/raddb/mods-enabled/eap && \
+    sed -i 's/verify_peer = yes/verify_peer = no/g' /etc/raddb/mods-enabled/eap
+
 # Enable group reading in SQL module config
 RUN sed -i 's/#\s*read_groups = yes/read_groups = yes/g' /etc/raddb/mods-available/sql
 
