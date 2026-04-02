@@ -55,12 +55,37 @@ RUN sed -i 's/\$INCLUDE dictionary.motorola.wimax/# $INCLUDE dictionary.motorola
 # we MUST enable use_tunneled_reply = yes.
 RUN sed -i 's/use_tunneled_reply = no/use_tunneled_reply = yes/g' /etc/raddb/mods-available/eap
 
-# Enable TLS 1.2 support (Cambium PMP 450 - TLS 1.3 not fully supported in TTLS)
-# Must update BOTH mods-available and mods-enabled (not symlinked in this image)
-RUN sed -i 's/tls_max_version = \"1.2\"/tls_max_version = \"1.2\"/g' /etc/raddb/mods-available/eap && \
-    sed -i 's/tls_max_version = \"1.3\"/tls_max_version = \"1.2\"/g' /etc/raddb/mods-available/eap && \
-    sed -i 's/tls_max_version = \"1.2\"/tls_max_version = \"1.2\"/g' /etc/raddb/mods-enabled/eap && \
-    sed -i 's/tls_max_version = \"1.3\"/tls_max_version = \"1.2\"/g' /etc/raddb/mods-enabled/eap
+# ============================================================================
+# TLS Fix for Cambium PMP 450i - EAP-TTLS with TLS 1.0
+# ============================================================================
+# Problem: Cambium PMP 450i sends TLS 1.3 ClientHello but can only negotiate
+# TLS 1.0. OpenSSL 3.x blocks TLS 1.0 by default, causing all SMs to fail.
+#
+# Fix 1/2: Configure FreeRADIUS EAP to accept TLS 1.0+cipher override
+RUN sed -i 's/tls_min_version = "1.2"/tls_min_version = "1.0"/g' /etc/raddb/mods-available/eap && \
+    sed -i 's/tls_max_version = "1.2"/tls_max_version = "1.2"/g' /etc/raddb/mods-available/eap && \
+    sed -i 's/tls_max_version = "1.3"/tls_max_version = "1.2"/g' /etc/raddb/mods-available/eap && \
+    sed -i 's/#\s*cipher_list = "DEFAULT"/cipher_list = "DEFAULT:@SECLEVEL=0"/g' /etc/raddb/mods-available/eap && \
+    sed -i 's/cipher_list = "DEFAULT"/cipher_list = "DEFAULT:@SECLEVEL=0"/g' /etc/raddb/mods-available/eap && \
+    sed -i 's/tls_min_version = "1.2"/tls_min_version = "1.0"/g' /etc/raddb/mods-enabled/eap && \
+    sed -i 's/tls_max_version = "1.2"/tls_max_version = "1.2"/g' /etc/raddb/mods-enabled/eap && \
+    sed -i 's/tls_max_version = "1.3"/tls_max_version = "1.2"/g' /etc/raddb/mods-enabled/eap && \
+    sed -i 's/#\s*cipher_list = "DEFAULT"/cipher_list = "DEFAULT:@SECLEVEL=0"/g' /etc/raddb/mods-enabled/eap && \
+    sed -i 's/cipher_list = "DEFAULT"/cipher_list = "DEFAULT:@SECLEVEL=0"/g' /etc/raddb/mods-enabled/eap
+
+# Fix 2/2: Enable TLS 1.0 at OpenSSL system level in the container
+# OpenSSL 3.x in Debian/Ubuntu blocks TLS 1.0 by default - need to override
+RUN sed -i 's/^openssl_conf = default_conf/openssl_conf = openssl_init/' /etc/ssl/openssl.cnf || true && \
+    (echo "" >> /etc/ssl/openssl.cnf && \
+    echo "[openssl_init]" >> /etc/ssl/openssl.cnf && \
+    echo "ssl_conf = ssl_sect" >> /etc/ssl/openssl.cnf && \
+    echo "" >> /etc/ssl/openssl.cnf && \
+    echo "[ssl_sect]" >> /etc/ssl/openssl.cnf && \
+    echo "system_default = system_default_sect" >> /etc/ssl/openssl.cnf && \
+    echo "" >> /etc/ssl/openssl.cnf && \
+    echo "[system_default_sect]" >> /etc/ssl/openssl.cnf && \
+    echo "MinProtocol = TLSv1" >> /etc/ssl/openssl.cnf && \
+    echo "CipherString = DEFAULT:@SECLEVEL=0" >> /etc/ssl/openssl.cnf)
 
 # Enable group reading in SQL module config
 RUN sed -i 's/#\s*read_groups = yes/read_groups = yes/g' /etc/raddb/mods-available/sql
