@@ -20,6 +20,10 @@ const PoliciesPage = () => {
         editId: null
     });
     
+    // Create group modal state
+    const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
+    const [newGroupName, setNewGroupName] = useState('');
+
     // Dictionary selector state
     const [selectedVendor, setSelectedVendor] = useState('');
 
@@ -39,6 +43,13 @@ const PoliciesPage = () => {
     // Get attributes for selected vendor
     const vendorAttributes = useMemo(() => {
         if (!dictionaryAttributes || !selectedVendor) return [];
+        return dictionaryAttributes.filter(d => d.dictionary === selectedVendor);
+    }, [dictionaryAttributes, selectedVendor]);
+
+    // All attribute options: all dict attrs when no vendor filter, else filtered by vendor
+    const allAttributeOptions = useMemo(() => {
+        if (!dictionaryAttributes) return [];
+        if (!selectedVendor) return dictionaryAttributes;
         return dictionaryAttributes.filter(d => d.dictionary === selectedVendor);
     }, [dictionaryAttributes, selectedVendor]);
 
@@ -110,6 +121,8 @@ const PoliciesPage = () => {
         },
         onSuccess: () => {
             queryClient.invalidateQueries(['groups', 'list']);
+            setIsCreateGroupModalOpen(false);
+            setNewGroupName('');
             alert('Grupo creado');
         },
         onError: (err) => alert(err.response?.data?.detail || 'Error al crear grupo')
@@ -140,10 +153,7 @@ const PoliciesPage = () => {
                 </div>
                 <div className="flex gap-2">
                     <button
-                        onClick={() => {
-                            const name = prompt('Nombre del nuevo grupo:');
-                            if (name) createGroupMutation.mutate(name.replace(/\s+/g, '_'));
-                        }}
+                        onClick={() => setIsCreateGroupModalOpen(true)}
                         className="bg-indigo-600 text-white px-5 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700 shadow font-bold"
                     >
                         <Plus size={18} /> Nuevo Grupo
@@ -302,6 +312,33 @@ const PoliciesPage = () => {
                 </div>
             )}
 
+            {isCreateGroupModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
+                        <h3 className="text-xl font-black mb-4 text-slate-800 flex items-center gap-2"><Plus className="text-indigo-600"/> Nuevo Grupo</h3>
+                        <div>
+                            <label className="text-xs font-black text-slate-500 uppercase">Nombre del Grupo</label>
+                            <input
+                                className="w-full mt-1 border rounded-lg p-3 outline-none focus:ring-2 focus:ring-indigo-500"
+                                value={newGroupName}
+                                onChange={(e) => setNewGroupName(e.target.value.replace(/\s+/g, '_'))}
+                                placeholder="Ej: mi_nuevo_grupo"
+                                autoFocus
+                            />
+                        </div>
+                        <div className="flex gap-2 justify-end pt-4 border-t mt-4">
+                            <button type="button" onClick={() => { setIsCreateGroupModalOpen(false); setNewGroupName(''); }} className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg font-bold">Cancelar</button>
+                            <button
+                                type="button"
+                                onClick={() => createGroupMutation.mutate(newGroupName.trim())}
+                                disabled={newGroupName.trim() === ''}
+                                className="px-6 py-2 bg-indigo-600 text-white font-black rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                            >Crear</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {isAttributeModalOpen && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
@@ -311,6 +348,19 @@ const PoliciesPage = () => {
                         </h3>
                         <form onSubmit={(e) => { e.preventDefault(); if(attributeFormData.editId) { updateGroupAttributeMutation.mutate({ id: attributeFormData.editId, type: attributeFormData.type, data: attributeFormData }); } else { createGroupAttributeMutation.mutate(attributeFormData); }}} className="space-y-3">
                             <div>
+                                <label className="text-xs font-black text-slate-500 uppercase">Diccionario (Vendor)</label>
+                                <select 
+                                    className="w-full mt-1 border rounded-lg p-2 outline-none focus:ring-2 focus:ring-indigo-500"
+                                    value={selectedVendor}
+                                    onChange={(e) => setSelectedVendor(e.target.value)}
+                                >
+                                    <option value="">Todos los diccionarios</option>
+                                    {vendors.map(v => (
+                                        <option key={v} value={v}>{v}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
                                 <label className="text-xs font-black text-slate-500 uppercase">Tipo</label>
                                 <select className="w-full mt-1 border rounded-lg p-2" value={attributeFormData.type} onChange={(e) => setAttributeFormData({ ...attributeFormData, type: e.target.value })}>
                                     <option value="reply">Reply (Respuesta)</option>
@@ -319,7 +369,37 @@ const PoliciesPage = () => {
                             </div>
                             <div>
                                 <label className="text-xs font-black text-slate-500 uppercase">Atributo</label>
-                                <input className="w-full mt-1 border rounded-lg p-2 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Ej: Service-Type" value={attributeFormData.attribute} onChange={(e) => setAttributeFormData({ ...attributeFormData, attribute: e.target.value })} required />
+                                <select
+                                    className="w-full mt-1 border rounded-lg p-2 outline-none focus:ring-2 focus:ring-indigo-500"
+                                    value={attributeFormData.attribute}
+                                    onChange={(e) => setAttributeFormData({ ...attributeFormData, attribute: e.target.value })}
+                                    disabled={allAttributeOptions.length === 0}
+                                    required
+                                >
+                                    <option value="">Seleccionar atributo...</option>
+                                    {allAttributeOptions.length === 0 ? (
+                                        <option value="" disabled>Sin atributos disponibles</option>
+                                    ) : (
+                                        <>
+                                            <optgroup label="Sistema">
+                                                {allAttributeOptions
+                                                    .filter(d => d.dictionary?.startsWith('[Sistema]'))
+                                                    .map(d => (
+                                                        <option key={d.name} value={d.name}>{d.name}</option>
+                                                    ))
+                                                }
+                                            </optgroup>
+                                            <optgroup label="Custom">
+                                                {allAttributeOptions
+                                                    .filter(d => !d.dictionary?.startsWith('[Sistema]'))
+                                                    .map(d => (
+                                                        <option key={d.name} value={d.name}>{d.name}</option>
+                                                    ))
+                                                }
+                                            </optgroup>
+                                        </>
+                                    )}
+                                </select>
                             </div>
                             <div>
                                 <label className="text-xs font-black text-slate-500 uppercase">Operador</label>
