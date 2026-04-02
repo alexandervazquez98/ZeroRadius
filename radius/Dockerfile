@@ -75,17 +75,9 @@ RUN sed -i 's/tls_min_version = "1.2"/tls_min_version = "1.0"/g' /etc/raddb/mods
 
 # Fix 2/2: Enable TLS 1.0 at OpenSSL system level in the container
 # OpenSSL 3.x in Debian/Ubuntu blocks TLS 1.0 by default - need to override
-RUN sed -i 's/^openssl_conf = default_conf/openssl_conf = openssl_init/' /etc/ssl/openssl.cnf || true && \
-    (echo "" >> /etc/ssl/openssl.cnf && \
-    echo "[openssl_init]" >> /etc/ssl/openssl.cnf && \
-    echo "ssl_conf = ssl_sect" >> /etc/ssl/openssl.cnf && \
-    echo "" >> /etc/ssl/openssl.cnf && \
-    echo "[ssl_sect]" >> /etc/ssl/openssl.cnf && \
-    echo "system_default = system_default_sect" >> /etc/ssl/openssl.cnf && \
-    echo "" >> /etc/ssl/openssl.cnf && \
-    echo "[system_default_sect]" >> /etc/ssl/openssl.cnf && \
-    echo "MinProtocol = TLSv1" >> /etc/ssl/openssl.cnf && \
-    echo "CipherString = DEFAULT:@SECLEVEL=0" >> /etc/ssl/openssl.cnf)
+# Must REPLACE existing system_default_sect, not add a new one
+RUN sed -i '/\[system_default_sect\]/,/^$/s/CipherString = .*/CipherString = DEFAULT:@SECLEVEL=0/' /etc/ssl/openssl.cnf && \
+    sed -i '/\[system_default_sect\]/,/^$/s/MinProtocol = .*/MinProtocol = TLSv1/' /etc/ssl/openssl.cnf
 
 # Enable group reading in SQL module config
 RUN sed -i 's/#\s*read_groups = yes/read_groups = yes/g' /etc/raddb/mods-available/sql
