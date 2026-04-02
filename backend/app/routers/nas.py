@@ -175,3 +175,36 @@ async def delete_nas(
     )
     _reload_radius()
     return {"ok": True}
+
+
+@router.get("/ca-certificate")
+async def get_ca_certificate(
+    current_user: AdminUser = Depends(get_current_active_user),
+):
+    """Download the RADIUS server CA certificate for client configuration."""
+    try:
+        import subprocess
+
+        result = subprocess.run(
+            ["docker", "exec", "radius-server", "cat", "/etc/freeradius/certs/ca.pem"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            raise HTTPException(status_code=500, detail="Failed to read CA certificate")
+
+        ca_cert = result.stdout
+        if not ca_cert:
+            raise HTTPException(status_code=404, detail="CA certificate not found")
+
+        return {
+            "content": ca_cert,
+            "filename": "radius-ca.pem",
+            "content_type": "application/x-x509-ca-cert",
+        }
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=500, detail="Timeout reading certificate")
+    except Exception as exc:
+        logger.error("Error getting CA certificate: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to get CA certificate")

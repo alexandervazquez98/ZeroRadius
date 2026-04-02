@@ -1,0 +1,44 @@
+﻿# DICCIONARIO RADIUS PARA CAMBIUM PMP 450i / CANOPY
+# Basado en Vendor ID 161 (Legacy Motorola/Canopy)
+
+VENDOR      Motorola    161
+
+BEGIN-VENDOR    Motorola
+
+# --- Gesti├│n de Usuarios (Acceso al AP) ---
+# Nivel de usuario: 1=Tech, 2=Install, 3=Admin [Fuente 209]
+ATTRIBUTE   Cambium-Canopy-UserLevel            50  integer
+# Modo de usuario: 0=Read-Write, 1=Read-Only [Fuente 209]
+ATTRIBUTE   Cambium-Canopy-UserMode             51  integer
+
+# --- Gesti├│n de Ancho de Banda (QoS) ---
+# Velocidades Sostenidas (Sustained Rates) en kbps [Fuente 213]
+ATTRIBUTE   Cambium-Canopy-DLBR                 8   integer
+ATTRIBUTE   Cambium-Canopy-ULBR                 7   integer
+
+# R├ífagas (Burst Allocation) en kbits [Fuente 213]
+ATTRIBUTE   Cambium-Canopy-DLBL                 6   integer
+ATTRIBUTE   Cambium-Canopy-ULBL                 5   integer
+
+# --- Configuraci├│n de Prioridad (VoIP/High Priority) ---
+# Habilitar canal de alta prioridad: 1=Enable, 0=Disable [Fuente 213]
+ATTRIBUTE   Cambium-Canopy-HPENABLE             24  integer
+ATTRIBUTE   Cambium-Canopy-HPDLCIR              22  integer
+ATTRIBUTE   Cambium-Canopy-HPULCIR              23  integer
+ATTRIBUTE   Cambium-Canopy-LPDLCIR              20  integer
+ATTRIBUTE   Cambium-Canopy-LPULCIR              21  integer
+
+# --- Configuraci├│n de Red Espec├¡fica ---
+# Gateway para el SM (si se asigna IP est├ítica/Framed-IP) [Fuente 212]
+ATTRIBUTE   Cambium-Canopy-Gateway              4   ipaddr
+
+# --- VLANs ---
+# Habilitar aprendizaje de VLAN [Fuente 214]
+ATTRIBUTE   Cambium-Canopy-VLLEARNEN            14  integer
+# ID de VLAN (1-4094) [Fuente 214]
+ATTRIBUTE   Cambium-Canopy-VLIDSET              15  integer
+
+# --- Otros Atributos de Broadcast ---
+ATTRIBUTE   Cambium-Canopy-BCASTMIR             25  integer
+
+END-VENDOR      Motorola

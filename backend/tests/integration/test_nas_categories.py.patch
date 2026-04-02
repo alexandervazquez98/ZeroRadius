@@ -1,0 +1,8 @@
+--- tests/integration/test_nas_categories.py
++++ tests/integration/test_nas_categories.py
+@@ -16,6 +16,7 @@
+     response = await async_client.post(
+         "/nas-categories", json=payload, headers=headers
+     )
++    print(response.json())
+     assert response.status_code == 201
