@@ -140,6 +140,122 @@ const AttributeCombobox = ({ options, value, onChange, disabled }) => {
     );
 };
 
+// Combobox con búsqueda para vendors/diccionarios
+const VendorCombobox = ({ options, value, onChange }) => {
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState('');
+    const containerRef = useRef(null);
+    const inputRef = useRef(null);
+
+    // Cerrar al clickar afuera
+    useEffect(() => {
+        const handler = (e) => {
+            if (containerRef.current && !containerRef.current.contains(e.target)) {
+                setOpen(false);
+                setQuery('');
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    // Al abrir, hacer foco en el input de búsqueda
+    useEffect(() => {
+        if (open && inputRef.current) inputRef.current.focus();
+    }, [open]);
+
+    const filtered = useMemo(() => {
+        if (!query) return options;
+        const q = query.toLowerCase();
+        return options.filter(o => o.toLowerCase().includes(q));
+    }, [options, query]);
+
+    const handleSelect = (val) => {
+        onChange(val);
+        setOpen(false);
+        setQuery('');
+    };
+
+    const handleClear = (e) => {
+        e.stopPropagation();
+        onChange('');
+        setQuery('');
+    };
+
+    return (
+        <div ref={containerRef} className="relative">
+            {/* Trigger */}
+            <button
+                type="button"
+                onClick={() => setOpen(o => !o)}
+                className={`w-full mt-1 border rounded-lg p-2 flex items-center justify-between text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white cursor-pointer hover:border-indigo-400
+                    ${value ? 'text-slate-800' : 'text-slate-400'}`}
+            >
+                <span className={value ? 'font-mono truncate' : 'truncate'}>
+                    {value || 'Todos los diccionarios'}
+                </span>
+                <span className="flex items-center gap-1 ml-2 shrink-0">
+                    {value && (
+                        <span onClick={handleClear} className="text-slate-400 hover:text-rose-500 p-0.5 rounded">
+                            <X size={12} />
+                        </span>
+                    )}
+                    <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+                </span>
+            </button>
+
+            {/* Dropdown */}
+            {open && (
+                <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden">
+                    {/* Search input */}
+                    <div className="p-2 border-b border-slate-100">
+                        <div className="relative">
+                            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input
+                                ref={inputRef}
+                                type="text"
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                                placeholder="Buscar diccionario..."
+                                className="w-full pl-7 pr-3 py-1.5 text-sm border rounded-md outline-none focus:ring-2 focus:ring-indigo-400"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Lista */}
+                    <div className="max-h-52 overflow-y-auto text-sm">
+                        {filtered.length === 0 ? (
+                            <div className="px-3 py-4 text-center text-slate-400 text-xs">Sin resultados para "{query}"</div>
+                        ) : (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={() => handleSelect('')}
+                                    className={`w-full text-left px-3 py-1.5 hover:bg-indigo-50 hover:text-indigo-700 transition-colors
+                                        ${value === '' ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-400'}`}
+                                >
+                                    Todos los diccionarios
+                                </button>
+                                {filtered.map(o => (
+                                    <button
+                                        key={o}
+                                        type="button"
+                                        onClick={() => handleSelect(o)}
+                                        className={`w-full text-left px-3 py-1.5 font-mono hover:bg-indigo-50 hover:text-indigo-700 transition-colors
+                                            ${value === o ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-700'}`}
+                                    >
+                                        {o}
+                                    </button>
+                                ))}
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const PoliciesPage = () => {
     const queryClient = useQueryClient();
     const [selectedGroup, setSelectedGroup] = useState(null);
@@ -485,16 +601,11 @@ const PoliciesPage = () => {
                         <form onSubmit={(e) => { e.preventDefault(); if(attributeFormData.editId) { updateGroupAttributeMutation.mutate({ id: attributeFormData.editId, type: attributeFormData.type, data: attributeFormData }); } else { createGroupAttributeMutation.mutate(attributeFormData); }}} className="space-y-3">
                             <div>
                                 <label className="text-xs font-black text-slate-500 uppercase">Diccionario (Vendor)</label>
-                                <select 
-                                    className="w-full mt-1 border rounded-lg p-2 outline-none focus:ring-2 focus:ring-indigo-500"
+                                <VendorCombobox
+                                    options={vendors}
                                     value={selectedVendor}
-                                    onChange={(e) => setSelectedVendor(e.target.value)}
-                                >
-                                    <option value="">Todos los diccionarios</option>
-                                    {vendors.map(v => (
-                                        <option key={v} value={v}>{v}</option>
-                                    ))}
-                                </select>
+                                    onChange={(val) => setSelectedVendor(val)}
+                                />
                             </div>
                             <div>
                                 <label className="text-xs font-black text-slate-500 uppercase">Tipo</label>
