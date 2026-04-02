@@ -183,34 +183,21 @@ async def get_ca_certificate(
 ):
     """Download the RADIUS server CA certificate for client configuration."""
     try:
-        import subprocess
         import os
 
-        # Try to read from mounted certs directory first
-        cert_path = "/app/radius-certs/ca.pem"
+        # Try multiple locations for the CA certificate (from docker cp to /tmp)
+        cert_paths = [
+            "/tmp/radius-ca.pem",
+            "/tmp/ca.pem",
+            "/app/radius-certs/ca.pem",
+        ]
 
-        if os.path.exists(cert_path):
-            with open(cert_path, "r") as f:
-                ca_cert = f.read()
-        else:
-            # Fallback: read from radius-server container via docker socket
-            result = subprocess.run(
-                [
-                    "docker",
-                    "exec",
-                    "radius-server",
-                    "cat",
-                    "/etc/freeradius/certs/ca.pem",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if result.returncode != 0:
-                raise HTTPException(
-                    status_code=500, detail="Failed to read CA certificate"
-                )
-            ca_cert = result.stdout
+        ca_cert = None
+        for cert_path in cert_paths:
+            if os.path.exists(cert_path):
+                with open(cert_path, "r") as f:
+                    ca_cert = f.read()
+                break
 
         if not ca_cert:
             raise HTTPException(status_code=404, detail="CA certificate not found")
@@ -220,8 +207,6 @@ async def get_ca_certificate(
             "filename": "radius-ca.pem",
             "content_type": "application/x-x509-ca-cert",
         }
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=500, detail="Timeout reading certificate")
     except Exception as exc:
         logger.error("Error getting CA certificate: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to get CA certificate")

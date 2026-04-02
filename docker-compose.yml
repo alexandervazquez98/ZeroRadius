@@ -59,7 +59,7 @@ services:
     volumes:
       - ./backend:/app
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./radius/certs:/app/radius-certs:ro
+      - /tmp:/tmp:ro
     ports:
       - "8000:8000"
     env_file:
