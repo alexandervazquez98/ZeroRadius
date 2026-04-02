@@ -50,10 +50,14 @@ RUN mkdir -p /etc/raddb/custom_dictionaries && \
 RUN sed -i 's/\$INCLUDE dictionary.motorola.wimax/# $INCLUDE dictionary.motorola.wimax/g' /usr/share/freeradius/dictionary.motorola
 
 # Enable EAP-TTLS
-# Note: We reverted default_eap_type to md5 for compatibility.
 # CRITICAL: For EAP-TTLS to return SQL attributes (like Cambium-Canopy-UserLevel),
 # we MUST enable use_tunneled_reply = yes.
 RUN sed -i 's/use_tunneled_reply = no/use_tunneled_reply = yes/g' /etc/raddb/mods-available/eap
+
+# Change default_eap_type from md5 to pap for TTLS inner authentication
+# Cambium PMP 450i uses PAP inside the TTLS tunnel, not MD5
+RUN sed -i 's/default_eap_type = md5/default_eap_type = pap/g' /etc/raddb/mods-available/eap && \
+    sed -i 's/default_eap_type = md5/default_eap_type = pap/g' /etc/raddb/mods-enabled/eap
 
 # ============================================================================
 # TLS Fix for Cambium PMP 450i - EAP-TTLS with TLS 1.0
