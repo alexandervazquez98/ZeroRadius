@@ -32,6 +32,22 @@
       "sessions": 0,
       "memories": 1,
       "prompts": 0
+    },
+    {
+      "id": "ed183ffd",
+      "created_by": "polop",
+      "created_at": "2026-04-03T06:47:02Z",
+      "sessions": 2,
+      "memories": 3,
+      "prompts": 48
+    },
+    {
+      "id": "ee3d43d3",
+      "created_by": "polop",
+      "created_at": "2026-04-03T21:37:07Z",
+      "sessions": 5,
+      "memories": 32,
+      "prompts": 79
     }
   ]
 }
