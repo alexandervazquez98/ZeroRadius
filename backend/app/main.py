@@ -9,20 +9,69 @@ import os
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# CORS — Restricted whitelist (Task 3.1 / 3.2 / 3.3 / 3.4)
+# ---------------------------------------------------------------------------
+_DEFAULT_DEV_ORIGINS = [
+    "http://localhost:3009",
+    "http://localhost:5173",
+]
+
+
+def _parse_allowed_origins() -> list[str]:
+    """Parse ALLOWED_ORIGINS env var into a validated list of origins.
+
+    - Reads comma-separated URLs from the ``ALLOWED_ORIGINS`` environment variable.
+    - Falls back to dev-only localhost origins when the variable is not set.
+    - Invalid entries (not starting with http:// or https://) are skipped with
+      a warning instead of crashing the application.
+    """
+    raw = os.getenv("ALLOWED_ORIGINS", "").strip()
+    if not raw:
+        logger.warning(
+            "ALLOWED_ORIGINS is not set — falling back to default development origins: %s",
+            _DEFAULT_DEV_ORIGINS,
+        )
+        return list(_DEFAULT_DEV_ORIGINS)
+
+    validated: list[str] = []
+    for entry in raw.split(","):
+        origin = entry.strip()
+        if not origin:
+            continue
+        if not (origin.startswith("http://") or origin.startswith("https://")):
+            logger.warning(
+                "ALLOWED_ORIGINS: '%s' is not a valid URL (must start with http:// or https://) — skipping.",
+                origin,
+            )
+            continue
+        validated.append(origin)
+
+    if not validated:
+        logger.warning(
+            "ALLOWED_ORIGINS contained no valid URLs — falling back to default development origins: %s",
+            _DEFAULT_DEV_ORIGINS,
+        )
+        return list(_DEFAULT_DEV_ORIGINS)
+
+    return validated
+
+
 app = FastAPI(title="FreeRADIUS Manager", version="1.1.1", redirect_slashes=False)
 
-# CORS
-origins = os.getenv(
-    "ALLOWED_ORIGINS",
-    "*",
-).split(",")
+_allowed_origins = _parse_allowed_origins()
+logger.info(
+    "CORS whitelist configured with %d origin(s): %s",
+    len(_allowed_origins),
+    _allowed_origins,
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=_allowed_origins,
     allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
 
 

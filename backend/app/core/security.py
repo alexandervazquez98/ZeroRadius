@@ -11,7 +11,18 @@ from app.models.models import AdminUser
 import os
 
 # Configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "insecure_default_secret_key_change_me")
+# SECRET_KEY is required — the application will not start without it.
+# Set the SECRET_KEY environment variable to a strong random secret.
+_secret_key = os.getenv("SECRET_KEY")
+if not _secret_key:
+    raise RuntimeError(
+        "SECRET_KEY environment variable is required. "
+        "Set it to a strong random secret before starting the application."
+    )
+SECRET_KEY: str = _secret_key
+
+# JWT_ALGORITHM is configurable via the ALGORITHM environment variable (default: HS256).
+# Supported values: HS256, HS384, HS512 (symmetric) or RS256/RS512 (asymmetric, requires key pair).
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
 
