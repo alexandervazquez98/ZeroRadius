@@ -29,6 +29,9 @@ if [ -d "$MOUNTED_CERTS" ]; then
         chmod 600 "$CERT_DIR"/*.key 2>/dev/null || true
         chmod 644 "$CERT_DIR"/*.pem 2>/dev/null || true
         
+        # Fix ownership - certificates must be owned by freerad for RADIUS to read them
+        chown -R freerad:freerad "$CERT_DIR" 2>/dev/null || true
+        
         echo "Certificates copied successfully"
     else
         echo "Warning: mounted certs directory is empty, using defaults"
