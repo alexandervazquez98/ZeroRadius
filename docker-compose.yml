@@ -13,8 +13,6 @@ services:
     volumes:
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
       - db_data:/var/lib/mysql
-    networks:
-      - radius-net
     healthcheck:
       test: [ "CMD-SHELL", "mysqladmin ping -h localhost -u ${MYSQL_USER} -p${MYSQL_PASSWORD} || exit 1" ]
       interval: 10s
@@ -47,8 +45,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    networks:
-      - radius-net
 
   backend:
     restart: unless-stopped
@@ -71,8 +67,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    networks:
-      - radius-net
 
   frontend:
     restart: unless-stopped
@@ -84,12 +78,6 @@ services:
       - "443:443"
     volumes:
       - ./certs:/etc/nginx/certs
-    networks:
-      - radius-net
-
-networks:
-  radius-net:
-    driver: bridge
 
 volumes:
   db_data:

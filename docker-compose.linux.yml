@@ -4,7 +4,6 @@
 # to the host network stack. This means:
 #   - The radius container sees the host's loopback (127.0.0.1)
 #   - The DB port must be exposed on 127.0.0.1 so radius can reach it
-#   - The radius is removed from the Docker bridge network
 #
 # Applied automatically by scripts/start.sh on Linux.
 # Usage: docker compose -f docker-compose.yml -f docker-compose.linux.yml up -d
