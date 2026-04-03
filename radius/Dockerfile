@@ -1,7 +1,7 @@
 FROM freeradius/freeradius-server:3.2.3
 
-# Install netcat for MySQL health checks (Alpine doesn't include it by default)
-RUN apk add --no-cache netcat-openbsd
+# Install netcat for MySQL health checks (Debian-based image, not Alpine)
+RUN apt-get update && apt-get install -y --no-install-recommends netcat-openbsd && rm -rf /var/lib/apt/lists/*
 
 # Enable SQL module by linking
 RUN cd /etc/raddb/mods-enabled && \
