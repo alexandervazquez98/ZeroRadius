@@ -290,11 +290,3 @@ SELECT
         END AS UNSIGNED)                       AS prefix_len
 FROM nas n
 JOIN nas_categories nc ON n.category_id = nc.id;
-
--- ============================================================================
--- Fix for Linux host networking: ensure radius user can connect via loopback
--- When radius uses network_mode:host, it connects from 127.0.0.1/localhost
--- ============================================================================
-GRANT ALL PRIVILEGES ON radius.* TO 'radius'@'127.0.0.1' IDENTIFIED BY 'secure_radius_password';
-GRANT ALL PRIVILEGES ON radius.* TO 'radius'@'localhost' IDENTIFIED BY 'secure_radius_password';
-FLUSH PRIVILEGES;
