@@ -46,7 +46,6 @@ services:
       - ./radius/sql:/etc/raddb/mods-available/sql
       - ./radius/clients.conf:/etc/raddb/clients.conf
       - ./radius/default.conf:/etc/freeradius/sites-enabled/default
-      - ./radius/certs:/etc/raddb/certs:ro
       - ./radius/certs:/app/radius-certs:ro
     depends_on:
       db:

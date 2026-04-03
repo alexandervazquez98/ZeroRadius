@@ -3,8 +3,8 @@ set -e
 
 # ============================================================================
 # Certificate initialization - runs ONLY if certificates are missing
-# Checks mounted volume first, then generates if needed
-# This runs once per container start, but certificates persist in Docker volume
+# Copies from mounted volume to the RADIUS certs directory
+# This runs once per container start, but certificates persist in volume
 # ============================================================================
 
 CERT_DIR="/etc/raddb/certs"
@@ -15,22 +15,27 @@ if [ ! -f "$CERT_DIR/server.key" ]; then
     echo "Initializing certificates..."
     
     # Try to copy from mounted volume first (preferred method)
-    if [ -d "$MOUNTED_CERTS" ] && [ -f "$MOUNTED_CERTS/server.pem" ]; then
+    if [ -d "$MOUNTED_CERTS" ]; then
         echo "Copying certificates from mounted volume..."
-        mkdir -p "$CERT_DIR"
-        cp "$MOUNTED_CERTS/ca.pem" "$CERT_DIR/ca.pem" 2>/dev/null || true
-        cp "$MOUNTED_CERTS/server.pem" "$CERT_DIR/server.pem" 2>/dev/null || true
-        cp "$MOUNTED_CERTS/server.key" "$CERT_DIR/server.key" 2>/dev/null || true
-        # Also copy as ca.key if needed
-        cp "$MOUNTED_CERTS/ca.pem" "$CERT_DIR/ca.key" 2>/dev/null || true
-        chmod 644 "$CERT_DIR"/*.pem 2>/dev/null || true
-        chmod 600 "$CERT_DIR"/*.key 2>/dev/null || true
-        echo "Certificates copied from mounted volume"
+        
+        # Count files in mounted directory
+        FILE_COUNT=$(ls -1 "$MOUNTED_CERTS" 2>/dev/null | wc -l)
+        
+        if [ "$FILE_COUNT" -gt 0 ]; then
+            # Copy all files from mounted directory
+            cp -f "$MOUNTED_CERTS"/*.pem "$CERT_DIR/" 2>/dev/null || true
+            cp -f "$MOUNTED_CERTS"/*.key "$CERT_DIR/" 2>/dev/null || true
+            
+            # Fix permissions for private keys
+            chmod 600 "$CERT_DIR"/*.key 2>/dev/null || true
+            chmod 644 "$CERT_DIR"/*.pem 2>/dev/null || true
+            
+            echo "Certificates copied successfully"
+        else
+            echo "Warning: mounted certs directory is empty, using defaults"
+        fi
     else
-        # Fallback: generate self-signed certificates using existing CA if available
-        echo "No mounted certificates found, attempting to use default certs..."
-        # The base image has default certs, but they may not be valid
-        # This is a fallback - in production, certificates should be mounted
+        echo "Warning: mounted certs directory not found"
     fi
 fi
 
