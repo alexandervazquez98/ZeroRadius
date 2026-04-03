@@ -9,9 +9,13 @@ from sqlalchemy import (
     UniqueConstraint,
     Index,
     ForeignKey,
+    Enum,
+    text,
 )
+from sqlalchemy.dialects.mysql import DATETIME as MySQLDATETIME
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
+from sqlalchemy.schema import FetchedValue
 from typing import Optional
 from app.db.session import Base
 import datetime
@@ -90,17 +94,21 @@ class Nas(Base):
     zone_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("hardware_zones.id", ondelete="SET NULL"), nullable=True
     )
-    zone: Mapped[Optional["HardwareZone"]] = relationship("HardwareZone", back_populates="nases")
+    zone: Mapped[Optional["HardwareZone"]] = relationship(
+        "HardwareZone", back_populates="nases"
+    )
     # nas-categories feature: structured device classification
     category_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("nas_categories.id", ondelete="SET NULL"), nullable=True
     )
-    category: Mapped[Optional["NasCategory"]] = relationship("NasCategory", back_populates="nases")
+    category: Mapped[Optional["NasCategory"]] = relationship(
+        "NasCategory", back_populates="nases"
+    )
 
 
 class RadAcct(Base):
     __tablename__ = "radacct"
-    radacctid: Mapped[int] = mapped_column(Integer, primary_key=True)
+    radacctid: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     acctsessionid: Mapped[str] = mapped_column(
         String(64), nullable=False, default="", index=True
     )
@@ -163,18 +171,18 @@ class RadPostAuth(Base):
         "pass", String(64), nullable=False, default=""
     )  # 'pass' is reserved keyword
     reply: Mapped[str] = mapped_column(String(32), nullable=False, default="")
-    authdate: Mapped[Optional[datetime.datetime]] = mapped_column(
-        DateTime(timezone=False), server_default=func.now(), nullable=True
+    authdate: Mapped[datetime.datetime] = mapped_column(
+        MySQLDATETIME(fsp=6), server_default=func.now(), nullable=False
     )
     # T07 — enhanced traceability fields (ISO 27001 A.8.15, A.5.33)
-    nas_ip_address: Mapped[Optional[str]] = mapped_column(String(15), nullable=True)
+    nas_ip_address: Mapped[str] = mapped_column(String(15), nullable=False, default="")
     nas_identifier: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     nas_port: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     calling_station_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     called_station_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     reply_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    event_source: Mapped[Optional[str]] = mapped_column(
-        String(32), nullable=True, default="radius"
+    event_source: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="radius"
     )
     integrity_hash: Mapped[Optional[str]] = mapped_column(String(71), nullable=True)
 
@@ -253,7 +261,9 @@ class UserNasPrivilegeMap(Base):
     nas_category_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("nas_categories.id", ondelete="SET NULL"), nullable=True
     )
-    category: Mapped[Optional["NasCategory"]] = relationship("NasCategory", foreign_keys=[nas_category_id])
+    category: Mapped[Optional["NasCategory"]] = relationship(
+        "NasCategory", foreign_keys=[nas_category_id]
+    )
     nas_identifier: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     nas_vendor: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     radius_group: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -268,7 +278,10 @@ class UserNasPrivilegeMap(Base):
         DateTime(timezone=False), server_default=func.now(), nullable=True
     )
     updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(
-        DateTime(timezone=False), server_default=func.now(), nullable=True
+        DateTime(timezone=False),
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=FetchedValue(),
+        nullable=True,
     )
 
     __table_args__ = (
@@ -279,26 +292,33 @@ class UserNasPrivilegeMap(Base):
 
 # --- IAM & NAC RBAC Models ---
 
+
 class HardwareZone(Base):
     __tablename__ = "hardware_zones"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(
+        String(100), unique=True, nullable=False, index=True
+    )
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
+
     nases: Mapped[list["Nas"]] = relationship("Nas", back_populates="zone")
 
 
 class IAM_Role(Base):
     __tablename__ = "iam_roles"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(
+        String(50), unique=True, nullable=False, index=True
+    )
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
 class PolicyMacro(Base):
     __tablename__ = "policy_macros"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(
+        String(100), unique=True, nullable=False, index=True
+    )
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     attributes_json: Mapped[dict] = mapped_column(JSON, default={})
 
@@ -306,15 +326,23 @@ class PolicyMacro(Base):
 class RoleZonePolicy(Base):
     __tablename__ = "role_zone_policies"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    role_id: Mapped[int] = mapped_column(Integer, ForeignKey("iam_roles.id", ondelete="CASCADE"), nullable=False)
-    zone_id: Mapped[int] = mapped_column(Integer, ForeignKey("hardware_zones.id", ondelete="CASCADE"), nullable=False)
-    policy_id: Mapped[int] = mapped_column(Integer, ForeignKey("policy_macros.id", ondelete="CASCADE"), nullable=False)
-    
+    role_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("iam_roles.id", ondelete="CASCADE"), nullable=False
+    )
+    zone_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("hardware_zones.id", ondelete="CASCADE"), nullable=False
+    )
+    policy_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("policy_macros.id", ondelete="CASCADE"), nullable=False
+    )
+
     role: Mapped["IAM_Role"] = relationship("IAM_Role")
     zone: Mapped["HardwareZone"] = relationship("HardwareZone")
     policy: Mapped["PolicyMacro"] = relationship("PolicyMacro")
-    
-    __table_args__ = (UniqueConstraint("role_id", "zone_id", name="uq_role_zone_policy"),)
+
+    __table_args__ = (
+        UniqueConstraint("role_id", "zone_id", name="uq_role_zone_policy"),
+    )
 
 
 # nas-categories feature: structured NAS device classification
@@ -326,11 +354,16 @@ class NasCategory(Base):
         - standard:    Normal network devices.
         - restricted:  Limited-access devices (read-only or no user access by default).
     """
+
     __tablename__ = "nas_categories"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(
+        String(64), unique=True, nullable=False, index=True
+    )
     description: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
-    criticality: Mapped[str] = mapped_column(String(20), nullable=False, default="standard")
+    criticality: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="standard"
+    )
     vendor: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[Optional[datetime.datetime]] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=True
