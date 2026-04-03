@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 
 import docker
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
-from jose import JWTError, jwt as jose_jwt
+import jwt
+from jwt.exceptions import InvalidTokenError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,9 +40,7 @@ RADIUS_CONTAINER_NAME = "radius-server"
 MAX_BLOCK_LINES = 500
 
 # Regex patterns for FreeRADIUS -X debug output
-_RE_REQUEST_START = re.compile(
-    r"^\((\d+)\)\s+Received\s+Access-Request", re.IGNORECASE
-)
+_RE_REQUEST_START = re.compile(r"^\((\d+)\)\s+Received\s+Access-Request", re.IGNORECASE)
 _RE_VERDICT = re.compile(
     r"^\((\d+)\)\s+Sent\s+(Access-Accept|Access-Reject)", re.IGNORECASE
 )
@@ -75,17 +74,18 @@ async def ntp_status(
 # WebSocket log streaming
 # ---------------------------------------------------------------------------
 
+
 async def _authenticate_ws(token: str) -> AdminUser | None:
     """
     Validate a JWT token outside the normal Depends() chain (WebSocket has no
     OAuth2 header support).  Returns the AdminUser if valid & authorized, else None.
     """
     try:
-        payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub", "")
         if not username:
             return None
-    except JWTError:
+    except InvalidTokenError:
         return None
 
     async with SessionLocal() as db:
@@ -147,9 +147,7 @@ async def stream_radius_logs(websocket: WebSocket):
         await websocket.close(code=4004, reason="Container not found")
         return
     except docker.errors.DockerException as exc:
-        await websocket.send_text(
-            json.dumps({"error": f"Docker error: {str(exc)}"})
-        )
+        await websocket.send_text(json.dumps({"error": f"Docker error: {str(exc)}"}))
         await websocket.close(code=4005, reason="Docker error")
         return
 
