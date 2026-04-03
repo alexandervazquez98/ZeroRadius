@@ -55,8 +55,10 @@ do
 done
 
 # Fix symlink for certificates (some configs reference /etc/freeradius/certs)
+mkdir -p /etc/freeradius
 if [ ! -L /etc/freeradius/certs ]; then
     ln -sf /etc/raddb/certs /etc/freeradius/certs
+    echo "Created symlink /etc/freeradius/certs -> /etc/raddb/certs"
 fi
 
 # Also fix any other raddb files that may have landed as 0777
