@@ -32,9 +32,13 @@ if [ -d "$MOUNTED_CERTS" ]; then
         # Fix ownership - certificates must be owned by freerad for RADIUS to read them
         chown -R freerad:freerad "$CERT_DIR" 2>/dev/null || true
         
-        # Debug: list copied certificates
+        # Debug: list copied certificates and verify key
         echo "DEBUG: Listing certificates in $CERT_DIR:"
         ls -la "$CERT_DIR" 2>/dev/null || echo "Directory does not exist"
+        
+        # Debug: verify private key can be read by OpenSSL
+        echo "DEBUG: Verifying private key..."
+        openssl rsa -in "$CERT_DIR/server.key" -check -noout 2>&1 || echo "Key verification FAILED"
         
         echo "Certificates copied successfully"
     else
