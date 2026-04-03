@@ -16,6 +16,22 @@
       "sessions": 1,
       "memories": 1,
       "prompts": 0
+    },
+    {
+      "id": "38ac1a3f",
+      "created_by": "Alex",
+      "created_at": "2026-04-03T04:38:15Z",
+      "sessions": 5,
+      "memories": 4,
+      "prompts": 0
+    },
+    {
+      "id": "f62c0d81",
+      "created_by": "Alex",
+      "created_at": "2026-04-03T04:58:44Z",
+      "sessions": 0,
+      "memories": 1,
+      "prompts": 0
     }
   ]
 }

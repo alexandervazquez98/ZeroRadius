@@ -47,6 +47,7 @@ services:
       - ./radius/clients.conf:/etc/raddb/clients.conf
       - ./radius/default.conf:/etc/freeradius/sites-enabled/default
       - ./radius/certs:/etc/raddb/certs:ro
+      - ./radius/certs:/app/radius-certs:ro
     depends_on:
       db:
         condition: service_healthy
@@ -58,6 +59,7 @@ services:
     container_name: radius-backend
     volumes:
       - ./backend:/app
+      - ./radius/certs:/app/radius-certs:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp:/tmp:ro
     ports:

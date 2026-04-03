@@ -185,11 +185,11 @@ async def get_ca_certificate(
     try:
         import os
 
-        # Try multiple locations for the CA certificate (from docker cp to /tmp)
+        # Try multiple locations for the CA certificate
         cert_paths = [
-            "/tmp/radius-ca.pem",
-            "/tmp/ca.pem",
-            "/app/radius-certs/ca.pem",
+            "/app/radius-certs/ca.pem",  # Mounted from docker-compose
+            "/tmp/radius-ca.pem",  # Legacy path
+            "/tmp/ca.pem",  # Legacy path
         ]
 
         ca_cert = None
