@@ -6,8 +6,8 @@ from starlette.requests import Request
 from app.db.session import get_db
 from app.models.models import AppAuditLog, AdminUser, RadPostAuth
 from app.schemas.schemas import AuditLogOut, RadPostAuthOut, SIEMEvent
-from app.core.security import get_current_active_user
 from app.core.rbac import require_roles, Role
+from app.core.security import get_current_active_user
 from app.core.limiter import limiter
 from app.services.audit import log_audit, EventCode
 from typing import Optional
@@ -23,9 +23,9 @@ router = APIRouter(prefix="/audit", tags=["audit"])
 async def get_admin_audit_logs(
     skip: int = 0,
     limit: int = 50,
-    search: Optional[str] = None,
+    search: Optional[str] = Query(default=None, max_length=100),
     db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = Depends(get_current_active_user),
+    current_user: AdminUser = require_roles(Role.AUDITOR, Role.ADMIN, Role.SUPERADMIN),
 ):
     """List administrative action logs."""
     stmt = select(AppAuditLog).order_by(AppAuditLog.timestamp.desc())
@@ -49,7 +49,7 @@ async def get_admin_audit_logs(
 async def get_access_logs(
     skip: int = 0,
     limit: int = 50,
-    search: Optional[str] = None,
+    search: Optional[str] = Query(default=None, max_length=100),
     nas_ip: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),

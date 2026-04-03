@@ -3,12 +3,11 @@ uvicorn[standard]==0.27.0
 sqlalchemy==2.0.25
 aiomysql==0.2.0
 alembic==1.13.1
-python-multipart==0.0.6
+python-multipart>=0.0.9
 pydantic==2.5.3
 pydantic-settings==2.1.0
-cryptography==41.0.7
-PyJWT==2.8.0
-python-jose[cryptography]==3.3.0
+cryptography>=42.0.0
+PyJWT>=2.8.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 mysqlclient==2.2.1

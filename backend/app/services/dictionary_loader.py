@@ -129,7 +129,7 @@ def _parse_builtin_attr_grep_output(grep_output: str) -> List[Dict]:
             continue
 
         filepath = raw_line[:colon_idx]
-        content = raw_line[colon_idx + 1:].strip()
+        content = raw_line[colon_idx + 1 :].strip()
 
         if not content or content.startswith("#"):
             continue
@@ -162,16 +162,17 @@ def _parse_builtin_attr_grep_output(grep_output: str) -> List[Dict]:
         seen_names.add(name)
 
         vendor = vendor_ctx.get(filename) or "IETF (Standard)"
-        attrs.append({
-            "name": name,
-            "code": int(code),
-            "type": attr_type,
-            "vendor": vendor,
-            "dictionary": f"[Sistema] {filename}",
-        })
+        attrs.append(
+            {
+                "name": name,
+                "code": int(code),
+                "type": attr_type,
+                "vendor": vendor,
+                "dictionary": f"[Sistema] {filename}",
+            }
+        )
 
     return attrs
-
 
 
 def _load_base_attribute_names() -> Set[str]:
@@ -566,6 +567,18 @@ class DictionaryService:
             os.makedirs(self.dict_dir)
         self._dictionary = None
 
+    def _validate_path(self, filename: str) -> Path:
+        """Validate that filename stays within dict_dir to prevent path traversal."""
+        from fastapi import HTTPException
+
+        base = Path(self.dict_dir).resolve()
+        target = (base / filename).resolve()
+        if not str(target).startswith(str(base) + os.sep) and target != base:
+            raise HTTPException(
+                status_code=400, detail="Invalid filename: path traversal detected"
+            )
+        return target
+
     @property
     def dictionary(self):
         if self._dictionary is None:
@@ -606,6 +619,8 @@ class DictionaryService:
     # ---- file helpers ----
 
     def rename_file(self, old_name: str, new_name: str) -> bool:
+        self._validate_path(old_name)
+        self._validate_path(new_name)
         old_path = os.path.join(self.dict_dir, old_name)
         new_path = os.path.join(self.dict_dir, new_name)
 
@@ -620,6 +635,7 @@ class DictionaryService:
 
     def delete_file(self, filename: str) -> bool:
         """Delete a dictionary file and reload."""
+        self._validate_path(filename)
         filepath = os.path.join(self.dict_dir, filename)
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"File {filename} not found")
@@ -638,6 +654,7 @@ class DictionaryService:
 
     def read_content(self, filename: str) -> str:
         """Return the raw text content of a dictionary file."""
+        self._validate_path(filename)
         filepath = os.path.join(self.dict_dir, filename)
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"File {filename} not found")
@@ -653,6 +670,7 @@ class DictionaryService:
         at the top level after auto-rename.
         Returns {"conversions": int, "renames": list} with fixes applied.
         """
+        self._validate_path(filename)
         converted, conversions = _convert_v4_types(content)
 
         # Auto-rename vendor-specific attributes that collide with base names
@@ -675,7 +693,9 @@ class DictionaryService:
             for f in os.listdir(self.dict_dir)
             if os.path.isfile(os.path.join(self.dict_dir, f))
         ]
-        collisions = _check_vendor_id_collision(converted, existing, skip_filename=filename)
+        collisions = _check_vendor_id_collision(
+            converted, existing, skip_filename=filename
+        )
         if collisions:
             raise ValueError(
                 "Vendor ID conflict detected — FreeRADIUS would fail to start: "
@@ -712,6 +732,7 @@ class DictionaryService:
         custom dictionary to prevent FreeRADIUS startup failures.
         Returns {"conversions": int, "renames": list}.
         """
+        self._validate_path(filename)
         text = content.decode("utf-8", errors="replace")
         converted, conversions = _convert_v4_types(text)
 
@@ -735,7 +756,9 @@ class DictionaryService:
             for f in os.listdir(self.dict_dir)
             if os.path.isfile(os.path.join(self.dict_dir, f))
         ]
-        collisions = _check_vendor_id_collision(converted, existing, skip_filename=filename)
+        collisions = _check_vendor_id_collision(
+            converted, existing, skip_filename=filename
+        )
         if collisions:
             raise ValueError(
                 "Vendor ID conflict detected — FreeRADIUS would fail to start: "

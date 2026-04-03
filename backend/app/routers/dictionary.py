@@ -11,6 +11,7 @@ from app.services.dictionary_loader import (
 )
 from app.services.audit import log_audit
 from app.core.security import get_current_active_user
+from app.core.rbac import require_roles, Role
 from app.core.limiter import limiter
 import logging
 import docker as docker_sdk
@@ -115,8 +116,12 @@ async def upload_dictionary(
     current_user: AdminUser = Depends(get_current_active_user),
 ):
     """Upload and validate a new dictionary file (auto-converts v4 types)."""
+    content = await file.read()
+    if len(content) > 1_048_576:  # 1MB
+        raise HTTPException(
+            status_code=413, detail="File too large. Maximum size is 1MB."
+        )
     try:
-        content = await file.read()
         result = dictionary_service.validate_and_save(
             file.filename or "unknown",
             content,
@@ -377,7 +382,7 @@ async def get_attribute_values(
 @router.get("/radius-logs")
 async def get_radius_logs(
     lines: int = 80,
-    current_user: AdminUser = Depends(get_current_active_user),
+    current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
 ):
     """Return recent FreeRADIUS container logs for dictionary diagnostics.
 

@@ -4,6 +4,7 @@ from app.routers import users, nas, auth, groups, audit, dictionary, admin_users
 from app.routers import system, privilege_map, sessions, iam_nac, nas_categories
 from app.db.session import engine, Base
 from app.core.limiter import limiter
+from app.middleware.force_password_change import ForcePasswordChangeMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 import asyncio
@@ -60,7 +61,26 @@ def _parse_allowed_origins() -> list[str]:
     return validated
 
 
-app = FastAPI(title="FreeRADIUS Manager", version="1.1.1", redirect_slashes=False)
+_disable_docs = os.getenv("DISABLE_DOCS", "false").lower() == "true"
+
+# ---------------------------------------------------------------------------
+# Startup validations — fail fast on dangerous configuration
+# ---------------------------------------------------------------------------
+_token_expire = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+if _token_expire > 1440:
+    raise RuntimeError(
+        f"ACCESS_TOKEN_EXPIRE_MINUTES={_token_expire} exceeds maximum allowed value of 1440 (24 hours). "
+        "Reduce the token lifetime to improve security."
+    )
+
+app = FastAPI(
+    title="FreeRADIUS Manager",
+    version="1.1.1",
+    redirect_slashes=False,
+    docs_url=None if _disable_docs else "/docs",
+    redoc_url=None if _disable_docs else "/redoc",
+    openapi_url=None if _disable_docs else "/openapi.json",
+)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -79,6 +99,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
+
+app.add_middleware(ForcePasswordChangeMiddleware)
 
 
 # Startup event to create tables if they don't exist (useful for dev)

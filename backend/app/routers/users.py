@@ -13,6 +13,7 @@ from app.schemas.schemas import (
 )
 from app.services.audit import log_audit
 from app.core.security import get_current_active_user
+from app.core.rbac import require_roles, Role
 from app.core.limiter import limiter
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -67,7 +68,7 @@ async def update_user_check(
     id: int,
     user_update: RadCheckUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = Depends(get_current_active_user),
+    current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
 ):
     result = await db.execute(select(RadCheck).where(RadCheck.id == id))
     user = result.scalars().first()
@@ -115,7 +116,7 @@ async def delete_user_check(
     request: Request,
     id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = Depends(get_current_active_user),
+    current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
 ):
     result = await db.execute(select(RadCheck).where(RadCheck.id == id))
     user = result.scalars().first()

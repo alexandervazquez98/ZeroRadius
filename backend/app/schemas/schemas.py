@@ -1,6 +1,8 @@
 from pydantic import BaseModel, field_validator, model_validator
 from typing import Optional, List, Any
 from datetime import datetime, date
+import re
+import ipaddress
 
 
 # RadCheck Schemas
@@ -225,6 +227,32 @@ class NasCreate(BaseModel):
             )
         return v
 
+    @field_validator("nasname")
+    @classmethod
+    def validate_nasname(cls, v: str) -> str:
+        # Try IP address
+        try:
+            ipaddress.ip_address(v)
+            return v
+        except ValueError:
+            pass
+        # Try CIDR
+        try:
+            ipaddress.ip_network(v, strict=False)
+            return v
+        except ValueError:
+            pass
+        # Try hostname RFC-1123
+        hostname_re = re.compile(
+            r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)*"
+            r"[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$"
+        )
+        if hostname_re.match(v):
+            return v
+        raise ValueError(
+            "nasname must be a valid IP address, CIDR, or RFC-1123 hostname"
+        )
+
 
 # T23 — SIEM event schema (REQ-BE-005)
 class SIEMEvent(BaseModel):
@@ -277,7 +305,7 @@ class NasCategoryOut(NasCategoryBase):
 # T23 — UserNasPrivilegeMap schemas
 class UserNasPrivilegeMapCreate(BaseModel):
     username: str
-    nas_ip: Optional[str] = None           # IP-based targeting
+    nas_ip: Optional[str] = None  # IP-based targeting
     nas_category_id: Optional[int] = None  # Category-based targeting
     nas_identifier: Optional[str] = None
     nas_vendor: Optional[str] = None
@@ -302,6 +330,7 @@ class UserNasPrivilegeMapCreate(BaseModel):
 
 class UserNasPrivilegeMapBulkCreate(BaseModel):
     """Bulk IP-based creation. For category-based entries use UserNasPrivilegeMapCreate."""
+
     username: str
     nas_ips: List[str]
     nas_identifier: Optional[str] = None
@@ -349,6 +378,7 @@ class LoginAttemptOut(BaseModel):
 
 
 # --- IAM & NAC RBAC Schemas ---
+
 
 class HardwareZoneBase(BaseModel):
     name: str
