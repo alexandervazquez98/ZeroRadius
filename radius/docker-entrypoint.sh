@@ -2,6 +2,33 @@
 set -e
 
 # ============================================================================
+# Wait for MySQL to be available before starting FreeRADIUS
+# Critical for Linux host networking where DB is on 127.0.0.1
+# ============================================================================
+DB_HOST="${DB_HOST:-db}"
+DB_PORT="${DB_PORT:-3306}"
+DB_USER="${DB_USER:-radius}"
+DB_PASS="${DB_PASS:-secure_radius_password}"
+MAX_RETRIES=30
+RETRY_INTERVAL=2
+
+echo "Waiting for MySQL at ${DB_HOST}:${DB_PORT}..."
+for i in $(seq 1 $MAX_RETRIES); do
+    # TCP-level check — works without mysql client installed
+    if nc -z -w2 "$DB_HOST" "$DB_PORT" 2>/dev/null; then
+        echo "MySQL is ready after $i attempts."
+        break
+    fi
+    if [ "$i" -eq "$MAX_RETRIES" ]; then
+        echo "ERROR: MySQL not reachable after $MAX_RETRIES attempts."
+        exit 1
+    else
+        echo "Attempt $i/$MAX_RETRIES — MySQL not ready, retrying in ${RETRY_INTERVAL}s..."
+        sleep $RETRY_INTERVAL
+    fi
+done
+
+# ============================================================================
 # Certificate initialization - runs ONLY if certificates are missing
 # Copies from mounted volume to the RADIUS certs directory
 # This runs once per container start, but certificates persist in volume

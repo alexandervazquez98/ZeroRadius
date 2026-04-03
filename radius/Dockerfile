@@ -1,5 +1,8 @@
 FROM freeradius/freeradius-server:3.2.3
 
+# Install netcat for MySQL health checks (Alpine doesn't include it by default)
+RUN apk add --no-cache netcat-openbsd
+
 # Enable SQL module by linking
 RUN cd /etc/raddb/mods-enabled && \
     ln -s ../mods-available/sql sql
@@ -106,16 +109,8 @@ RUN sed -i 's/#\s*read_groups = yes/read_groups = yes/g' /etc/raddb/mods-availab
 # Enable EAP-TTLS configuration (but default to MD5)
 # ...
 
-# Enable group reading in SQL module config
-RUN sed -i 's/#\s*read_groups = yes/read_groups = yes/g' /etc/raddb/mods-available/sql
-
 # ENABLE GROUP QUERIES (Critical for inheritance)
 # Robust approach: Delete potential existing/commented blocks first to avoid syntax errors
-RUN sed -i '/group_membership_query/,/ORDER BY/d' /etc/raddb/mods-config/sql/main/mysql/queries.conf && \
-    sed -i '/group_reply_query/,/ORDER BY/d' /etc/raddb/mods-config/sql/main/mysql/queries.conf
-
-# ENABLE GROUP QUERIES (Critical for inheritance)
-# Robust approach: Delete potential existing/commented blocks
 RUN sed -i '/group_membership_query/,/ORDER BY/d' /etc/raddb/mods-config/sql/main/mysql/queries.conf && \
     sed -i '/group_reply_query/,/ORDER BY/d' /etc/raddb/mods-config/sql/main/mysql/queries.conf
 
