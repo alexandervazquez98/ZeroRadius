@@ -8,7 +8,7 @@ set -e
 # ============================================================================
 
 CERT_DIR="/etc/raddb/certs"
-MOUNTED_CERTS="/app/radius-certs"
+MOUNTED_CERTS="/etc/freeradius/certs"
 
 # Always copy certificates from mounted volume if available
 # This ensures fresh certificates are used on each container start
@@ -64,11 +64,7 @@ do
 done
 
 # Fix symlink for certificates (some configs reference /etc/freeradius/certs)
-mkdir -p /etc/freeradius
-if [ ! -L /etc/freeradius/certs ]; then
-    ln -sf /etc/raddb/certs /etc/freeradius/certs
-    echo "Created symlink /etc/freeradius/certs -> /etc/raddb/certs"
-fi
+# No longer needed - volume mounts directly to /etc/freeradius/certs
 
 # Also fix any other raddb files that may have landed as 0777
 find /etc/raddb -type f -exec chmod go-w {} \; 2>/dev/null || true

@@ -95,12 +95,10 @@ RUN sed -i 's/#\s*ca_file = \${cadir}\/ca.pem/ca_file = ${cadir}\/ca.pem/g' /etc
     sed -i 's/^# ca_path = \${cadir}/ca_path = ${cadir}/g' /etc/raddb/mods-enabled/eap
 
 # Fix: explicitly set private_key_file to server.key and certificate_file to server.pem
-# FreeRADIUS default has private_key_file = ${cadir}/server.pem which expects the key inside server.pem
+# FreeRADIUS default has private_key_file = ${certdir}/server.pem which expects the key inside server.pem
 # Our setup has the key in server.key (separate file) — must configure this explicitly
-RUN sed -i 's|private_key_file = \${cadir}/server.pem|private_key_file = ${cadir}/server.key|g' /etc/raddb/mods-available/eap && \
-    sed -i 's|private_key_file = \${cadir}/server.pem|private_key_file = ${cadir}/server.key|g' /etc/raddb/mods-enabled/eap && \
-    sed -i 's|certificate_file = \${cadir}/server.pem|certificate_file = ${cadir}/server.pem|g' /etc/raddb/mods-available/eap && \
-    sed -i 's|certificate_file = \${cadir}/server.pem|certificate_file = ${cadir}/server.pem|g' /etc/raddb/mods-enabled/eap
+RUN sed -i 's|private_key_file = \${certdir}/server.pem|private_key_file = ${certdir}/server.key|g' /etc/raddb/mods-available/eap && \
+    sed -i 's|private_key_file = \${certdir}/server.pem|private_key_file = ${certdir}/server.key|g' /etc/raddb/mods-enabled/eap
 
 # Enable group reading in SQL module config
 RUN sed -i 's/#\s*read_groups = yes/read_groups = yes/g' /etc/raddb/mods-available/sql
