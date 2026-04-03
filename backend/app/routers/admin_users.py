@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
+from starlette.requests import Request
 from app.db.session import get_db
 from app.models.models import AdminUser
 from app.schemas.schemas import AdminUserCreate, AdminUserOut, AdminUserUpdate
 from app.core.security import get_current_active_user, get_password_hash
 from app.core.rbac import require_roles, Role
+from app.core.limiter import limiter
 from app.services.audit import log_audit, EventCode
 from app.services.lockout import unlock_user
 
@@ -22,7 +24,9 @@ async def get_admin_users(
 
 
 @router.post("", response_model=AdminUserOut)
+@limiter.limit("30/minute")
 async def create_admin_user(
+    request: Request,
     user: AdminUserCreate,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.SUPERADMIN),
@@ -68,7 +72,9 @@ async def create_admin_user(
 
 
 @router.put("/{id}", response_model=AdminUserOut)
+@limiter.limit("30/minute")
 async def update_admin_user(
+    request: Request,
     id: int,
     user_update: AdminUserUpdate,
     db: AsyncSession = Depends(get_db),
@@ -117,7 +123,9 @@ async def update_admin_user(
 
 
 @router.delete("/{id}")
+@limiter.limit("30/minute")
 async def delete_admin_user(
+    request: Request,
     id: int,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.SUPERADMIN),
@@ -150,7 +158,9 @@ async def delete_admin_user(
 
 
 @router.post("/{id}/unlock")
+@limiter.limit("30/minute")
 async def unlock_admin_user(
+    request: Request,
     id: int,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.SUPERADMIN),

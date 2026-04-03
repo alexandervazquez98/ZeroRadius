@@ -10,6 +10,7 @@ from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
 from typing import Optional
 from datetime import datetime, date
+from starlette.requests import Request
 from app.db.session import get_db
 from app.models.models import UserNasPrivilegeMap, AdminUser
 from app.schemas.schemas import (
@@ -19,6 +20,7 @@ from app.schemas.schemas import (
 )
 from app.core.security import get_current_active_user
 from app.core.rbac import require_roles, Role
+from app.core.limiter import limiter
 from app.services.audit import log_audit, EventCode
 
 router = APIRouter(prefix="/privilege-map", tags=["privilege-map"])
@@ -78,6 +80,7 @@ async def list_privilege_maps(
     Accessible by auditor, admin, and superadmin.
     """
     from app.models.models import NasCategory
+
     stmt = select(UserNasPrivilegeMap).options(
         selectinload(UserNasPrivilegeMap.category)
     )
@@ -101,7 +104,9 @@ async def list_privilege_maps(
 
 
 @router.post("", response_model=list[UserNasPrivilegeMapOut], status_code=201)
+@limiter.limit("30/minute")
 async def create_privilege_map_bulk(
+    request: Request,
     payload: UserNasPrivilegeMapBulkCreate,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
@@ -152,7 +157,9 @@ async def create_privilege_map_bulk(
 
 
 @router.post("/category", response_model=UserNasPrivilegeMapOut, status_code=201)
+@limiter.limit("30/minute")
 async def create_privilege_map_category(
+    request: Request,
     payload: UserNasPrivilegeMapCreate,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
@@ -211,7 +218,9 @@ async def create_privilege_map_category(
 
 
 @router.put("/{id}", response_model=UserNasPrivilegeMapOut)
+@limiter.limit("30/minute")
 async def update_privilege_map(
+    request: Request,
     id: int,
     payload: UserNasPrivilegeMapCreate,
     db: AsyncSession = Depends(get_db),
@@ -275,7 +284,9 @@ async def update_privilege_map(
 
 
 @router.delete("/{id}")
+@limiter.limit("30/minute")
 async def delete_privilege_map(
+    request: Request,
     id: int,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.SUPERADMIN),

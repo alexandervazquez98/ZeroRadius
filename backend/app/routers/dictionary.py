@@ -2,11 +2,16 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from typing import List, Optional
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
 from app.db.session import get_db
 from app.models.models import AdminUser
-from app.services.dictionary_loader import dictionary_service, _parse_builtin_attr_grep_output
+from app.services.dictionary_loader import (
+    dictionary_service,
+    _parse_builtin_attr_grep_output,
+)
 from app.services.audit import log_audit
 from app.core.security import get_current_active_user
+from app.core.limiter import limiter
 import logging
 import docker as docker_sdk
 
@@ -34,11 +39,14 @@ def _get_builtin_attributes_cached() -> List:
         return _builtin_attr_cache
 
     try:
-        grep_output = _exec_in_radius([
-            "grep", "-rE",
-            "^(ATTRIBUTE|VENDOR|BEGIN-VENDOR|END-VENDOR)",
-            "/usr/share/freeradius/",
-        ])
+        grep_output = _exec_in_radius(
+            [
+                "grep",
+                "-rE",
+                "^(ATTRIBUTE|VENDOR|BEGIN-VENDOR|END-VENDOR)",
+                "/usr/share/freeradius/",
+            ]
+        )
         _builtin_attr_cache = _parse_builtin_attr_grep_output(grep_output)
         logger.info(
             "Loaded %d built-in RADIUS attributes from radius-server container",
@@ -99,7 +107,9 @@ async def list_dictionary_files(
 
 
 @router.post("/upload")
+@limiter.limit("10/minute")
 async def upload_dictionary(
+    request: Request,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
@@ -139,7 +149,9 @@ async def upload_dictionary(
 
 
 @router.post("/rename")
+@limiter.limit("10/minute")
 async def rename_dictionary(
+    request: Request,
     old_name: str,
     new_name: str,
     db: AsyncSession = Depends(get_db),
@@ -167,7 +179,9 @@ async def rename_dictionary(
 
 
 @router.delete("/{filename}")
+@limiter.limit("10/minute")
 async def delete_dictionary(
+    request: Request,
     filename: str,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
@@ -207,7 +221,9 @@ async def get_dictionary_content(
 
 
 @router.put("/content/{filename}")
+@limiter.limit("10/minute")
 async def update_dictionary_content(
+    request: Request,
     filename: str,
     body: ContentBody,
     db: AsyncSession = Depends(get_db),
@@ -284,7 +300,7 @@ async def list_builtin_dictionaries(
             # Only vendor-specific dictionary files
             if not name.startswith("dictionary."):
                 continue
-            vendor = name[len("dictionary."):]  # e.g. "cisco", "cisco.asa"
+            vendor = name[len("dictionary.") :]  # e.g. "cisco", "cisco.asa"
             results.append(BuiltinDictInfo(filename=name, vendor=vendor))
         return results
     except Exception as exc:
@@ -305,8 +321,11 @@ async def get_builtin_dictionary_content(
     prevent path traversal attacks before exec-ing into the container.
     """
     import re as _re
+
     if not _re.fullmatch(r"dictionary\.[a-zA-Z0-9._-]+", filename):
-        raise HTTPException(status_code=400, detail="Invalid built-in dictionary filename.")
+        raise HTTPException(
+            status_code=400, detail="Invalid built-in dictionary filename."
+        )
     try:
         content = _exec_in_radius(["cat", f"/usr/share/freeradius/{filename}"])
         return {"filename": filename, "content": content, "builtin": True}

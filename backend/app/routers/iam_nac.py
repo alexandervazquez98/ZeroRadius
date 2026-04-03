@@ -3,70 +3,138 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List
 from datetime import datetime, timedelta
+from starlette.requests import Request
 
 from app.db.session import get_db
 from app.services.dictionary_loader import dictionary_service
 from app.routers.dictionary import _get_builtin_attributes_cached
-from app.models.models import HardwareZone, IAM_Role, PolicyMacro, RoleZonePolicy, RadCheck, RadGroupReply
-from app.schemas.schemas import (
-    HardwareZoneCreate, HardwareZoneOut,
-    IAMRoleCreate, IAMRoleOut,
-    PolicyMacroCreate, PolicyMacroOut,
-    RoleZonePolicyCreate, RoleZonePolicyOut
+from app.models.models import (
+    HardwareZone,
+    IAM_Role,
+    PolicyMacro,
+    RoleZonePolicy,
+    RadCheck,
+    RadGroupReply,
+    AdminUser,
 )
+from app.schemas.schemas import (
+    HardwareZoneCreate,
+    HardwareZoneOut,
+    IAMRoleCreate,
+    IAMRoleOut,
+    PolicyMacroCreate,
+    PolicyMacroOut,
+    RoleZonePolicyCreate,
+    RoleZonePolicyOut,
+)
+from app.core.security import get_current_active_user
+from app.core.rbac import require_roles, Role
+from app.core.limiter import limiter
 
 router = APIRouter(prefix="/iam-nac", tags=["IAM & NAC RBAC"])
 
+
 # --- Phase 2.1: Hardware Zones CRUD ---
 @router.post("/zones", response_model=HardwareZoneOut)
-async def create_zone(zone: HardwareZoneCreate, db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def create_zone(
+    zone: HardwareZoneCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
+):
     db_zone = HardwareZone(**zone.model_dump())
     db.add(db_zone)
     await db.commit()
     await db.refresh(db_zone)
     return db_zone
 
+
 @router.get("/zones", response_model=List[HardwareZoneOut])
-async def list_zones(db: AsyncSession = Depends(get_db)):
+async def list_zones(
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = Depends(get_current_active_user),
+):
     result = await db.execute(select(HardwareZone))
     return result.scalars().all()
 
+
 # --- Phase 2.1: IAM Roles CRUD ---
 @router.post("/roles", response_model=IAMRoleOut)
-async def create_role(role: IAMRoleCreate, db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def create_role(
+    role: IAMRoleCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
+):
     db_role = IAM_Role(**role.model_dump())
     db.add(db_role)
     await db.commit()
     await db.refresh(db_role)
     return db_role
 
+
 @router.get("/roles", response_model=List[IAMRoleOut])
-async def list_roles(db: AsyncSession = Depends(get_db)):
+async def list_roles(
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = Depends(get_current_active_user),
+):
     result = await db.execute(select(IAM_Role))
     return result.scalars().all()
 
+
 # --- Phase 2.2: Policy Macros & Motor Compilador ---
 @router.post("/macros", response_model=PolicyMacroOut)
-async def create_macro(macro: PolicyMacroCreate, db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def create_macro(
+    macro: PolicyMacroCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
+):
     db_macro = PolicyMacro(**macro.model_dump())
     db.add(db_macro)
     await db.commit()
     await db.refresh(db_macro)
     return db_macro
 
+
 @router.get("/macros", response_model=List[PolicyMacroOut])
-async def list_macros(db: AsyncSession = Depends(get_db)):
+async def list_macros(
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = Depends(get_current_active_user),
+):
     return (await db.execute(select(PolicyMacro))).scalars().all()
 
+
 @router.delete("/macros/{macro_id}")
-async def delete_macro(macro_id: int, db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def delete_macro(
+    macro_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
+):
     await db.execute(PolicyMacro.__table__.delete().where(PolicyMacro.id == macro_id))
     await db.commit()
     return {"status": "ok"}
 
+
 @router.put("/macros/{macro_id}", response_model=PolicyMacroOut)
-async def update_macro(macro_id: int, macro_data: PolicyMacroCreate, db: AsyncSession = Depends(get_db)):
-    macro = (await db.execute(select(PolicyMacro).where(PolicyMacro.id == macro_id))).scalars().first()
+@limiter.limit("30/minute")
+async def update_macro(
+    macro_id: int,
+    macro_data: PolicyMacroCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
+):
+    macro = (
+        (await db.execute(select(PolicyMacro).where(PolicyMacro.id == macro_id)))
+        .scalars()
+        .first()
+    )
     if not macro:
         raise HTTPException(status_code=404, detail="Macro not found")
     macro.name = macro_data.name
@@ -76,44 +144,76 @@ async def update_macro(macro_id: int, macro_data: PolicyMacroCreate, db: AsyncSe
     await db.refresh(macro)
     return macro
 
+
 @router.delete("/zones/{zone_id}")
-async def delete_zone(zone_id: int, db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def delete_zone(
+    zone_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
+):
     await db.execute(HardwareZone.__table__.delete().where(HardwareZone.id == zone_id))
     await db.commit()
     return {"status": "ok"}
 
+
 @router.delete("/roles/{role_id}")
-async def delete_role(role_id: int, db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def delete_role(
+    role_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
+):
     await db.execute(IAM_Role.__table__.delete().where(IAM_Role.id == role_id))
     await db.commit()
     return {"status": "ok"}
 
+
 @router.get("/matrix-assign", response_model=List[RoleZonePolicyOut])
-async def list_matrix_assignments(db: AsyncSession = Depends(get_db)):
+async def list_matrix_assignments(
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = Depends(get_current_active_user),
+):
     return (await db.execute(select(RoleZonePolicy))).scalars().all()
 
+
 @router.post("/matrix-assign", response_model=RoleZonePolicyOut)
-async def assign_policy_matrix(assignment: RoleZonePolicyCreate, db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def assign_policy_matrix(
+    assignment: RoleZonePolicyCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
+):
     stmt = select(RoleZonePolicy).where(
         RoleZonePolicy.role_id == assignment.role_id,
-        RoleZonePolicy.zone_id == assignment.zone_id
+        RoleZonePolicy.zone_id == assignment.zone_id,
     )
     existing = (await db.execute(stmt)).scalars().first()
-    
+
     if existing:
         existing.policy_id = assignment.policy_id
         await db.commit()
         await db.refresh(existing)
         return existing
-        
+
     db_assignment = RoleZonePolicy(**assignment.model_dump())
     db.add(db_assignment)
     await db.commit()
     await db.refresh(db_assignment)
     return db_assignment
 
+
 @router.post("/compile/{policy_id}")
-async def compile_policy_to_radius(policy_id: int, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def compile_policy_to_radius(
+    policy_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
+):
     """
     Phase 2.2: Policy Compiler Engine that translates a Macro to radgroupreply rows.
 
@@ -124,18 +224,27 @@ async def compile_policy_to_radius(policy_id: int, db: AsyncSession = Depends(ge
     The compiled RADIUS group name equals the safe (space-stripped) policy name so
     the group appears as-is in GET /groups/list and the user-assignment dropdown.
     """
-    policy = (await db.execute(select(PolicyMacro).where(PolicyMacro.id == policy_id))).scalars().first()
+    policy = (
+        (await db.execute(select(PolicyMacro).where(PolicyMacro.id == policy_id)))
+        .scalars()
+        .first()
+    )
     if not policy:
         raise HTTPException(status_code=404, detail="PolicyMacro not found")
 
     attributes = policy.attributes_json.get("attributes", [])
     if not isinstance(attributes, list):
-        raise HTTPException(status_code=400, detail="Invalid attributes_json format. Expected 'attributes' array.")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid attributes_json format. Expected 'attributes' array.",
+        )
 
     # --- Build the full set of valid attribute names ---
     # Custom dicts: whatever DictionaryService has loaded from backend/dictionaries/
     dict_obj = dictionary_service.dictionary
-    custom_attr_names: set = set(dict_obj.attributes.keys()) if hasattr(dict_obj, "attributes") else set()
+    custom_attr_names: set = (
+        set(dict_obj.attributes.keys()) if hasattr(dict_obj, "attributes") else set()
+    )
 
     # Built-in dicts: from radius-server container (cached in memory after first load)
     builtin_attr_names: set = {a["name"] for a in _get_builtin_attributes_cached()}
@@ -149,7 +258,9 @@ async def compile_policy_to_radius(policy_id: int, db: AsyncSession = Depends(ge
         op = item.get("op", "=")
 
         if not attr_name or attr_value is None:
-            raise HTTPException(status_code=400, detail="Attribute missing 'name' or 'value'")
+            raise HTTPException(
+                status_code=400, detail="Attribute missing 'name' or 'value'"
+            )
 
         # Validate only when we have a populated set to check against.
         # If all_valid_names is empty (first startup, Docker not ready), allow through
@@ -157,7 +268,7 @@ async def compile_policy_to_radius(policy_id: int, db: AsyncSession = Depends(ge
         if all_valid_names and attr_name not in all_valid_names:
             raise HTTPException(
                 status_code=400,
-                detail=f"Attribute '{attr_name}' not found in any loaded RADIUS dictionary."
+                detail=f"Attribute '{attr_name}' not found in any loaded RADIUS dictionary.",
             )
 
         valid_attrs.append({"name": attr_name, "value": str(attr_value), "op": op})
@@ -177,48 +288,53 @@ async def compile_policy_to_radius(policy_id: int, db: AsyncSession = Depends(ge
 
     # Insert newly compiled attributes
     for item in valid_attrs:
-        db.add(RadGroupReply(
-            groupname=group_name,
-            attribute=item["name"],
-            op=item["op"],
-            value=item["value"]
-        ))
+        db.add(
+            RadGroupReply(
+                groupname=group_name,
+                attribute=item["name"],
+                op=item["op"],
+                value=item["value"],
+            )
+        )
 
     await db.commit()
 
     return {
         "message": f"Policy '{policy.name}' compiled successfully.",
         "compiled_group_name": group_name,
-        "attributes_compiled": len(valid_attrs)
+        "attributes_compiled": len(valid_attrs),
     }
 
 
 # --- Phase 2.3 & 2.4: Módulo IAM JIT (Break-Glass) ---
 @router.post("/jit-requests/{username}/approve")
-async def approve_jit_access(username: str, ttl_hours: int, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def approve_jit_access(
+    username: str,
+    ttl_hours: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
+):
     """
-    Authorizes temporary elevation of a user by injecting the Expiration attribute 
+    Authorizes temporary elevation of a user by injecting the Expiration attribute
     into their radcheck table.
     """
     expiration_date = datetime.now() + timedelta(hours=ttl_hours)
-    expiration_str = expiration_date.strftime('%d %b %Y %H:%M')
-    
+    expiration_str = expiration_date.strftime("%d %b %Y %H:%M")
+
     # Check if Expiration attribute already exists for this user
     stmt = select(RadCheck).where(
-        RadCheck.username == username,
-        RadCheck.attribute == "Expiration"
+        RadCheck.username == username, RadCheck.attribute == "Expiration"
     )
     existing_attr = (await db.execute(stmt)).scalars().first()
-    
+
     if existing_attr:
         existing_attr.value = expiration_str
         existing_attr.op = ":="
     else:
         new_attr = RadCheck(
-            username=username,
-            attribute="Expiration",
-            op=":=",
-            value=expiration_str
+            username=username, attribute="Expiration", op=":=", value=expiration_str
         )
         db.add(new_attr)
 

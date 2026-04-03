@@ -19,11 +19,13 @@ from app.services.lockout import (
     LOCKOUT_DURATION_MINUTES,
 )
 from app.services.audit import log_audit, EventCode
+from app.core.limiter import limiter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/token", response_model=Token)
+@limiter.limit("5/minute")
 async def login_for_access_token(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -122,7 +124,9 @@ class PasswordChange(BaseModel):
 
 
 @router.post("/change-password")
+@limiter.limit("10/minute")
 async def change_password(
+    request: Request,
     pwd: PasswordChange,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
