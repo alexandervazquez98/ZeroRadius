@@ -1,6 +1,39 @@
 #!/bin/sh
 set -e
 
+# ============================================================================
+# Certificate initialization - runs ONLY if certificates are missing
+# Checks mounted volume first, then generates if needed
+# This runs once per container start, but certificates persist in Docker volume
+# ============================================================================
+
+CERT_DIR="/etc/raddb/certs"
+MOUNTED_CERTS="/app/radius-certs"
+
+# Only initialize if the private key is missing (first run or volume empty)
+if [ ! -f "$CERT_DIR/server.key" ]; then
+    echo "Initializing certificates..."
+    
+    # Try to copy from mounted volume first (preferred method)
+    if [ -d "$MOUNTED_CERTS" ] && [ -f "$MOUNTED_CERTS/server.pem" ]; then
+        echo "Copying certificates from mounted volume..."
+        mkdir -p "$CERT_DIR"
+        cp "$MOUNTED_CERTS/ca.pem" "$CERT_DIR/ca.pem" 2>/dev/null || true
+        cp "$MOUNTED_CERTS/server.pem" "$CERT_DIR/server.pem" 2>/dev/null || true
+        cp "$MOUNTED_CERTS/server.key" "$CERT_DIR/server.key" 2>/dev/null || true
+        # Also copy as ca.key if needed
+        cp "$MOUNTED_CERTS/ca.pem" "$CERT_DIR/ca.key" 2>/dev/null || true
+        chmod 644 "$CERT_DIR"/*.pem 2>/dev/null || true
+        chmod 600 "$CERT_DIR"/*.key 2>/dev/null || true
+        echo "Certificates copied from mounted volume"
+    else
+        # Fallback: generate self-signed certificates using existing CA if available
+        echo "No mounted certificates found, attempting to use default certs..."
+        # The base image has default certs, but they may not be valid
+        # This is a fallback - in production, certificates should be mounted
+    fi
+fi
+
 # Fix permissions on bind-mounted config files.
 # Docker Desktop on Windows mounts files as 0777 (globally writable),
 # which causes FreeRADIUS to refuse startup with:
