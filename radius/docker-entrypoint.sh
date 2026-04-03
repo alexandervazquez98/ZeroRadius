@@ -32,6 +32,10 @@ if [ -d "$MOUNTED_CERTS" ]; then
         # Fix ownership - certificates must be owned by freerad for RADIUS to read them
         chown -R freerad:freerad "$CERT_DIR" 2>/dev/null || true
         
+        # Debug: list copied certificates
+        echo "DEBUG: Listing certificates in $CERT_DIR:"
+        ls -la "$CERT_DIR" 2>/dev/null || echo "Directory does not exist"
+        
         echo "Certificates copied successfully"
     else
         echo "Warning: mounted certs directory is empty, using defaults"
