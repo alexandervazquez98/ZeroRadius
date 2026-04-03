@@ -7,11 +7,13 @@ ISO 27001 A.8.1 — Asset inventory and classification.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from starlette.requests import Request
 from app.db.session import get_db
 from app.models.models import NasCategory, Nas, AdminUser
 from app.schemas.schemas import NasCategoryCreate, NasCategoryOut
 from app.core.security import get_current_active_user
 from app.core.rbac import require_roles, Role
+from app.core.limiter import limiter
 from app.services.audit import log_audit, EventCode
 import logging
 
@@ -45,7 +47,9 @@ async def get_nas_category(
 
 
 @router.post("", response_model=NasCategoryOut, status_code=201)
+@limiter.limit("30/minute")
 async def create_nas_category(
+    request: Request,
     payload: NasCategoryCreate,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
@@ -82,7 +86,9 @@ async def create_nas_category(
 
 
 @router.put("/{id}", response_model=NasCategoryOut)
+@limiter.limit("30/minute")
 async def update_nas_category(
+    request: Request,
     id: int,
     payload: NasCategoryCreate,
     db: AsyncSession = Depends(get_db),
@@ -129,7 +135,9 @@ async def update_nas_category(
 
 
 @router.delete("/{id}")
+@limiter.limit("30/minute")
 async def delete_nas_category(
+    request: Request,
     id: int,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.SUPERADMIN),
@@ -145,9 +153,7 @@ async def delete_nas_category(
         raise HTTPException(status_code=404, detail="NAS category not found")
 
     # REQ-01: 409 if any NAS still references this category
-    in_use = await db.execute(
-        select(Nas).where(Nas.category_id == id)
-    )
+    in_use = await db.execute(select(Nas).where(Nas.category_id == id))
     if in_use.scalars().first():
         raise HTTPException(
             status_code=409,

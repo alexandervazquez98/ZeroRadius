@@ -2,11 +2,13 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_
+from starlette.requests import Request
 from app.db.session import get_db
 from app.models.models import AppAuditLog, AdminUser, RadPostAuth
 from app.schemas.schemas import AuditLogOut, RadPostAuthOut, SIEMEvent
 from app.core.security import get_current_active_user
 from app.core.rbac import require_roles, Role
+from app.core.limiter import limiter
 from app.services.audit import log_audit, EventCode
 from typing import Optional
 from datetime import datetime
@@ -75,7 +77,9 @@ async def get_access_logs(
 
 
 @router.get("/export")
+@limiter.limit("20/minute")
 async def export_audit_siem(
+    request: Request,
     format: str = Query("json", pattern="^(json|csv)$"),
     from_date: Optional[str] = Query(None, alias="from"),
     to_date: Optional[str] = Query(None, alias="to"),

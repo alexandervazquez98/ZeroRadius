@@ -7,12 +7,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+from starlette.requests import Request
 from app.db.session import get_db
 from app.models.models import Nas, AdminUser
 from app.schemas.schemas import NasCreate, NasOut
 from app.services.audit import log_audit, EventCode
 from app.core.security import get_current_active_user
 from app.core.rbac import require_roles, Role
+from app.core.limiter import limiter
 import logging
 import docker as docker_sdk
 
@@ -65,7 +67,9 @@ async def get_nas(
 
 
 @router.post("", response_model=NasOut)
+@limiter.limit("10/minute")
 async def create_nas(
+    request: Request,
     nas: NasCreate,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
@@ -95,7 +99,9 @@ async def create_nas(
 
 
 @router.put("/{id}", response_model=NasOut)
+@limiter.limit("10/minute")
 async def update_nas(
+    request: Request,
     id: int,
     nas_update: NasCreate,
     db: AsyncSession = Depends(get_db),
@@ -149,7 +155,9 @@ async def update_nas(
 
 
 @router.delete("/{id}")
+@limiter.limit("10/minute")
 async def delete_nas(
+    request: Request,
     id: int,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),

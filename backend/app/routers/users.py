@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
+from starlette.requests import Request
 from app.db.session import get_db
 from app.models.models import RadCheck, RadReply, AdminUser
 from app.schemas.schemas import (
@@ -12,6 +13,7 @@ from app.schemas.schemas import (
 )
 from app.services.audit import log_audit
 from app.core.security import get_current_active_user
+from app.core.limiter import limiter
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -31,7 +33,9 @@ import hashlib
 
 
 @router.post("/check", response_model=RadCheckOut)
+@limiter.limit("30/minute")
 async def create_user_check(
+    request: Request,
     user: RadCheckCreate,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
@@ -57,7 +61,9 @@ async def create_user_check(
 
 
 @router.put("/check/{id}", response_model=RadCheckOut)
+@limiter.limit("30/minute")
 async def update_user_check(
+    request: Request,
     id: int,
     user_update: RadCheckUpdate,
     db: AsyncSession = Depends(get_db),
@@ -104,7 +110,9 @@ async def update_user_check(
 
 
 @router.delete("/check/{id}")
+@limiter.limit("30/minute")
 async def delete_user_check(
+    request: Request,
     id: int,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
@@ -134,7 +142,9 @@ async def delete_user_check(
 
 
 @router.post("/reply", response_model=RadReplyOut)
+@limiter.limit("30/minute")
 async def create_user_reply(
+    request: Request,
     reply: RadReplyCreate,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
@@ -156,7 +166,9 @@ async def create_user_reply(
 
 
 @router.delete("/reply/{id}")
+@limiter.limit("30/minute")
 async def delete_user_reply(
+    request: Request,
     id: int,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),

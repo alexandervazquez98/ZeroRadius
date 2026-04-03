@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from typing import Optional
+from starlette.requests import Request
 from app.db.session import get_db
 from app.models.models import RadGroupCheck, RadGroupReply, RadUserGroup, AdminUser
 from app.schemas.schemas import (
@@ -15,6 +16,7 @@ from app.services.audit import log_audit, EventCode
 from app.services.vsa_guard import validate_vsa_vendor_consistency, check_high_privilege
 from app.core.security import get_current_active_user
 from app.core.rbac import require_roles, Role
+from app.core.limiter import limiter
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 
@@ -34,7 +36,9 @@ async def get_group_replies(
 
 
 @router.post("/reply", response_model=RadGroupReplyOut)
+@limiter.limit("30/minute")
 async def create_group_reply(
+    request: Request,
     reply: RadGroupReplyCreate,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
@@ -68,7 +72,9 @@ async def create_group_reply(
 
 
 @router.delete("/reply/{id}")
+@limiter.limit("30/minute")
 async def delete_group_reply(
+    request: Request,
     id: int,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
@@ -98,7 +104,9 @@ async def delete_group_reply(
 
 
 @router.put("/reply/{id}", response_model=RadGroupReplyOut)
+@limiter.limit("30/minute")
 async def update_group_reply(
+    request: Request,
     id: int,
     reply: RadGroupReplyCreate,
     db: AsyncSession = Depends(get_db),
@@ -158,7 +166,9 @@ async def get_group_checks(
 
 
 @router.post("/check", response_model=RadGroupCheckOut)
+@limiter.limit("30/minute")
 async def create_group_check(
+    request: Request,
     check: RadGroupCheckCreate,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
@@ -180,7 +190,9 @@ async def create_group_check(
 
 
 @router.delete("/check/{id}")
+@limiter.limit("30/minute")
 async def delete_group_check(
+    request: Request,
     id: int,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
@@ -210,7 +222,9 @@ async def delete_group_check(
 
 
 @router.put("/check/{id}", response_model=RadGroupCheckOut)
+@limiter.limit("30/minute")
 async def update_group_check(
+    request: Request,
     id: int,
     check: RadGroupCheckCreate,
     db: AsyncSession = Depends(get_db),
@@ -247,7 +261,9 @@ async def update_group_check(
 
 
 @router.delete("/policy")
+@limiter.limit("30/minute")
 async def delete_entire_policy(
+    request: Request,
     groupname: str,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
@@ -276,7 +292,9 @@ async def delete_entire_policy(
 
 # --- User Group Assignment ---
 @router.post("/assign", response_model=RadUserGroupCreate)
+@limiter.limit("30/minute")
 async def assign_user_to_group(
+    request: Request,
     assignment: RadUserGroupCreate,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
@@ -337,7 +355,9 @@ async def get_user_groups(
 
 
 @router.delete("/user/{username}/{groupname}")
+@limiter.limit("30/minute")
 async def remove_user_from_group(
+    request: Request,
     username: str,
     groupname: str,
     db: AsyncSession = Depends(get_db),
@@ -414,7 +434,9 @@ async def get_group_by_name(
 
 
 @router.put("/rename", response_model=None)
+@limiter.limit("30/minute")
 async def rename_group(
+    request: Request,
     old_groupname: str,
     new_groupname: str,
     db: AsyncSession = Depends(get_db),
