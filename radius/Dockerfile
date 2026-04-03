@@ -56,9 +56,9 @@ RUN sed -i 's/use_tunneled_reply = no/use_tunneled_reply = yes/g' /etc/raddb/mod
 
 # Note: default_eap_type for TTLS should NOT be changed here
 # The inner authentication method (PAP vs MD5) is configured inside the TTLS section
-# Revert to md5 for now - the TLS fix is what matters most
-RUN sed -i 's/default_eap_type = pap/default_eap_type = md5/g' /etc/raddb/mods-available/eap && \
-    sed -i 's/default_eap_type = pap/default_eap_type = md5/g' /etc/raddb/mods-enabled/eap
+# Changed to pap for TTLS-PAP authentication
+RUN sed -i 's/default_eap_type = md5/default_eap_type = pap/g' /etc/raddb/mods-available/eap && \
+    sed -i 's/default_eap_type = md5/default_eap_type = pap/g' /etc/raddb/mods-enabled/eap
 
 # ============================================================================
 # TLS Fix for Cambium PMP 450i - EAP-TTLS with TLS 1.0
