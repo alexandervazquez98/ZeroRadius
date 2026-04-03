@@ -1,9 +1,9 @@
-import os
 import jwt
 from jwt.exceptions import InvalidTokenError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+from app.core.security import SECRET_KEY, ALGORITHM
 
 # Paths that are allowed even when force_change is True
 _ALLOWED_PATHS = {
@@ -32,8 +32,8 @@ class ForcePasswordChangeMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         token = auth_header[7:]
-        secret_key = os.getenv("SECRET_KEY", "")
-        algorithm = os.getenv("ALGORITHM", "HS256")
+        secret_key = SECRET_KEY
+        algorithm = ALGORITHM
 
         try:
             payload = jwt.decode(token, secret_key, algorithms=[algorithm])

@@ -25,6 +25,11 @@ from app.core.limiter import limiter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# Static dummy bcrypt hash for timing oracle mitigation.
+# Generated once at module load so every failed login uses the SAME hash,
+# ensuring consistent bcrypt verification timing regardless of username.
+_DUMMY_HASH = _bcrypt.hashpw(b"dummy_password_for_timing", _bcrypt.gensalt())
+
 
 def _validate_password_strength(password: str) -> None:
     """Validate password meets complexity requirements."""
@@ -55,6 +60,11 @@ async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
+    """Authenticate admin user and return JWT.
+
+    NOTE: Initial admin seeding is manual — run ``python scripts/seed_admin.py``
+    to create the first admin account. No automatic provisioning occurs here.
+    """
     # Extract client IP for audit
     client_ip: str | None = request.client.host if request.client else None
 
@@ -84,61 +94,23 @@ async def login_for_access_token(
     user = result.scalars().first()
 
     if not user:
-        # Check if no users exist at all — first-run setup
-        count_res = await db.execute(select(AdminUser))
-        if not count_res.scalars().first():
-            if form_data.username == "admin" and form_data.password == "admin":
-                hashed_pw = get_password_hash("admin")
-                new_admin = AdminUser(
-                    username="admin",
-                    hashed_password=hashed_pw,
-                    force_password_change=1,
-                    role="superadmin",
-                )
-                db.add(new_admin)
-                await db.commit()
-                user = new_admin
-            else:
-                await record_attempt(db, form_data.username, client_ip, success=False)
-                await log_audit(
-                    db,
-                    form_data.username,
-                    "LOGIN_FAILED",
-                    "auth",
-                    form_data.username,
-                    new_value={"reason": "invalid_credentials"},
-                    event_code=EventCode.ADMIN_007,
-                )
-                # Timing oracle mitigation: dummy bcrypt to equalize response time
-                _bcrypt.checkpw(
-                    b"dummy_password",
-                    _bcrypt.hashpw(b"dummy_password", _bcrypt.gensalt()),
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Incorrect username or password",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-        else:
-            await record_attempt(db, form_data.username, client_ip, success=False)
-            await log_audit(
-                db,
-                form_data.username,
-                "LOGIN_FAILED",
-                "auth",
-                form_data.username,
-                new_value={"reason": "user_not_found"},
-                event_code=EventCode.ADMIN_007,
-            )
-            # Timing oracle mitigation: dummy bcrypt to equalize response time
-            _bcrypt.checkpw(
-                b"dummy_password", _bcrypt.hashpw(b"dummy_password", _bcrypt.gensalt())
-            )
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect username or password",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        await record_attempt(db, form_data.username, client_ip, success=False)
+        await log_audit(
+            db,
+            form_data.username,
+            "LOGIN_FAILED",
+            "auth",
+            form_data.username,
+            new_value={"reason": "user_not_found"},
+            event_code=EventCode.ADMIN_007,
+        )
+        # Timing oracle mitigation: dummy bcrypt with static hash
+        _bcrypt.checkpw(b"dummy_password_for_timing", _DUMMY_HASH)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     if not verify_password(form_data.password, user.hashed_password):
         await record_attempt(db, form_data.username, client_ip, success=False)

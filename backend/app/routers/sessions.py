@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.session import get_db
@@ -6,10 +6,12 @@ from app.models.models import RadAcct, AdminUser
 from app.schemas.schemas import SessionOut
 from app.core.rbac import require_roles, Role
 from app.core.security import get_current_active_user
+from app.core.limiter import limiter
 import ipaddress
-import subprocess
+import logging
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/active", response_model=list[SessionOut])
@@ -26,7 +28,9 @@ async def get_active_sessions(
 
 
 @router.post("/{username}/disconnect")
+@limiter.limit("10/minute")
 async def disconnect_user(
+    request: Request,
     username: str,
     framed_ip: str,
     current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
@@ -46,5 +50,5 @@ async def disconnect_user(
     # COMMAND PLACEHOLDER:
     # echo "User-Name=$username,Framed-IP-Address=$framed_ip" | radclient -x $NAS_IP:3799 disconnect $SECRET
 
-    print(f"DTO: Disconnecting {username} at {framed_ip}")
+    logger.info("Disconnecting %s at %s", username, framed_ip)
     return {"status": "disconnect_signal_sent", "user": username}
