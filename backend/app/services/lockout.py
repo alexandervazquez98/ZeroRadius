@@ -16,16 +16,44 @@ LOCKOUT_ATTEMPTS = 5  # Max failed attempts before lockout
 LOCKOUT_WINDOW_MINUTES = 10  # Window to count failed attempts
 LOCKOUT_DURATION_MINUTES = 15  # How long the account stays locked
 CLEANUP_AGE_HOURS = 24  # Delete attempts older than this
+RECENT_SESSION_MINUTES = 30  # Window to consider a session as active (smart lockout)
+
+
+async def has_recent_session(db: AsyncSession, username: str) -> bool:
+    """
+    Check if the user had a successful login in the last RECENT_SESSION_MINUTES.
+    Returns True if a recent successful session exists (smart lockout bypass).
+    """
+    from app.models.models import LoginAttempt
+
+    session_window = datetime.utcnow() - timedelta(minutes=RECENT_SESSION_MINUTES)
+
+    result = await db.execute(
+        select(func.count(LoginAttempt.id)).where(
+            LoginAttempt.username == username,
+            LoginAttempt.success == 1,
+            LoginAttempt.attempted_at >= session_window,
+        )
+    )
+    return (result.scalar() or 0) > 0
 
 
 async def check_lockout(db: AsyncSession, username: str) -> bool:
     """
     Check if a username is currently locked out.
     Returns True if locked, False if allowed to attempt login.
+
+    Smart lockout: if the user has a successful login in the last
+    RECENT_SESSION_MINUTES, bypass lockout entirely — protects active admins
+    from being blocked by brute-force attacks from other IPs.
     """
     from app.models.models import LoginAttempt
 
-    window_start = datetime.utcnow() - timedelta(minutes=LOCKOUT_DURATION_MINUTES)
+    # Smart lockout: bypass if user has an active recent session
+    if await has_recent_session(db, username):
+        return False
+
+    window_start = datetime.utcnow() - timedelta(minutes=LOCKOUT_WINDOW_MINUTES)
 
     result = await db.execute(
         select(func.count(LoginAttempt.id)).where(
