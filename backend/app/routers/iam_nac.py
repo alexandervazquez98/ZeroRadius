@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List
@@ -30,6 +30,7 @@ from app.schemas.schemas import (
 from app.core.security import get_current_active_user
 from app.core.rbac import require_roles, Role
 from app.core.limiter import limiter
+from app.services.audit import log_audit, EventCode
 
 router = APIRouter(prefix="/iam-nac", tags=["IAM & NAC RBAC"])
 
@@ -230,10 +231,26 @@ async def compile_policy_to_radius(
         .first()
     )
     if not policy:
+        await log_audit(
+            db,
+            current_user.username,
+            "POLICY_COMPILED",
+            "policy_macro",
+            str(policy_id),
+            new_value={"status": "error", "reason": "policy_not_found"},
+        )
         raise HTTPException(status_code=404, detail="PolicyMacro not found")
 
     attributes = policy.attributes_json.get("attributes", [])
     if not isinstance(attributes, list):
+        await log_audit(
+            db,
+            current_user.username,
+            "POLICY_COMPILED",
+            "policy_macro",
+            policy.name,
+            new_value={"status": "error", "reason": "invalid_attributes_json"},
+        )
         raise HTTPException(
             status_code=400,
             detail="Invalid attributes_json format. Expected 'attributes' array.",
@@ -258,6 +275,17 @@ async def compile_policy_to_radius(
         op = item.get("op", "=")
 
         if not attr_name or attr_value is None:
+            await log_audit(
+                db,
+                current_user.username,
+                "POLICY_COMPILED",
+                "policy_macro",
+                policy.name,
+                new_value={
+                    "status": "error",
+                    "reason": "missing_attribute_name_or_value",
+                },
+            )
             raise HTTPException(
                 status_code=400, detail="Attribute missing 'name' or 'value'"
             )
@@ -266,6 +294,18 @@ async def compile_policy_to_radius(
         # If all_valid_names is empty (first startup, Docker not ready), allow through
         # so operators can still compile.
         if all_valid_names and attr_name not in all_valid_names:
+            await log_audit(
+                db,
+                current_user.username,
+                "POLICY_COMPILED",
+                "policy_macro",
+                policy.name,
+                new_value={
+                    "status": "error",
+                    "reason": "unknown_attribute",
+                    "attribute": attr_name,
+                },
+            )
             raise HTTPException(
                 status_code=400,
                 detail=f"Attribute '{attr_name}' not found in any loaded RADIUS dictionary.",
@@ -299,6 +339,19 @@ async def compile_policy_to_radius(
 
     await db.commit()
 
+    await log_audit(
+        db,
+        current_user.username,
+        "POLICY_COMPILED",
+        "policy_macro",
+        policy.name,
+        new_value={
+            "status": "success",
+            "compiled_group_name": group_name,
+            "attributes_compiled": len(valid_attrs),
+        },
+    )
+
     return {
         "message": f"Policy '{policy.name}' compiled successfully.",
         "compiled_group_name": group_name,
@@ -311,8 +364,8 @@ async def compile_policy_to_radius(
 @limiter.limit("5/minute")
 async def approve_jit_access(
     username: str,
-    ttl_hours: int,
     request: Request,
+    ttl_hours: int = Query(default=24, ge=1, le=168),
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
 ):
@@ -339,4 +392,14 @@ async def approve_jit_access(
         db.add(new_attr)
 
     await db.commit()
+
+    await log_audit(
+        db,
+        current_user.username,
+        "JIT_APPROVED",
+        "radcheck",
+        username,
+        new_value={"ttl_hours": ttl_hours, "expiration": expiration_str},
+    )
+
     return {"message": f"JIT Access approved. Calculated expiration: {expiration_str}"}

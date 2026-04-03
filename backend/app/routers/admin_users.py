@@ -5,7 +5,7 @@ from starlette.requests import Request
 from app.db.session import get_db
 from app.models.models import AdminUser
 from app.schemas.schemas import AdminUserCreate, AdminUserOut, AdminUserUpdate
-from app.core.security import get_current_active_user, get_password_hash
+from app.core.security import get_password_hash
 from app.core.rbac import require_roles, Role
 from app.core.limiter import limiter
 from app.services.audit import log_audit, EventCode
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/admin-users", tags=["admin-users"])
 @router.get("", response_model=list[AdminUserOut])
 async def get_admin_users(
     db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = Depends(get_current_active_user),
+    current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
 ):
     result = await db.execute(select(AdminUser))
     return result.scalars().all()

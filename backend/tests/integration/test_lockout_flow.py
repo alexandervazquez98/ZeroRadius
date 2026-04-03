@@ -7,6 +7,12 @@ wired to an in-memory SQLite database.
 
 Note: tests for radpostauth password redaction are marked as integration-only
 since they require a running FreeRADIUS instance.
+
+IMPORTANT: Each test uses a unique X-Forwarded-For IP address so that the
+rate limiter (5/minute per IP on /auth/token, added in security-hardening-fase2)
+does not interfere with the lockout flow tests. The rate limiter fires before
+the lockout mechanism when multiple tests share the same IP and the
+session-scoped async_client reuses the MemoryStorage counters.
 """
 
 import pytest
@@ -14,22 +20,34 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
+# Unique IPs for each test — isolates rate-limit buckets across the test session
+_IP_SIX_FAILED = "10.0.90.1"
+_IP_MSG = "10.0.90.2"
+_IP_JWT = "10.0.90.3"
+_IP_UNLOCK = "10.0.90.4"
+_IP_EXPIRED = "10.0.90.5"
+
 
 class TestLockoutEndToEnd:
     async def test_six_failed_attempts_trigger_429(
         self, async_client, test_db: AsyncSession
     ):
-        """5 failed attempts + 6th → HTTP 429."""
+        """5 failed attempts + 6th → HTTP 429 (lockout, not rate limit).
+
+        Uses a dedicated X-Forwarded-For IP to avoid triggering the rate limiter
+        before the lockout service has a chance to fire.
+        """
+        headers = {"X-Forwarded-For": _IP_SIX_FAILED}
         creds = {"username": "lockout_test_e2e", "password": "wrongpassword"}
 
         for i in range(5):
-            resp = await async_client.post("/auth/token", data=creds)
+            resp = await async_client.post("/auth/token", data=creds, headers=headers)
             assert resp.status_code in (401, 422), (
                 f"Attempt {i + 1} should be 401/422, got {resp.status_code}"
             )
 
         # Sixth attempt must be locked out
-        resp6 = await async_client.post("/auth/token", data=creds)
+        resp6 = await async_client.post("/auth/token", data=creds, headers=headers)
         assert resp6.status_code == 429, (
             f"6th attempt should be 429, got {resp6.status_code}: {resp6.text}"
         )
@@ -37,13 +55,29 @@ class TestLockoutEndToEnd:
     async def test_lockout_message_contains_duration(
         self, async_client, test_db: AsyncSession
     ):
-        """The 429 error message must indicate the lockout duration."""
-        creds = {"username": "lockout_msg_e2e", "password": "wrongpassword"}
+        """The 429 error message from the LOCKOUT service must indicate the duration.
 
-        for _ in range(5):
-            await async_client.post("/auth/token", data=creds)
+        Strategy: use a different IP for each of the 5 failed attempts so the
+        rate limiter (5/minute per IP) does not fire before the lockout service.
+        The lockout is per-USERNAME, so 5 different IPs recording 5 failed attempts
+        for the same username is equivalent.
+        """
+        username = "lockout_msg_e2e"
+        # 5 requests from 5 different IPs — triggers lockout for the username
+        for i in range(5):
+            ip = f"10.0.91.{i + 1}"
+            await async_client.post(
+                "/auth/token",
+                data={"username": username, "password": "wrongpassword"},
+                headers={"X-Forwarded-For": ip},
+            )
 
-        resp = await async_client.post("/auth/token", data=creds)
+        # 6th request — lockout fires BEFORE rate limiter (new IP, fresh budget)
+        resp = await async_client.post(
+            "/auth/token",
+            data={"username": username, "password": "wrongpassword"},
+            headers={"X-Forwarded-For": "10.0.91.6"},
+        )
         assert resp.status_code == 429
         body = resp.json().get("detail", "")
         assert "locked" in body.lower() or "15" in body, (
@@ -56,8 +90,9 @@ class TestLockoutEndToEnd:
         import base64
 
         # The test_db has a default admin user seeded at startup
+        headers = {"X-Forwarded-For": _IP_JWT}
         creds = {"username": "admin", "password": "admin"}
-        resp = await async_client.post("/auth/token", data=creds)
+        resp = await async_client.post("/auth/token", data=creds, headers=headers)
 
         if resp.status_code != 200:
             pytest.skip("Default admin user not available in test DB")
@@ -83,7 +118,11 @@ class TestLockoutEndToEnd:
     async def test_superadmin_can_unlock_account(
         self, async_client, test_db: AsyncSession, superadmin_token
     ):
-        """A superadmin can immediately unlock a locked account via the unlock endpoint."""
+        """A superadmin can immediately unlock a locked account via the unlock endpoint.
+
+        Strategy: use 5 different IPs for the lockout setup requests so the
+        rate limiter does not fire before the lockout service on the 6th check.
+        """
         from app.models.models import AdminUser
         from app.core.security import get_password_hash
         from sqlalchemy import select
@@ -100,13 +139,19 @@ class TestLockoutEndToEnd:
         await test_db.commit()
         await test_db.refresh(user)
 
-        # Lock the user with 5 wrong attempts
+        # Lock the user: 5 requests from 5 different IPs (bypass rate limiter)
         creds = {"username": test_username, "password": "wrong"}
-        for _ in range(5):
-            await async_client.post("/auth/token", data=creds)
+        for i in range(5):
+            ip = f"10.0.92.{i + 1}"
+            await async_client.post(
+                "/auth/token", data=creds, headers={"X-Forwarded-For": ip}
+            )
 
-        # Verify account is now locked
-        resp_locked = await async_client.post("/auth/token", data=creds)
+        # Verify account is now locked — use a fresh IP so rate limiter doesn't fire
+        lock_check_ip = "10.0.92.6"
+        resp_locked = await async_client.post(
+            "/auth/token", data=creds, headers={"X-Forwarded-For": lock_check_ip}
+        )
         assert resp_locked.status_code == 429, (
             "Account should be locked after 5 bad attempts"
         )
@@ -120,9 +165,12 @@ class TestLockoutEndToEnd:
             f"Unlock should return 200, got {resp_unlock.status_code}: {resp_unlock.text}"
         )
 
-        # Now the correct password should work
+        # Now the correct password should work — use a fresh IP
+        unlock_ip = "10.0.92.7"
         good_creds = {"username": test_username, "password": "correct_password"}
-        resp_good = await async_client.post("/auth/token", data=good_creds)
+        resp_good = await async_client.post(
+            "/auth/token", data=good_creds, headers={"X-Forwarded-For": unlock_ip}
+        )
         assert resp_good.status_code == 200, (
             f"After unlock, correct login should succeed, got {resp_good.status_code}"
         )
@@ -150,7 +198,9 @@ class TestLockoutEndToEnd:
 
         # Login with wrong password — should get 401, not 429 (lockout expired)
         creds = {"username": test_username, "password": "wrong"}
-        resp = await async_client.post("/auth/token", data=creds)
+        resp = await async_client.post(
+            "/auth/token", data=creds, headers={"X-Forwarded-For": _IP_EXPIRED}
+        )
         assert resp.status_code in (401, 422), (
             f"Expired lockout should allow attempt (401/422), got {resp.status_code}"
         )

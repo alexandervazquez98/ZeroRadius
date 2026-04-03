@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import InvalidTokenError
 import bcrypt as _bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -69,7 +70,7 @@ async def get_current_user(
         username: str = payload.get("sub") or ""
         if not username:
             raise credentials_exception
-    except JWTError:
+    except InvalidTokenError:
         raise credentials_exception
 
     result = await db.execute(select(AdminUser).where(AdminUser.username == username))

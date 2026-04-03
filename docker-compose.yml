@@ -13,8 +13,6 @@ services:
     volumes:
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
       - db_data:/var/lib/mysql
-    ports:
-      - "3306:3306"
     networks:
       - radius-net
     healthcheck:
@@ -40,7 +38,7 @@ services:
       DB_PASS: ${MYSQL_PASSWORD}
       DB_NAME: ${MYSQL_DATABASE}
       # Debug mode enabling
-      RADIUS_DEBUG: "yes"
+      RADIUS_DEBUG: "${RADIUS_DEBUG:-no}"
     volumes:
       - ./backend/dictionaries:/etc/raddb/custom_dictionaries
       - ./radius/sql:/etc/raddb/mods-available/sql
@@ -61,8 +59,6 @@ services:
       - ./radius/certs:/etc/freeradius/certs
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp:/tmp:ro
-    ports:
-      - "8000:8000"
     env_file:
       - .env
     environment:

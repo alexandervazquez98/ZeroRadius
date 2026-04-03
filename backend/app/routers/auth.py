@@ -1,3 +1,5 @@
+import re
+import bcrypt as _bcrypt
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -24,6 +26,28 @@ from app.core.limiter import limiter
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def _validate_password_strength(password: str) -> None:
+    """Validate password meets complexity requirements."""
+    if len(password) < 12:
+        raise HTTPException(
+            status_code=422, detail="Password must be at least 12 characters long"
+        )
+    if not re.search(r"[A-Z]", password):
+        raise HTTPException(
+            status_code=422,
+            detail="Password must contain at least one uppercase letter",
+        )
+    if not re.search(r"\d", password):
+        raise HTTPException(
+            status_code=422, detail="Password must contain at least one digit"
+        )
+    if not re.search(r"[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>\/?`~]", password):
+        raise HTTPException(
+            status_code=422,
+            detail="Password must contain at least one special character",
+        )
+
+
 @router.post("/token", response_model=Token)
 @limiter.limit("5/minute")
 async def login_for_access_token(
@@ -36,6 +60,15 @@ async def login_for_access_token(
 
     # --- Check lockout BEFORE verifying password ---
     if await check_lockout(db, form_data.username):
+        await log_audit(
+            db,
+            form_data.username,
+            "LOGIN_FAILED",
+            "auth",
+            form_data.username,
+            new_value={"reason": "account_locked"},
+            event_code=EventCode.ADMIN_007,
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=(
@@ -67,6 +100,20 @@ async def login_for_access_token(
                 user = new_admin
             else:
                 await record_attempt(db, form_data.username, client_ip, success=False)
+                await log_audit(
+                    db,
+                    form_data.username,
+                    "LOGIN_FAILED",
+                    "auth",
+                    form_data.username,
+                    new_value={"reason": "invalid_credentials"},
+                    event_code=EventCode.ADMIN_007,
+                )
+                # Timing oracle mitigation: dummy bcrypt to equalize response time
+                _bcrypt.checkpw(
+                    b"dummy_password",
+                    _bcrypt.hashpw(b"dummy_password", _bcrypt.gensalt()),
+                )
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Incorrect username or password",
@@ -74,6 +121,19 @@ async def login_for_access_token(
                 )
         else:
             await record_attempt(db, form_data.username, client_ip, success=False)
+            await log_audit(
+                db,
+                form_data.username,
+                "LOGIN_FAILED",
+                "auth",
+                form_data.username,
+                new_value={"reason": "user_not_found"},
+                event_code=EventCode.ADMIN_007,
+            )
+            # Timing oracle mitigation: dummy bcrypt to equalize response time
+            _bcrypt.checkpw(
+                b"dummy_password", _bcrypt.hashpw(b"dummy_password", _bcrypt.gensalt())
+            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect username or password",
@@ -82,6 +142,15 @@ async def login_for_access_token(
 
     if not verify_password(form_data.password, user.hashed_password):
         await record_attempt(db, form_data.username, client_ip, success=False)
+        await log_audit(
+            db,
+            form_data.username,
+            "LOGIN_FAILED",
+            "auth",
+            form_data.username,
+            new_value={"reason": "wrong_password"},
+            event_code=EventCode.ADMIN_007,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -134,10 +203,20 @@ async def change_password(
     if not verify_password(pwd.old_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Invalid old password")
 
+    _validate_password_strength(pwd.new_password)
+
     current_user.hashed_password = get_password_hash(pwd.new_password)
     current_user.force_password_change = 0  # Reset flag
 
     db.add(current_user)
     await db.commit()
+
+    await log_audit(
+        db,
+        current_user.username,
+        "PASSWORD_CHANGED",
+        "auth",
+        current_user.username,
+    )
 
     return {"message": "Password updated successfully"}
