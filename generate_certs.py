@@ -1,56 +1,115 @@
-from cryptography import x509
-from cryptography.x509.oid import NameOID
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import serialization
-import datetime
+import subprocess
 import os
 
-def generate_self_signed_cert():
-    key = rsa.generate_private_key(
-        public_exponent=65537,
-        key_size=2048,
-    )
-    
-    subject = issuer = x509.Name([
-        x509.NameAttribute(NameOID.COUNTRY_NAME, u"US"),
-        x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, u"California"),
-        x509.NameAttribute(NameOID.LOCALITY_NAME, u"San Francisco"),
-        x509.NameAttribute(NameOID.ORGANIZATION_NAME, u"My Company"),
-        x509.NameAttribute(NameOID.COMMON_NAME, u"localhost"),
-    ])
-    
-    cert = x509.CertificateBuilder().subject_name(
-        subject
-    ).issuer_name(
-        issuer
-    ).public_key(
-        key.public_key()
-    ).serial_number(
-        x509.random_serial_number()
-    ).not_valid_before(
-        datetime.datetime.utcnow()
-    ).not_valid_after(
-        datetime.datetime.utcnow() + datetime.timedelta(days=365)
-    ).add_extension(
-        x509.SubjectAlternativeName([x509.DNSName(u"localhost")]),
-        critical=False,
-    ).sign(key, hashes.SHA256())
-    
+CA_KEY = "certs/ca.key"
+CA_CERT = "certs/ca.crt"
+SERVER_KEY = "certs/server.key"
+SERVER_CSR = "certs/server.csr"
+SERVER_CERT = "certs/server.pem"
+SERVER_IP = "192.168.1.35"
+
+
+def run_openssl(args):
+    result = subprocess.run(["openssl"] + args, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise Exception(f"openssl error: {result.stderr}")
+    return result.stdout
+
+
+def create_ca():
     if not os.path.exists("certs"):
         os.makedirs("certs")
-        
-    with open("certs/nginx.key", "wb") as f:
-        f.write(key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.TraditionalOpenSSL,
-            encryption_algorithm=serialization.NoEncryption(),
-        ))
-        
-    with open("certs/nginx.crt", "wb") as f:
-        f.write(cert.public_bytes(serialization.Encoding.PEM))
-        
-    print("Certificates generated in certs/ directory.")
+
+    run_openssl(["genrsa", "-out", CA_KEY, "2048"])
+    run_openssl(
+        [
+            "req",
+            "-new",
+            "-x509",
+            "-days",
+            "3650",
+            "-key",
+            CA_KEY,
+            "-out",
+            CA_CERT,
+            "-subj",
+            "/C=US/ST=California/L=San Francisco/O=My Company/CN=ZeroRadius CA",
+            "-extensions",
+            "v3_ca",
+        ]
+    )
+    print("CA key and certificate generated.")
+
+
+def create_server_cert():
+    run_openssl(["genrsa", "-out", SERVER_KEY, "2048"])
+    print("Server key generated.")
+
+    run_openssl(
+        [
+            "req",
+            "-new",
+            "-key",
+            SERVER_KEY,
+            "-out",
+            SERVER_CSR,
+            "-subj",
+            "/C=US/ST=California/L=San Francisco/O=My Company/CN=server",
+        ]
+    )
+    print("Server CSR generated.")
+
+    config = """[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+
+[dn]
+C = US
+ST = California
+L = San Francisco
+O = My Company
+CN = server
+
+[server_ext]
+basicConstraints = CA:FALSE
+keyUsage = critical, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = IP:{ip}
+""".format(ip=SERVER_IP)
+
+    config_file = "certs/server_ext.cnf"
+    with open(config_file, "w") as f:
+        f.write(config)
+
+    run_openssl(
+        [
+            "x509",
+            "-req",
+            "-in",
+            SERVER_CSR,
+            "-CA",
+            CA_CERT,
+            "-CAkey",
+            CA_KEY,
+            "-CAcreateserial",
+            "-out",
+            SERVER_CERT,
+            "-days",
+            "365",
+            "-extfile",
+            config_file,
+            "-extensions",
+            "server_ext",
+        ]
+    )
+
+    os.remove(config_file)
+    print("Server certificate generated with CA:FALSE and IP:{ip}".format(ip=SERVER_IP))
+
 
 if __name__ == "__main__":
-    generate_self_signed_cert()
+    create_ca()
+    create_server_cert()
+    print("All certificates generated in certs/ directory.")
