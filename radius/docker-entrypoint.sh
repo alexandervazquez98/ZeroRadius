@@ -10,33 +10,31 @@ set -e
 CERT_DIR="/etc/raddb/certs"
 MOUNTED_CERTS="/app/radius-certs"
 
-# Only initialize if the private key is missing (first run or volume empty)
-if [ ! -f "$CERT_DIR/server.key" ]; then
-    echo "Initializing certificates..."
+# Always copy certificates from mounted volume if available
+# This ensures fresh certificates are used on each container start
+if [ -d "$MOUNTED_CERTS" ]; then
+    echo "Checking mounted certificates..."
     
-    # Try to copy from mounted volume first (preferred method)
-    if [ -d "$MOUNTED_CERTS" ]; then
+    # Count files in mounted directory
+    FILE_COUNT=$(ls -1 "$MOUNTED_CERTS" 2>/dev/null | wc -l)
+    
+    if [ "$FILE_COUNT" -gt 0 ]; then
         echo "Copying certificates from mounted volume..."
         
-        # Count files in mounted directory
-        FILE_COUNT=$(ls -1 "$MOUNTED_CERTS" 2>/dev/null | wc -l)
+        # Copy all files from mounted directory
+        cp -f "$MOUNTED_CERTS"/*.pem "$CERT_DIR/" 2>/dev/null || true
+        cp -f "$MOUNTED_CERTS"/*.key "$CERT_DIR/" 2>/dev/null || true
         
-        if [ "$FILE_COUNT" -gt 0 ]; then
-            # Copy all files from mounted directory
-            cp -f "$MOUNTED_CERTS"/*.pem "$CERT_DIR/" 2>/dev/null || true
-            cp -f "$MOUNTED_CERTS"/*.key "$CERT_DIR/" 2>/dev/null || true
-            
-            # Fix permissions for private keys
-            chmod 600 "$CERT_DIR"/*.key 2>/dev/null || true
-            chmod 644 "$CERT_DIR"/*.pem 2>/dev/null || true
-            
-            echo "Certificates copied successfully"
-        else
-            echo "Warning: mounted certs directory is empty, using defaults"
-        fi
+        # Fix permissions for private keys
+        chmod 600 "$CERT_DIR"/*.key 2>/dev/null || true
+        chmod 644 "$CERT_DIR"/*.pem 2>/dev/null || true
+        
+        echo "Certificates copied successfully"
     else
-        echo "Warning: mounted certs directory not found"
+        echo "Warning: mounted certs directory is empty, using defaults"
     fi
+else
+    echo "Warning: mounted certs directory not found"
 fi
 
 # Fix permissions on bind-mounted config files.
