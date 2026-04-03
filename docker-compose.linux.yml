@@ -1,0 +1,22 @@
+# Linux override — host networking for radius-server
+#
+# On Linux, `network_mode: host` gives the radius container direct access
+# to the host network stack. This means:
+#   - The radius container sees the host's loopback (127.0.0.1)
+#   - The DB port must be exposed on 127.0.0.1 so radius can reach it
+#
+# Applied automatically by scripts/start.sh on Linux.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.linux.yml up -d
+
+services:
+  db:
+    # Expose MariaDB on host loopback so radius (host network) can reach it
+    ports:
+      - "127.0.0.1:3306:3306"
+
+  radius:
+    # Host networking — only works on Linux
+    network_mode: host
+    environment:
+      # On host networking, DB is on the host's loopback
+      DB_HOST: 127.0.0.1
