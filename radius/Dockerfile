@@ -56,9 +56,8 @@ RUN sed -i 's/use_tunneled_reply = no/use_tunneled_reply = yes/g' /etc/raddb/mod
 
 # Note: default_eap_type for TTLS should NOT be changed here
 # The inner authentication method (PAP vs MD5) is configured inside the TTLS section
-# Changed to pap for TTLS-PAP authentication
-RUN sed -i 's/default_eap_type = md5/default_eap_type = pap/g' /etc/raddb/mods-available/eap && \
-    sed -i 's/default_eap_type = md5/default_eap_type = pap/g' /etc/raddb/mods-enabled/eap
+# Keep as md5 - this is the outer EAP type default, not the inner TTLS method
+# (Default is md5, so no sed needed)
 
 # ============================================================================
 # TLS Fix for Cambium PMP 450i - EAP-TTLS with TLS 1.0
@@ -127,6 +126,9 @@ COPY policy.d/nas_based_authorization /etc/raddb/policy.d/nas_based_authorizatio
 # Copy entrypoint script
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
+
+# Fix symlink for certificates (some configs reference /etc/freeradius/certs)
+RUN ln -sf /etc/raddb/certs /etc/freeradius/certs
 
 RUN chown -R freerad:freerad /etc/raddb
 EXPOSE 1812/udp 1813/udp

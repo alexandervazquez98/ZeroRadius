@@ -54,6 +54,11 @@ do
     fi
 done
 
+# Fix symlink for certificates (some configs reference /etc/freeradius/certs)
+if [ ! -L /etc/freeradius/certs ]; then
+    ln -sf /etc/raddb/certs /etc/freeradius/certs
+fi
+
 # Also fix any other raddb files that may have landed as 0777
 find /etc/raddb -type f -exec chmod go-w {} \; 2>/dev/null || true
 
