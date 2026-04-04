@@ -23,7 +23,9 @@ router = APIRouter(prefix="/groups", tags=["groups"])
 
 # --- Group Policies (Reply) ---
 @router.get("/reply", response_model=list[RadGroupReplyOut])
+@limiter.limit("60/minute")
 async def get_group_replies(
+    request: Request,
     groupname: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
@@ -153,7 +155,9 @@ async def update_group_reply(
 
 # --- Group Checks (Huntgroups) ---
 @router.get("/check", response_model=list[RadGroupCheckOut])
+@limiter.limit("60/minute")
 async def get_group_checks(
+    request: Request,
     groupname: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
@@ -326,7 +330,9 @@ async def assign_user_to_group(
 
 
 @router.get("/list", response_model=list[RadUserGroupCreate])
+@limiter.limit("60/minute")
 async def get_all_groups_list(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
 ):
@@ -343,7 +349,9 @@ async def get_all_groups_list(
 
 # --- New Endpoints for User-Group Management ---
 @router.get("/user/{username}", response_model=list[RadUserGroupCreate])
+@limiter.limit("60/minute")
 async def get_user_groups(
+    request: Request,
     username: str,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
@@ -388,7 +396,9 @@ async def remove_user_from_group(
 
 
 @router.get("/members/{groupname}", response_model=list[RadUserGroupCreate])
+@limiter.limit("60/minute")
 async def get_group_members(
+    request: Request,
     groupname: str,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),

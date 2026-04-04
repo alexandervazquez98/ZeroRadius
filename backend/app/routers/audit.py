@@ -20,7 +20,9 @@ router = APIRouter(prefix="/audit", tags=["audit"])
 
 
 @router.get("/admin", response_model=list[AuditLogOut])
+@limiter.limit("60/minute")
 async def get_admin_audit_logs(
+    request: Request,
     skip: int = 0,
     limit: int = 50,
     search: Optional[str] = Query(default=None, max_length=100),
@@ -28,6 +30,7 @@ async def get_admin_audit_logs(
     current_user: AdminUser = require_roles(Role.AUDITOR, Role.ADMIN, Role.SUPERADMIN),
 ):
     """List administrative action logs."""
+    limit = min(limit, 100)
     stmt = select(AppAuditLog).order_by(AppAuditLog.timestamp.desc())
 
     if search:
@@ -46,7 +49,9 @@ async def get_admin_audit_logs(
 
 
 @router.get("/access", response_model=list[RadPostAuthOut])
+@limiter.limit("60/minute")
 async def get_access_logs(
+    request: Request,
     skip: int = 0,
     limit: int = 50,
     search: Optional[str] = Query(default=None, max_length=100),
@@ -55,6 +60,7 @@ async def get_access_logs(
     current_user: AdminUser = Depends(get_current_active_user),
 ):
     """List RADIUS authentication attempts (Access-Accept/Reject) with NAS traceability."""
+    limit = min(limit, 100)
     stmt = select(RadPostAuth).order_by(RadPostAuth.authdate.desc())
 
     filters = []

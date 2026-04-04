@@ -1,9 +1,13 @@
+import logging
+
 import jwt
 from jwt.exceptions import InvalidTokenError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from app.core.security import SECRET_KEY, ALGORITHM
+
+logger = logging.getLogger(__name__)
 
 # Paths that are allowed even when force_change is True
 _ALLOWED_PATHS = {
@@ -44,8 +48,12 @@ class ForcePasswordChangeMiddleware(BaseHTTPMiddleware):
                         "detail": "Password change required. Please change your password before accessing this resource."
                     },
                 )
-        except (InvalidTokenError, Exception):
-            # Let FastAPI's security handle invalid tokens
+        except InvalidTokenError:
+            # Invalid token — let FastAPI's security handle it downstream
+            pass
+        except Exception as exc:
+            # Log unexpected errors but don't block the request
+            logger.warning("ForcePasswordChangeMiddleware error: %s", exc)
             pass
 
         return await call_next(request)

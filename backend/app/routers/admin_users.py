@@ -15,7 +15,9 @@ router = APIRouter(prefix="/admin-users", tags=["admin-users"])
 
 
 @router.get("", response_model=list[AdminUserOut])
+@limiter.limit("60/minute")
 async def get_admin_users(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
 ):

@@ -100,7 +100,9 @@ class ContentBody(BaseModel):
 
 
 @router.get("/files", response_model=List[str])
+@limiter.limit("60/minute")
 async def list_dictionary_files(
+    request: Request,
     current_user: AdminUser = Depends(get_current_active_user),
 ):
     """List loaded dictionary files."""
@@ -213,7 +215,9 @@ async def delete_dictionary(
 
 
 @router.get("/content/{filename}")
+@limiter.limit("60/minute")
 async def get_dictionary_content(
+    request: Request,
     filename: str,
     current_user: AdminUser = Depends(get_current_active_user),
 ):
@@ -288,7 +292,9 @@ class BuiltinDictInfo(BaseModel):
 
 
 @router.get("/builtin", response_model=List[BuiltinDictInfo])
+@limiter.limit("60/minute")
 async def list_builtin_dictionaries(
+    request: Request,
     current_user: AdminUser = Depends(get_current_active_user),
 ):
     """List built-in FreeRADIUS vendor dictionaries from the radius-server container.
@@ -316,7 +322,9 @@ async def list_builtin_dictionaries(
 
 
 @router.get("/builtin/{filename}")
+@limiter.limit("60/minute")
 async def get_builtin_dictionary_content(
+    request: Request,
     filename: str,
     current_user: AdminUser = Depends(get_current_active_user),
 ):
@@ -345,7 +353,9 @@ async def get_builtin_dictionary_content(
 
 
 @router.get("/attributes", response_model=List[AttributeInfo])
+@limiter.limit("60/minute")
 async def get_attributes(
+    request: Request,
     current_user: AdminUser = Depends(get_current_active_user),
 ):
     """Get all available RADIUS attributes from custom and built-in dictionaries.
@@ -368,7 +378,9 @@ async def get_attributes(
 
 
 @router.get("/values/{attribute_name}", response_model=List[AttributeValue])
+@limiter.limit("60/minute")
 async def get_attribute_values(
+    request: Request,
     attribute_name: str,
     current_user: AdminUser = Depends(get_current_active_user),
 ):
@@ -380,7 +392,9 @@ async def get_attribute_values(
 
 
 @router.get("/radius-logs")
+@limiter.limit("30/minute")
 async def get_radius_logs(
+    request: Request,
     lines: int = 80,
     current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
 ):
