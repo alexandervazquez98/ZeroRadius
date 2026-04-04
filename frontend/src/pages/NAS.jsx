@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
 import { Plus, Trash2, Tag, ChevronDown, ChevronUp, Settings2, Download } from 'lucide-react';
 import NasCategoriesService from '../services/nasCategoriesService';
+import { useToast } from '../context/ToastContext';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -18,6 +19,7 @@ const EMPTY_CAT_FORM = { name: '', description: '', criticality: 'standard', ven
 
 const NasPage = () => {
     const queryClient = useQueryClient();
+    const { showToast } = useToast();
 
     // NAS modal state
     const [isOpen, setIsOpen] = useState(false);
@@ -159,7 +161,7 @@ const NasPage = () => {
                                 window.URL.revokeObjectURL(url);
                             } catch (err) {
                                 console.error('Failed to download CA certificate:', err);
-                                alert('Failed to download CA certificate');
+                                showToast('Failed to download CA certificate', 'error');
                             }
                         }}
                         className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50 transition-colors"

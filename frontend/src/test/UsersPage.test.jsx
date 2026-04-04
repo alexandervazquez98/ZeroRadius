@@ -15,6 +15,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import UsersPage from '../pages/Users'
 import { AuthProvider } from '../context/AuthContext'
+import { ToastProvider } from '../context/ToastContext'
 
 function makeJwt(role) {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
@@ -32,7 +33,9 @@ function renderUsers(role = 'superadmin') {
     <MemoryRouter>
       <QueryClientProvider client={queryClient}>
         <AuthProvider initialToken={makeJwt(role)}>
-          <UsersPage />
+          <ToastProvider>
+            <UsersPage />
+          </ToastProvider>
         </AuthProvider>
       </QueryClientProvider>
     </MemoryRouter>

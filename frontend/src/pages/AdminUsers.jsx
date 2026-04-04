@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
 import { Plus, Trash2, Edit, RefreshCw, X } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
 
 const AdminUsers = () => {
     const queryClient = useQueryClient();
+    const { showToast } = useToast();
     const [isOpen, setIsOpen] = useState(false);
     const [isEditOpen, setIsEditOpen] = useState(false);
     const [newUser, setNewUser] = useState({ username: '', password: '', is_active: 1 });
@@ -24,7 +26,7 @@ const AdminUsers = () => {
             setNewUser({ username: '', password: '', is_active: 1 });
         },
         onError: (err) => {
-            alert(err.response?.data?.detail || "Error creating user");
+            showToast(err.response?.data?.detail || "Error creating user", 'error');
         }
     });
 
@@ -42,7 +44,7 @@ const AdminUsers = () => {
         mutationFn: (id) => api.delete(`/admin-users/${id}`),
         onSuccess: () => queryClient.invalidateQueries(['admin-users']),
         onError: (err) => {
-            alert(err.response?.data?.detail || "Error deleting user");
+            showToast(err.response?.data?.detail || "Error deleting user", 'error');
         }
     });
 

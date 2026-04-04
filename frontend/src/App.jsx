@@ -1,7 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { ToastProvider } from './context/ToastContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import RoleGuard from './components/RoleGuard';
+import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import ChangePassword from './pages/ChangePassword';
@@ -35,33 +37,36 @@ function Unauthorized() {
 
 function App() {
     return (
+        <ToastProvider>
         <AuthProvider>
             <BrowserRouter>
                 <Routes>
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/change-password" element={<ChangePassword />} />
+                    <Route path="/login" element={<ErrorBoundary><Login /></ErrorBoundary>} />
+                    <Route path="/change-password" element={<ErrorBoundary><ChangePassword /></ErrorBoundary>} />
 
                     <Route path="/" element={
                         <ProtectedRoute>
                             <Layout />
                         </ProtectedRoute>
                     }>
-                        <Route index element={<Dashboard />} />
-                        <Route path="users" element={<Users />} />
-                        <Route path="nas" element={<NAS />} />
-                        <Route path="sessions" element={<Sessions />} />
-                        <Route path="groups" element={<Groups />} />
-                        <Route path="audit" element={<Audit />} />
-                        <Route path="dictionaries" element={<Dictionaries />} />
-                        <Route path="iam" element={<IAM />} />
+                        <Route index element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
+                        <Route path="users" element={<ErrorBoundary><Users /></ErrorBoundary>} />
+                        <Route path="nas" element={<ErrorBoundary><NAS /></ErrorBoundary>} />
+                        <Route path="sessions" element={<ErrorBoundary><Sessions /></ErrorBoundary>} />
+                        <Route path="groups" element={<ErrorBoundary><Groups /></ErrorBoundary>} />
+                        <Route path="audit" element={<ErrorBoundary><Audit /></ErrorBoundary>} />
+                        <Route path="dictionaries" element={<ErrorBoundary><Dictionaries /></ErrorBoundary>} />
+                        <Route path="iam" element={<ErrorBoundary><IAM /></ErrorBoundary>} />
 
                         {/* Superadmin-only: System Users */}
                         <Route
                             path="admin-users"
                             element={
-                                <RoleGuard allowedRoles={['superadmin']} fallback={<Unauthorized />}>
-                                    <AdminUsers />
-                                </RoleGuard>
+                                <ErrorBoundary>
+                                    <RoleGuard allowedRoles={['superadmin']} fallback={<Unauthorized />}>
+                                        <AdminUsers />
+                                    </RoleGuard>
+                                </ErrorBoundary>
                             }
                         />
 
@@ -69,9 +74,11 @@ function App() {
                         <Route
                             path="privilege-map"
                             element={
-                                <RoleGuard allowedRoles={['superadmin', 'admin', 'auditor']} fallback={<Unauthorized />}>
-                                    <PrivilegeMap />
-                                </RoleGuard>
+                                <ErrorBoundary>
+                                    <RoleGuard allowedRoles={['superadmin', 'admin', 'auditor']} fallback={<Unauthorized />}>
+                                        <PrivilegeMap />
+                                    </RoleGuard>
+                                </ErrorBoundary>
                             }
                         />
 
@@ -83,6 +90,7 @@ function App() {
                 </Routes>
             </BrowserRouter>
         </AuthProvider>
+        </ToastProvider>
     );
 }
 
