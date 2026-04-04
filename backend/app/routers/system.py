@@ -10,7 +10,7 @@ import re
 from datetime import datetime, timezone
 
 import docker
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
 import jwt
 from jwt.exceptions import InvalidTokenError
 from sqlalchemy import select
