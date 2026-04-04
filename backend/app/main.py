@@ -14,6 +14,52 @@ import os
 
 
 class _JSONFormatter(logging.Formatter):
+    @staticmethod
+    def _to_jsonable(value, _depth: int = 0):
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+
+        if _depth >= 4:
+            try:
+                return repr(value)
+            except Exception:
+                return "<unrepr-able>"
+
+        if isinstance(value, (list, tuple)):
+            return [_JSONFormatter._to_jsonable(v, _depth + 1) for v in value]
+        if isinstance(value, (set, frozenset)):
+            return [_JSONFormatter._to_jsonable(v, _depth + 1) for v in value]
+        if isinstance(value, dict):
+            out = {}
+            for k, v in value.items():
+                try:
+                    key = k if isinstance(k, str) else str(k)
+                except Exception:
+                    key = "<unstringable-key>"
+                out[key] = _JSONFormatter._to_jsonable(v, _depth + 1)
+            return out
+
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+
+        if isinstance(value, BaseException):
+            return {
+                "type": type(value).__name__,
+                "message": str(value),
+            }
+
+        iso = getattr(value, "isoformat", None)
+        if callable(iso):
+            try:
+                return iso()
+            except Exception:
+                pass
+
+        try:
+            return repr(value)
+        except Exception:
+            return "<unrepr-able>"
+
     def format(self, record: logging.LogRecord) -> str:
         payload: dict = {
             "timestamp": self.formatTime(record, self.datefmt),
@@ -24,22 +70,56 @@ class _JSONFormatter(logging.Formatter):
         if record.exc_info:
             payload["exc_info"] = self.formatException(record.exc_info)
         extra_skip = logging.LogRecord.__dict__.keys() | {
-            "message", "asctime", "args", "exc_text", "stack_info",
+            "message",
+            "asctime",
+            "args",
+            "exc_text",
+            "stack_info",
+            "exc_info",
         }
         for key, value in record.__dict__.items():
             if key not in extra_skip:
-                payload[key] = value
-        return json.dumps(payload)
+                payload[key] = self._to_jsonable(value)
+        try:
+            return json.dumps(payload)
+        except Exception as exc:  # pragma: no cover
+            fallback = {
+                "timestamp": payload.get("timestamp"),
+                "level": record.levelname,
+                "logger": record.name,
+                "message": payload.get("message"),
+                "json_error": str(exc),
+            }
+            if record.exc_info:
+                fallback["exc_info"] = payload.get("exc_info")
+            return json.dumps(fallback)
 
 
 def _configure_logging() -> None:
-    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    raw_log_level = os.getenv("LOG_LEVEL", "INFO").strip()
+    if raw_log_level.isdigit():
+        log_level = int(raw_log_level)
+        invalid_log_level = None
+    else:
+        level = logging.getLevelName(raw_log_level.upper())
+        if isinstance(level, int):
+            log_level = level
+            invalid_log_level = None
+        else:
+            log_level = logging.INFO
+            invalid_log_level = raw_log_level
     handler = logging.StreamHandler()
     handler.setFormatter(_JSONFormatter())
 
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
     root_logger.handlers = [handler]
+
+    if invalid_log_level is not None:
+        logging.getLogger(__name__).warning(
+            "Invalid LOG_LEVEL=%r; falling back to INFO.",
+            invalid_log_level,
+        )
 
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         uv_logger = logging.getLogger(name)

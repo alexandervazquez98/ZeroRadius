@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import NasPage from '../pages/NAS'
+import { ToastProvider } from '../context/ToastContext'
 
 function renderNas() {
   const queryClient = new QueryClient({
@@ -13,7 +14,9 @@ function renderNas() {
   return render(
     <MemoryRouter>
       <QueryClientProvider client={queryClient}>
-        <NasPage />
+        <ToastProvider>
+          <NasPage />
+        </ToastProvider>
       </QueryClientProvider>
     </MemoryRouter>
   )

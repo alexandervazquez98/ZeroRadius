@@ -22,6 +22,10 @@ const SessionsPage = () => {
         onSuccess: (data) => {
             showToast(`Disconnect signal sent for ${data.data.user}`, 'info');
             queryClient.invalidateQueries(['sessions']);
+        },
+        onError: (error) => {
+            const msg = error?.response?.data?.detail || error?.message || 'Failed to disconnect session';
+            showToast(msg, 'error');
         }
     });
 

@@ -1,5 +1,21 @@
 import React, { useEffect, useRef } from 'react';
 
+function normalizeToastMessage(message) {
+    if (message === null || message === undefined) return '';
+    if (typeof message === 'string') return message;
+    if (typeof message === 'number' || typeof message === 'boolean' || typeof message === 'bigint') {
+        return String(message);
+    }
+    if (message instanceof Error) {
+        return message.message || String(message);
+    }
+    try {
+        return JSON.stringify(message);
+    } catch {
+        return String(message);
+    }
+}
+
 const STYLES = {
     success: {
         container: 'bg-green-50 border border-green-200 text-green-900',
@@ -50,6 +66,7 @@ function ToastItem({ toast, onRemove }) {
     const { id, message, type, duration } = toast;
     const style = STYLES[type] ?? STYLES.info;
     const timerRef = useRef(null);
+    const safeMessage = normalizeToastMessage(message);
 
     useEffect(() => {
         timerRef.current = setTimeout(() => onRemove(id), duration);
@@ -63,7 +80,7 @@ function ToastItem({ toast, onRemove }) {
             aria-live="assertive"
         >
             <span className={style.icon}>{ICONS[type] ?? ICONS.info}</span>
-            <p className="flex-1 text-sm font-medium leading-snug">{message}</p>
+            <p className="flex-1 text-sm font-medium leading-snug">{safeMessage}</p>
             <button
                 onClick={() => onRemove(id)}
                 className="shrink-0 opacity-60 hover:opacity-100 transition-opacity ml-1"
