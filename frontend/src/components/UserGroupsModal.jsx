@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import GroupsService from '../services/groups';
 import { Trash2, Plus, X, Users } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
 
 const UserGroupsModal = ({ user, onClose }) => {
+    const { showToast } = useToast();
     const [userGroups, setUserGroups] = useState([]);
     const [availableGroups, setAvailableGroups] = useState([]);
     const [selectedGroup, setSelectedGroup] = useState('');
@@ -39,7 +41,7 @@ const UserGroupsModal = ({ user, onClose }) => {
             await GroupsService.assignUserToGroup(username, selectedGroup);
             await loadData(); // Refresh list
         } catch (error) {
-            alert('Failed to add group');
+            showToast('Failed to add group', 'error');
         }
     };
 
@@ -49,7 +51,7 @@ const UserGroupsModal = ({ user, onClose }) => {
             await GroupsService.removeUserFromGroup(username, groupname);
             await loadData(); // Refresh list
         } catch (error) {
-            alert('Failed to remove group');
+            showToast('Failed to remove group', 'error');
         }
     };
 

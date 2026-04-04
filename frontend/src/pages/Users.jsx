@@ -4,9 +4,11 @@ import api from '../api';
 import { Plus, Trash2, Edit, X, Users as UsersIcon, Clock, ShieldAlert } from 'lucide-react';
 import UserWizard from '../components/UserWizard';
 import UserGroupsModal from '../components/UserGroupsModal';
+import { useToast } from '../context/ToastContext';
 
 const UsersPage = () => {
     const queryClient = useQueryClient();
+    const { showToast } = useToast();
     const [isOpen, setIsOpen] = useState(false);
     const [newUser, setNewUser] = useState({ username: '', attribute: 'Cleartext-Password', op: ':=', value: '' });
 
@@ -45,13 +47,13 @@ const UsersPage = () => {
     const jitMutation = useMutation({
         mutationFn: ({ username, hours }) => api.post(`/iam-nac/jit-requests/${username}/approve?ttl_hours=${hours}`),
         onSuccess: (data) => {
-            alert(data.data.message);
+            showToast(data.data.message, 'success');
             setJitUser(null);
             setJitData({ hours: 1, reason: '' });
             queryClient.invalidateQueries(['users']);
         },
         onError: (err) => {
-            alert('Error JIT: ' + (err.response?.data?.detail || err.message));
+            showToast('Error JIT: ' + (err.response?.data?.detail || err.message), 'error');
         }
     });
 

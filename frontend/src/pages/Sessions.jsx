@@ -4,11 +4,13 @@ import api from '../api';
 import { WifiOff, Clock } from 'lucide-react';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
+import { useToast } from '../context/ToastContext';
 
 dayjs.extend(relativeTime);
 
 const SessionsPage = () => {
     const queryClient = useQueryClient();
+    const { showToast } = useToast();
     const { data: sessions, isLoading } = useQuery({
         queryKey: ['sessions'],
         queryFn: () => api.get('/sessions/active').then(r => r.data),
@@ -18,7 +20,7 @@ const SessionsPage = () => {
     const disconnectMutation = useMutation({
         mutationFn: ({ username, framed_ip }) => api.post(`/sessions/${username}/disconnect`, null, { params: { framed_ip } }),
         onSuccess: (data) => {
-            alert(`Disconnect signal sent for ${data.data.user}`);
+            showToast(`Disconnect signal sent for ${data.data.user}`, 'info');
             queryClient.invalidateQueries(['sessions']);
         }
     });

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
 import GroupsService from '../services/groups';
 import { Plus, Trash2, Search, ShieldAlert, Edit2, Folder, BookOpen, ChevronDown, X } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
 
 // Combobox con búsqueda para atributos del diccionario
 const AttributeCombobox = ({ options, value, onChange, disabled }) => {
@@ -258,6 +259,7 @@ const VendorCombobox = ({ options, value, onChange }) => {
 
 const PoliciesPage = () => {
     const queryClient = useQueryClient();
+    const { showToast } = useToast();
     const [selectedGroup, setSelectedGroup] = useState(null);
     const [groupSearchQuery, setGroupSearchQuery] = useState('');
     const [isEditGroupModalOpen, setIsEditGroupModalOpen] = useState(false);
@@ -323,9 +325,9 @@ const PoliciesPage = () => {
             setSelectedGroup(groupFormData.newName);
             setIsEditGroupModalOpen(false);
             setGroupFormData({ oldName: '', newName: '' });
-            alert('Grupo renombrado correctamente');
+            showToast('Grupo renombrado correctamente', 'success');
         },
-        onError: (err) => alert(err.response?.data?.detail || 'Error al renombrar')
+        onError: (err) => showToast(err.response?.data?.detail || 'Error al renombrar', 'error')
     });
 
     const deleteGroupReplyMutation = useMutation({
@@ -347,7 +349,7 @@ const PoliciesPage = () => {
             setIsAttributeModalOpen(false);
             setAttributeFormData({ type: 'reply', groupname: '', attribute: '', op: ':=', value: '', editId: null });
         },
-        onError: (err) => alert(err.response?.data?.detail || 'Error al crear atributo')
+        onError: (err) => showToast(err.response?.data?.detail || 'Error al crear atributo', 'error')
     });
 
     const updateGroupAttributeMutation = useMutation({
@@ -359,7 +361,7 @@ const PoliciesPage = () => {
             setIsAttributeModalOpen(false);
             setAttributeFormData({ type: 'reply', groupname: '', attribute: '', op: ':=', value: '', editId: null });
         },
-        onError: (err) => alert(err.response?.data?.detail || 'Error al actualizar atributo')
+        onError: (err) => showToast(err.response?.data?.detail || 'Error al actualizar atributo', 'error')
     });
 
     const createGroupMutation = useMutation({
@@ -375,9 +377,9 @@ const PoliciesPage = () => {
             queryClient.invalidateQueries(['groups', 'list']);
             setIsCreateGroupModalOpen(false);
             setNewGroupName('');
-            alert('Grupo creado');
+            showToast('Grupo creado', 'success');
         },
-        onError: (err) => alert(err.response?.data?.detail || 'Error al crear grupo')
+        onError: (err) => showToast(err.response?.data?.detail || 'Error al crear grupo', 'error')
     });
 
     const deleteEntireGroupMutation = useMutation({
@@ -387,9 +389,9 @@ const PoliciesPage = () => {
         onSuccess: () => {
             queryClient.invalidateQueries(['groups', 'list']);
             setSelectedGroup(null);
-            alert('Grupo eliminado');
+            showToast('Grupo eliminado', 'success');
         },
-        onError: (err) => alert(err.response?.data?.detail || 'Error al eliminar grupo')
+        onError: (err) => showToast(err.response?.data?.detail || 'Error al eliminar grupo', 'error')
     });
 
     const filteredGroups = (rawGroups || []).filter(g => 

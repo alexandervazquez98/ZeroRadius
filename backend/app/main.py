@@ -8,8 +8,46 @@ from app.middleware.force_password_change import ForcePasswordChangeMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 import asyncio
+import json
 import logging
 import os
+
+
+class _JSONFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict = {
+            "timestamp": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exc_info"] = self.formatException(record.exc_info)
+        extra_skip = logging.LogRecord.__dict__.keys() | {
+            "message", "asctime", "args", "exc_text", "stack_info",
+        }
+        for key, value in record.__dict__.items():
+            if key not in extra_skip:
+                payload[key] = value
+        return json.dumps(payload)
+
+
+def _configure_logging() -> None:
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    handler = logging.StreamHandler()
+    handler.setFormatter(_JSONFormatter())
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+    root_logger.handlers = [handler]
+
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uv_logger = logging.getLogger(name)
+        uv_logger.handlers = [handler]
+        uv_logger.propagate = False
+
+
+_configure_logging()
 
 logger = logging.getLogger(__name__)
 
