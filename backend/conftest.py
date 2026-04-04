@@ -8,20 +8,52 @@ Provides:
 - test_group_id: creates a test radius group and returns its id
 """
 
+import re
+
 import pytest
 import pytest_asyncio
 from typing import AsyncGenerator
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy import text
+from sqlalchemy import event, text
 
 # Use SQLite in-memory for tests (aiosqlite driver)
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
+def _patch_sqlite_ddl(conn, cursor, statement, parameters, context, executemany):
+    """Replace MySQL-specific DDL syntax that SQLite doesn't understand.
+
+    NOTE: This listener uses retval=True so the modified statement is used.
+    """
+    # (CURRENT_TIMESTAMP(6)) → CURRENT_TIMESTAMP
+    # SQLite doesn't support fractional seconds precision in DEFAULT
+    patched = re.sub(
+        r"\(CURRENT_TIMESTAMP\(\d+\)\)",
+        "CURRENT_TIMESTAMP",
+        statement,
+    )
+    patched = re.sub(
+        r"CURRENT_TIMESTAMP\(\d+\)",
+        "CURRENT_TIMESTAMP",
+        patched,
+    )
+    return patched, parameters
+
+
 @pytest_asyncio.fixture(scope="session")
 async def test_engine():
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+
+    # Patch DDL for SQLite compatibility before creating tables
+    # retval=True tells SQLAlchemy to use our returned statement
+    event.listen(
+        engine.sync_engine,
+        "before_cursor_execute",
+        _patch_sqlite_ddl,
+        retval=True,
+    )
+
     from app.db.session import Base
     import app.models.models  # noqa: F401 — register all ORM models with Base.metadata
 

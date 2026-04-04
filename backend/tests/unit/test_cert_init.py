@@ -7,10 +7,14 @@ certificate initialization:
 2. Certificates are copied to the correct location
 3. Permissions are set correctly
 
-Run locally to test certificate generation: pytest tests/test_cert_init.py -v
+These tests depend on Docker/Linux infrastructure (certs, openssl, mounts).
+They are marked with `infra` and excluded from the fast local gate.
+
+Run on Linux/Docker: pytest tests/test_cert_init.py -v -m infra
 """
 
 import os
+import platform
 import pytest
 import subprocess
 
@@ -21,8 +25,9 @@ PROJECT_ROOT = os.path.dirname(
 )
 
 
+@pytest.mark.infra
 class TestCertificateInitialization:
-    """Test certificate initialization logic."""
+    """Test certificate initialization logic (Docker/Linux infrastructure)."""
 
     def test_certs_directory_exists(self):
         """Verify that the radius/certs directory exists and contains required files."""
@@ -59,6 +64,10 @@ class TestCertificateInitialization:
         assert "notBefore" in result.stdout, "Certificate has no start date"
         assert "notAfter" in result.stdout, "Certificate has no expiration date"
 
+    @pytest.mark.skipif(
+        platform.system() == "Windows",
+        reason="Unix file permissions are not meaningful on Windows NTFS",
+    )
     def test_key_file_permissions(self):
         """Verify private key has secure permissions (not world-readable)."""
         cert_dir = os.path.join(PROJECT_ROOT, "radius", "certs")
@@ -87,7 +96,7 @@ class TestCertificateInitialization:
         )
 
     def test_docker_compose_mounts_certs(self):
-        """Verify docker-compose.yml mounts certificates to both locations."""
+        """Verify docker-compose.yml mounts certificates to radius and backend services."""
         import yaml
 
         compose_file = os.path.join(PROJECT_ROOT, "docker-compose.yml")
@@ -95,13 +104,18 @@ class TestCertificateInitialization:
         with open(compose_file, "r") as f:
             compose_config = yaml.safe_load(f)
 
+        # Check radius service has cert mount
         radius_service = compose_config.get("services", {}).get("radius", {})
-        volumes = radius_service.get("volumes", [])
+        radius_volumes = radius_service.get("volumes", [])
+        radius_cert_mounts = [v for v in radius_volumes if "certs" in v]
+        assert len(radius_cert_mounts) >= 1, "Radius service should mount certs volume"
 
-        # Check that certs are mounted to /app/radius-certs for the entrypoint to use
-        cert_mounts = [v for v in volumes if "certs" in v and "radius" in v]
-        assert len(cert_mounts) >= 2, (
-            "Should have at least 2 cert mounts (one for RADIUS, one for app)"
+        # Check backend service also has cert mount
+        backend_service = compose_config.get("services", {}).get("backend", {})
+        backend_volumes = backend_service.get("volumes", [])
+        backend_cert_mounts = [v for v in backend_volumes if "certs" in v]
+        assert len(backend_cert_mounts) >= 1, (
+            "Backend service should mount certs volume"
         )
 
 
