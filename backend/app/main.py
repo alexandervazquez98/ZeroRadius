@@ -103,6 +103,32 @@ app.add_middleware(
 app.add_middleware(ForcePasswordChangeMiddleware)
 
 
+# ---------------------------------------------------------------------------
+# Security Headers Middleware
+# ---------------------------------------------------------------------------
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses."""
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=()"
+        )
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+
 # Startup event to create tables if they don't exist (useful for dev)
 @app.on_event("startup")
 async def startup():
@@ -201,3 +227,27 @@ async def stop_background_jobs() -> None:
 @app.get("/")
 def read_root():
     return {"message": "Welcome to FreeRADIUS Manager API"}
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for container orchestration.
+
+    Returns service status for all critical dependencies.
+    """
+    status = {"status": "ok", "services": {}}
+
+    # Check database connectivity
+    try:
+        from app.db.session import SessionLocal  # type: ignore[attr-defined]
+
+        async with SessionLocal() as db:  # type: ignore[attr-defined]
+            from sqlalchemy import text
+
+            await db.execute(text("SELECT 1"))
+        status["services"]["database"] = "ok"
+    except Exception:
+        status["services"]["database"] = "error"
+        status["status"] = "degraded"
+
+    return status

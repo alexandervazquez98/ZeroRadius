@@ -66,7 +66,9 @@ def _to_out(record: UserNasPrivilegeMap) -> UserNasPrivilegeMapOut:
 
 
 @router.get("", response_model=list[UserNasPrivilegeMapOut])
+@limiter.limit("60/minute")
 async def list_privilege_maps(
+    request: Request,
     username: Optional[str] = None,
     nas_ip: Optional[str] = None,
     is_active: Optional[int] = None,

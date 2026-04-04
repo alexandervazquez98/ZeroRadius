@@ -52,7 +52,9 @@ async def create_zone(
 
 
 @router.get("/zones", response_model=List[HardwareZoneOut])
+@limiter.limit("60/minute")
 async def list_zones(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
 ):
@@ -77,7 +79,9 @@ async def create_role(
 
 
 @router.get("/roles", response_model=List[IAMRoleOut])
+@limiter.limit("60/minute")
 async def list_roles(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
 ):
@@ -102,7 +106,9 @@ async def create_macro(
 
 
 @router.get("/macros", response_model=List[PolicyMacroOut])
+@limiter.limit("60/minute")
 async def list_macros(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
 ):
@@ -173,7 +179,9 @@ async def delete_role(
 
 
 @router.get("/matrix-assign", response_model=List[RoleZonePolicyOut])
+@limiter.limit("60/minute")
 async def list_matrix_assignments(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
 ):

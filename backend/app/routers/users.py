@@ -20,12 +20,15 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.get("", response_model=list[RadCheckOut])
+@limiter.limit("60/minute")
 async def get_users(
+    request: Request,
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
 ):
+    limit = min(limit, 100)
     result = await db.execute(select(RadCheck).offset(skip).limit(limit))
     return result.scalars().all()
 

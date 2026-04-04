@@ -58,7 +58,9 @@ def _nas_to_out(nas: Nas) -> NasOut:
 
 
 @router.get("", response_model=list[NasOut])
+@limiter.limit("60/minute")
 async def get_nas(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
 ):
@@ -186,7 +188,9 @@ async def delete_nas(
 
 
 @router.get("/ca-certificate")
+@limiter.limit("60/minute")
 async def get_ca_certificate(
+    request: Request,
     current_user: AdminUser = Depends(get_current_active_user),
 ):
     """Download the RADIUS server CA certificate for client configuration."""
