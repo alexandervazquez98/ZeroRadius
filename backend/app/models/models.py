@@ -20,6 +20,12 @@ from sqlalchemy.schema import FetchedValue
 from typing import Optional
 from app.db.session import Base
 import datetime
+import secrets
+
+
+def _generate_secret() -> str:
+    """Generate a random 48-character secret for NAS devices."""
+    return secrets.token_urlsafe(36)
 
 
 class RadCheck(Base):

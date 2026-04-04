@@ -16,6 +16,7 @@ from jwt.exceptions import InvalidTokenError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.limiter import limiter
 from app.core.rbac import Role, require_roles
 from app.core.security import (
     ALGORITHM,
@@ -51,7 +52,9 @@ _RE_REQUEST_LINE = re.compile(r"^\((\d+)\)\s+")
 # NTP Status endpoint (existing)
 # ---------------------------------------------------------------------------
 @router.get("/ntp-status", response_model=NTPStatusResponse)
+@limiter.limit("60/minute")
 async def ntp_status(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
 ):

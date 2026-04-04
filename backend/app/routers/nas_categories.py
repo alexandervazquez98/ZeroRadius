@@ -23,7 +23,9 @@ router = APIRouter(prefix="/nas-categories", tags=["nas-categories"])
 
 
 @router.get("", response_model=list[NasCategoryOut])
+@limiter.limit("60/minute")
 async def list_nas_categories(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
 ):
@@ -33,7 +35,9 @@ async def list_nas_categories(
 
 
 @router.get("/{id}", response_model=NasCategoryOut)
+@limiter.limit("60/minute")
 async def get_nas_category(
+    request: Request,
     id: int,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),

@@ -10,4 +10,4 @@ RUN apt-get update && apt-get install -y default-libmysqlclient-dev pkg-config g
 
 COPY . .
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

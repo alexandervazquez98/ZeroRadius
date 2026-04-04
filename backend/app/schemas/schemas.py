@@ -103,10 +103,17 @@ class NasBase(BaseModel):
     shortname: Optional[str] = None
     type: Optional[str] = "other"
     ports: Optional[int] = None
-    secret: str = "secret"
+    secret: str
     description: Optional[str] = None
     zone_id: Optional[int] = None
     category_id: Optional[int] = None
+
+    @field_validator("secret")
+    @classmethod
+    def secret_min_length(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("NAS secret must be at least 32 characters")
+        return v
 
 
 class NasOut(NasBase):

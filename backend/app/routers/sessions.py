@@ -15,7 +15,9 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/active", response_model=list[SessionOut])
+@limiter.limit("60/minute")
 async def get_active_sessions(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
 ):
