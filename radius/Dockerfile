@@ -47,7 +47,7 @@ RUN cd /etc/raddb/mods-enabled && \
 # We create a directory for custom dictionaries and tell FreeRADIUS to include our helper file
 RUN mkdir -p /etc/raddb/custom_dictionaries && \
     touch /etc/raddb/custom_includes.conf && \
-    echo '$INCLUDE /etc/raddb/custom_includes.conf' >> /usr/share/freeradius/dictionary
+    echo '$INCLUDE /etc/raddb/custom_dictionaries/Cambium_450i' > /etc/raddb/custom_includes.conf
 
 # Remove conflict with default Motorola dictionary (Attribute 50 collision)
 RUN sed -i 's/\$INCLUDE dictionary.motorola.wimax/# $INCLUDE dictionary.motorola.wimax/g' /usr/share/freeradius/dictionary.motorola
