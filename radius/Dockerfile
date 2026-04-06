@@ -51,7 +51,11 @@ RUN mkdir -p /etc/raddb/custom_dictionaries && \
 
 # Remove conflict with default Motorola dictionary (Attribute 50 collision)
 # Disable entire dictionary.motorola to avoid VALUE mapping conflicts
-RUN sed -i 's/^/#/' /usr/share/freeradius/dictionary.motorola
+# Also remove the $INCLUDE lines from the main dictionary to prevent any Motorola references
+RUN sed -i 's/^/#/' /usr/share/freeradius/dictionary.motorola && \
+    sed -i 's/^/#/' /usr/share/freeradius/dictionary.motorola.wimax && \
+    sed -i 's/^\$INCLUDE dictionary.motorola/#\$INCLUDE dictionary.motorola/g' /usr/share/freeradius/dictionary && \
+    sed -i 's/^\$INCLUDE dictionary.motorola.wimax/#\$INCLUDE dictionary.motorola.wimax/g' /usr/share/freeradius/dictionary
 
 # Enable EAP-TTLS
 # CRITICAL: For EAP-TTLS to return SQL attributes (like Cambium-Canopy-UserLevel),
