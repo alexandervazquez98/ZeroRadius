@@ -49,9 +49,52 @@ RUN cd /etc/raddb/mods-enabled && \
 # Remove any old hardcoded includes that might cause errors
 RUN sed -i '/Cambium_450i/d' /etc/raddb/dictionary || true
 
-# REMOVE ALL vendor dictionaries from main dictionary
-# Keep ONLY: dictionary.rfc*, dictionary.iana, dictionary.freeradius.internal
-# This prevents any conflicts with custom vendor dictionaries
+# COMPLETELY REMOVE all vendor dictionary files from the image
+# This ensures they're not available for grep queries in the backend
+RUN cd /usr/share/freeradius && \
+    rm -f dictionary.cisco* dictionary.microsoft dictionary.mikrotik dictionary.ruckus \
+           dictionary.motorola* dictionary.cambium dictionary.aruba dictionary.cablelabs \
+           dictionary.wimax dictionary.chillispot dictionary.usr* dictionary.alcatel* \
+           dictionary.alteon dictionary.altiga dictionary.bay dictionary.bigswitch \
+           dictionary.bintec dictionary.bluecoat dictionary.boingo dictionary.bristol \
+           dictionary.broadsoft dictionary.brocade dictionary.bskyb dictionary.bt \
+           dictionary.colubris dictionary.cosine dictionary.dellemc dictionary.digium \
+           dictionary.dlink dictionary.dragonwave dictionary.epygi dictionary.equallogic \
+           dictionary.ericsson* dictionary.extreme dictionary.f5 dictionary.fortinet \
+           dictionary.foundry dictionary.gandalf dictionary.gemtek dictionary.h3c \
+           dictionary.hillstone dictionary.hp dictionary.huawei dictionary.iea \
+           dictionary.juniper dictionary.karlnet dictionary.lancom dictionary.lucent \
+           dictionary.meraki dictionary.mellanox dictionary.mimosa dictionary.navini \
+           dictionary.netscreen dictionary.nokia dictionary.nortel dictionary.paloalto \
+           dictionary.perle dictionary.pfsense dictionary.pica8 dictionary.proxim \
+           dictionary.quiconnect dictionary.rcntec dictionary.riverbed dictionary.roaringpenguin \
+           dictionary.ruggedcom dictionary.sangoma dictionary.siemens dictionary.sonicwall \
+           dictionary.starent dictionary.symbol dictionary.telebit dictionary.telrad \
+           dictionary.trapeze dictionary.trippline dictionary.tropos dictionary.unix \
+           dictionary.utstarcom dictionary.verizon dictionary.wichorus dictionary.wifialliance \
+           dictionary.xedia dictionary.xylan dictionary.yubico dictionary.zte dictionary.zyxel \
+           dictionary.3com dictionary.3gpp* dictionary.acc dictionary.adtran dictionary.adva \
+           dictionary.aerohive dictionary.airespace dictionary.aptilo dictionary.arista \
+           dictionary.audiocodes dictionary.avaya dictionary.azaire dictionary.citrix \
+           dictionary.clavister dictionary.cnergee dictionary.columbia_university \
+           dictionary.compatible dictionary.covaro dictionary.dante dictionary.efficientip \
+           dictionary.eleven dictionary.eltex dictionary.erx dictionary.freeswitch \
+           dictionary.garderos dictionary.infoblox dictionary.ipunplugged dictionary.itk \
+           dictionary.kineto dictionary.lantronix dictionary.livingston dictionary.localweb \
+           dictionary.manzara dictionary.meinberg dictionary.merit dictionary.meru \
+           dictionary.microsemi dictionary.net dictionary.netelastic dictionary.networkphysics \
+           dictionary.nexans dictionary.nile dictionary.nomadix dictionary.ntua \
+           dictionary.packeteer dictionary.patton dictionary.propel dictionary.prosoft \
+           dictionary.purewave dictionary.quintum dictionary.redcreek dictionary.sg \
+           dictionary.shasta dictionary.shiva dictionary.slipstream dictionary.sofaware \
+           dictionary.softbank dictionary.springtide dictionary.surfnet dictionary.t_systems_nova \
+           dictionary.telkom dictionary.travelping dictionary.ukerna dictionary.valemount \
+           dictionary.vasexperts dictionary.versanet dictionary.walabi dictionary.waverider \
+           dictionary.zeus dictionary.usr.illegal dictionary.ascend.illegal \
+           dictionary.alvarion.wimax.v2_2 dictionary.nokia.conflict dictionary.openser \
+           dictionary.starent.vsa1 dictionary.wimax.wichorus dictionary.cisco.vpn3000 2>/dev/null || true
+
+# Comment out remaining vendor includes in main dictionary (should be empty anyway after rm)
 RUN cd /usr/share/freeradius && \
     sed -i '/^\$INCLUDE dictionary\./{s/^/#/}' dictionary && \
     sed -i 's/^#\$INCLUDE dictionary\.rfc/dictionary.rfc/' dictionary && \
