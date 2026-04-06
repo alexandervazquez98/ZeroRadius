@@ -40,11 +40,14 @@ def _get_builtin_attributes_cached() -> List:
         return _builtin_attr_cache
 
     try:
+        # Exclude dictionary.motorola and dictionary.motorola.wimax because
+        # the Dockerfile disables them to use custom Cambium dictionaries instead
         grep_output = _exec_in_radius(
             [
                 "grep",
                 "-rE",
                 "^(ATTRIBUTE|VENDOR|BEGIN-VENDOR|END-VENDOR)",
+                "--exclude=dictionary.motorola*",
                 "/usr/share/freeradius/",
             ]
         )
@@ -302,14 +305,20 @@ async def list_builtin_dictionaries(
     Reads /usr/share/freeradius/ inside the container and returns every
     'dictionary.<vendor>' file (skipping the top-level 'dictionary' index file
     which just $INCLUDEs the others — it is too large and not useful to display).
+
+    Excludes dictionary.motorola and dictionary.motorola.wimax because these
+    are disabled in the Dockerfile to allow custom Cambium dictionaries.
     """
     try:
         raw = _exec_in_radius(["ls", "/usr/share/freeradius/"])
         results = []
         for name in sorted(raw.splitlines()):
             name = name.strip()
-            # Only vendor-specific dictionary files
+            # Only vendor-specific dictionary files, excluding Motorola (handled by custom dicts)
             if not name.startswith("dictionary."):
+                continue
+            # Skip Motorola dictionaries - they are disabled in Dockerfile
+            if name in ("dictionary.motorola", "dictionary.motorola.wimax"):
                 continue
             vendor = name[len("dictionary.") :]  # e.g. "cisco", "cisco.asa"
             results.append(BuiltinDictInfo(filename=name, vendor=vendor))

@@ -1,6 +1,6 @@
 # DICCIONARIO RADIUS PARA CAMBIUM PMP 450i / CANOPY
 # Basado en Vendor ID 161 (Legacy Motorola/Canopy)
-# NOTA: Usamos ID 200 para evitar colisión con dictionary.motorola que usa ID 50
+# NOTA: Usamos ID 50 que es el estándar para Cambium PMP 450i (Vendor ID 161)
 
 VENDOR      Motorola    161
 
