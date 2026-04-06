@@ -34,7 +34,8 @@ RUN sed -i 's/driver = "rlm_sql_null"/driver = "rlm_sql_mysql"/g' /etc/raddb/mod
     sed -i 's/min = .*/min = 1/g' /etc/raddb/mods-available/sql && \
     sed -i 's/spare = .*/spare = 1/g' /etc/raddb/mods-available/sql && \
     sed -i 's/start = .*/start = 1/g' /etc/raddb/mods-available/sql && \
-    sed -i 's/idle_timeout = .*/idle_timeout = 0/g' /etc/raddb/mods-available/sql
+    sed -i 's/idle_timeout = .*/idle_timeout = 0/g' /etc/raddb/mods-available/sql && \
+    sed -i 's/authorize_group_reply_query = "SELECT id, groupname, attribute, value, op FROM/authorize_group_reply_query = "SELECT id, groupname, attribute, CAST(value AS CHAR) AS value, op FROM/g' /etc/raddb/mods-available/sql
 
 # Enable linelog module (custom config)
 # linelog is referenced in radius/default.conf (bind-mounted), so we just
