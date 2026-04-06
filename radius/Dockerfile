@@ -50,18 +50,14 @@ RUN mkdir -p /etc/raddb/custom_dictionaries && \
     echo '$INCLUDE /etc/raddb/custom_dictionaries/Cambium_450i' >> /etc/raddb/dictionary
 
 # REMOVE ALL vendor dictionaries from main dictionary
-# Keep ONLY: dictionary.rfc*, dictionary.iana, dictionary.freeradius, dictionary.freeradius.internal
+# Keep ONLY: dictionary.rfc*, dictionary.iana, dictionary.freeradius.internal
 # This prevents any conflicts with custom vendor dictionaries
 RUN cd /usr/share/freeradius && \
-    for f in dictionary.*; do \
-        case "$f" in
-            dictionary.rfc*|dictionary.iana|dictionary.freeradius.internal|dictionary.compat|dictonary.unix) \
-                echo "Keeping $f" ;;
-            *) \
-                echo "Commenting $f"; \
-                sed -i "s|^\$INCLUDE $f|#\$INCLUDE $f|" dictionary ;;
-        esac \
-    done
+    sed -i '/^\$INCLUDE dictionary\./{s/^/#/}' dictionary && \
+    sed -i 's/^#\$INCLUDE dictionary\.rfc/dictionary.rfc/' dictionary && \
+    sed -i 's/^#\$INCLUDE dictionary\.iana/dictionary.iana/' dictionary && \
+    sed -i 's/^#\$INCLUDE dictionary\.freeradius\.internal/dictionary.freeradius.internal/' dictionary && \
+    sed -i 's/^#\$INCLUDE dictionary\.compat/dictionary.compat/' dictionary
 
 # Enable EAP-TTLS
 # CRITICAL: For EAP-TTLS to return SQL attributes (like Cambium-Canopy-UserLevel),
