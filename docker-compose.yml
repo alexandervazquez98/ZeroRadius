@@ -57,6 +57,7 @@ services:
     volumes:
       - ./backend:/app
       - ./radius/certs:/etc/freeradius/certs
+      - ./radius/certs:/app/radius-certs
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp:/tmp:ro
     env_file:
