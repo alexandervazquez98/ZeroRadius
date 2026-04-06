@@ -8,6 +8,9 @@ BEGIN-VENDOR    Motorola
 # --- Gestión de Usuarios (Acceso al AP) ---
 # Nivel de usuario: 1=Tech, 2=Install, 3=Admin [Fuente 209]
 ATTRIBUTE   Cambium-Canopy-UserLevel            50  integer
+VALUE       Cambium-Canopy-UserLevel            Tech             1
+VALUE       Cambium-Canopy-UserLevel            Install          2
+VALUE       Cambium-Canopy-UserLevel            Admin            3
 # Modo de usuario: 0=Read-Write, 1=Read-Only [Fuente 209]
 ATTRIBUTE   Cambium-Canopy-UserMode             51  integer
 
