@@ -25,6 +25,9 @@ services:
       context: ./radius
     container_name: radius-server
     command: [ "freeradius", "-X" ]
+    ports:
+      - "1812:1812/udp"
+      - "1813:1813/udp"
     env_file:
       - .env
     environment:
