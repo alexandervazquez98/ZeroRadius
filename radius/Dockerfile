@@ -44,10 +44,10 @@ COPY linelog /etc/raddb/mods-available/linelog
 RUN cd /etc/raddb/mods-enabled && \
     ln -sf ../mods-available/linelog linelog
 
-# Install Cambium Dictionary - AUTOMATED METHOD
-# We create a directory for custom dictionaries and tell FreeRADIUS to include our helper file
-RUN mkdir -p /etc/raddb/custom_dictionaries && \
-    echo '$INCLUDE /etc/raddb/custom_dictionaries/Cambium_450i' >> /etc/raddb/dictionary
+# Custom dictionaries provided via volume mount from docker-compose
+# Dictionary includes added dynamically by docker-entrypoint.sh
+# Remove any old hardcoded includes that might cause errors
+RUN sed -i '/Cambium_450i/d' /etc/raddb/dictionary || true
 
 # REMOVE ALL vendor dictionaries from main dictionary
 # Keep ONLY: dictionary.rfc*, dictionary.iana, dictionary.freeradius.internal

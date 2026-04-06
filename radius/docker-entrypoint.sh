@@ -96,43 +96,32 @@ done
 # Also fix any other raddb files that may have landed as 0777
 find /etc/raddb -type f -exec chmod go-w {} \; 2>/dev/null || true
 
-# Create a temporary config file for custom dictionary includes
-INCLUDE_FILE="/etc/raddb/custom_includes.conf"
-echo "# Auto-generated includes for custom dictionaries" > "$INCLUDE_FILE"
+# Add custom includes to the main dictionary file
+INCLUDE_FILE="/etc/raddb/dictionary"
+CUSTOM_INCLUDE_MARKER="# CUSTOM_DICTIONARIES"
 
-# Loop through files in the custom volume and add them to the include file.
-# Track already-included paths to avoid duplicates (e.g. when both
-# "Cambium 450i" and "Cambium_450i" exist — the space-sanitised copy
-# would otherwise be included twice).
-INCLUDED_PATHS=""
+# Remove old custom includes if present
+grep -v "$CUSTOM_INCLUDE_MARKER" "$INCLUDE_FILE" > "${INCLUDE_FILE}.tmp" && mv "${INCLUDE_FILE}.tmp" "$INCLUDE_FILE"
+
+# Add custom dictionary includes
+echo "" >> "$INCLUDE_FILE"
+echo "$CUSTOM_INCLUDE_MARKER" >> "$INCLUDE_FILE"
 
 if [ -d "/etc/raddb/custom_dictionaries" ]; then
     for f in /etc/raddb/custom_dictionaries/*; do
         if [ -f "$f" ]; then
-            # Sanitize filename: Replace spaces with underscores
+            # Sanitize filename
             clean_name=$(basename "$f" | tr ' ' '_')
             clean_path="/etc/raddb/custom_dictionaries/$clean_name"
 
-            # If name changed, copy to sanitised name (unless it already exists)
             if [ "$f" != "$clean_path" ]; then
-                if [ -f "$clean_path" ]; then
-                    # Sanitised version already exists — skip the space-named duplicate
-                    echo "Skipping duplicate dictionary (sanitised version exists): $f"
-                    continue
+                if [ ! -f "$clean_path" ]; then
+                    cp "$f" "$clean_path"
                 fi
-                cp "$f" "$clean_path"
                 f="$clean_path"
             fi
 
-            # Guard against including the same path twice
-            case "$INCLUDED_PATHS" in
-                *"|$f|"*) echo "Skipping already-included dictionary: $f"; continue ;;
-            esac
-            INCLUDED_PATHS="${INCLUDED_PATHS}|$f|"
-
-            # Fix permissions (Windows Docker mounts are often 777)
             chmod 644 "$f"
-
             echo "\$INCLUDE $f" >> "$INCLUDE_FILE"
             echo "Including custom dictionary: $f"
         fi
