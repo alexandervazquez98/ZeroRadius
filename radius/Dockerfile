@@ -49,13 +49,19 @@ RUN cd /etc/raddb/mods-enabled && \
 RUN mkdir -p /etc/raddb/custom_dictionaries && \
     echo '$INCLUDE /etc/raddb/custom_dictionaries/Cambium_450i' >> /etc/raddb/dictionary
 
-# Remove conflict with default Motorola dictionary (Attribute 50 collision)
-# Disable entire dictionary.motorola to avoid VALUE mapping conflicts
-# Also remove the $INCLUDE lines from the main dictionary to prevent any Motorola references
-RUN sed -i 's/^/#/' /usr/share/freeradius/dictionary.motorola && \
-    sed -i 's/^/#/' /usr/share/freeradius/dictionary.motorola.wimax && \
-    sed -i 's/^\$INCLUDE dictionary.motorola/#\$INCLUDE dictionary.motorola/g' /usr/share/freeradius/dictionary && \
-    sed -i 's/^\$INCLUDE dictionary.motorola.wimax/#\$INCLUDE dictionary.motorola.wimax/g' /usr/share/freeradius/dictionary
+# REMOVE ALL vendor dictionaries from main dictionary
+# Keep ONLY: dictionary.rfc*, dictionary.iana, dictionary.freeradius, dictionary.freeradius.internal
+# This prevents any conflicts with custom vendor dictionaries
+RUN cd /usr/share/freeradius && \
+    for f in dictionary.*; do \
+        case "$f" in
+            dictionary.rfc*|dictionary.iana|dictionary.freeradius.internal|dictionary.compat|dictonary.unix) \
+                echo "Keeping $f" ;;
+            *) \
+                echo "Commenting $f"; \
+                sed -i "s|^\$INCLUDE $f|#\$INCLUDE $f|" dictionary ;;
+        esac \
+    done
 
 # Enable EAP-TTLS
 # CRITICAL: For EAP-TTLS to return SQL attributes (like Cambium-Canopy-UserLevel),
