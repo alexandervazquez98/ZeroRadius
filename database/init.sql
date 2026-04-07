@@ -294,9 +294,12 @@ JOIN nas_categories nc ON n.category_id = nc.id;
 -- ============================================================================
 -- Fix for Linux host networking: ensure radius user can connect via loopback
 -- When radius uses network_mode:host, it connects from 127.0.0.1/localhost
+-- Also allow connections from Docker bridge network (172.18.0.0/16)
 -- ============================================================================
 CREATE USER IF NOT EXISTS 'radius'@'127.0.0.1' IDENTIFIED BY 'secure_radius_password';
 CREATE USER IF NOT EXISTS 'radius'@'localhost' IDENTIFIED BY 'secure_radius_password';
+CREATE USER IF NOT EXISTS 'radius'@'%' IDENTIFIED BY 'secure_radius_password';
 GRANT ALL PRIVILEGES ON radius.* TO 'radius'@'127.0.0.1';
 GRANT ALL PRIVILEGES ON radius.* TO 'radius'@'localhost';
+GRANT ALL PRIVILEGES ON radius.* TO 'radius'@'%';
 FLUSH PRIVILEGES;
