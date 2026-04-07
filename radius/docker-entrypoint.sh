@@ -96,5 +96,42 @@ done
 # Also fix any other raddb files that may have landed as 0777
 find /etc/raddb -type f -exec chmod go-w {} \; 2>/dev/null || true
 
+# ============================================================================
+# Custom dictionaries — loaded ONLY if files exist in the bind-mounted volume.
+# The directory is empty by default; dictionaries are uploaded via the API.
+# ============================================================================
+INCLUDE_FILE="/etc/raddb/dictionary"
+CUSTOM_INCLUDE_MARKER="# CUSTOM_DICTIONARIES"
+
+# Remove old custom includes if present (from previous container starts)
+grep -v "$CUSTOM_INCLUDE_MARKER" "$INCLUDE_FILE" > "${INCLUDE_FILE}.tmp" && mv "${INCLUDE_FILE}.tmp" "$INCLUDE_FILE"
+
+if [ -d "/etc/raddb/custom_dictionaries" ]; then
+    FILE_COUNT=$(ls -1 /etc/raddb/custom_dictionaries/ 2>/dev/null | wc -l)
+    if [ "$FILE_COUNT" -gt 0 ]; then
+        echo "" >> "$INCLUDE_FILE"
+        echo "$CUSTOM_INCLUDE_MARKER" >> "$INCLUDE_FILE"
+
+        for f in /etc/raddb/custom_dictionaries/*; do
+            if [ -f "$f" ]; then
+                # Sanitize filename
+                clean_name=$(basename "$f" | tr ' ' '_')
+                clean_path="/etc/raddb/custom_dictionaries/$clean_name"
+
+                if [ "$f" != "$clean_path" ]; then
+                    if [ ! -f "$clean_path" ]; then
+                        cp "$f" "$clean_path"
+                    fi
+                    f="$clean_path"
+                fi
+
+                chmod 644 "$f"
+                echo "\$INCLUDE $f" >> "$INCLUDE_FILE"
+                echo "Including custom dictionary: $f"
+            fi
+        done
+    fi
+fi
+
 # Execute the passed command (freeradius -X)
 exec "$@"
