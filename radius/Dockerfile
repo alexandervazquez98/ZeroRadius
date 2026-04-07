@@ -50,7 +50,7 @@ RUN cd /etc/raddb/mods-enabled && \
 # COMPLETELY REMOVE all vendor dictionary files from the image
 # This ensures they're not available for grep queries in the backend
 RUN cd /usr/share/freeradius && \
-    rm -f dictionary.cisco* dictionary.microsoft dictionary.mikrotik dictionary.ruckus \
+    rm -f dictionary.cisco* dictionary.mikrotik dictionary.ruckus \
            dictionary.motorola* dictionary.cambium dictionary.aruba dictionary.cablelabs \
            dictionary.wimax dictionary.chillispot dictionary.usr* dictionary.alcatel* \
            dictionary.alteon dictionary.altiga dictionary.bay dictionary.bigswitch \
