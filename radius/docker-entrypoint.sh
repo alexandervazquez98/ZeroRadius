@@ -96,37 +96,5 @@ done
 # Also fix any other raddb files that may have landed as 0777
 find /etc/raddb -type f -exec chmod go-w {} \; 2>/dev/null || true
 
-# Add custom includes to the main dictionary file
-INCLUDE_FILE="/etc/raddb/dictionary"
-CUSTOM_INCLUDE_MARKER="# CUSTOM_DICTIONARIES"
-
-# Remove old custom includes if present
-grep -v "$CUSTOM_INCLUDE_MARKER" "$INCLUDE_FILE" > "${INCLUDE_FILE}.tmp" && mv "${INCLUDE_FILE}.tmp" "$INCLUDE_FILE"
-
-# Add custom dictionary includes
-echo "" >> "$INCLUDE_FILE"
-echo "$CUSTOM_INCLUDE_MARKER" >> "$INCLUDE_FILE"
-
-if [ -d "/etc/raddb/custom_dictionaries" ]; then
-    for f in /etc/raddb/custom_dictionaries/*; do
-        if [ -f "$f" ]; then
-            # Sanitize filename
-            clean_name=$(basename "$f" | tr ' ' '_')
-            clean_path="/etc/raddb/custom_dictionaries/$clean_name"
-
-            if [ "$f" != "$clean_path" ]; then
-                if [ ! -f "$clean_path" ]; then
-                    cp "$f" "$clean_path"
-                fi
-                f="$clean_path"
-            fi
-
-            chmod 644 "$f"
-            echo "\$INCLUDE $f" >> "$INCLUDE_FILE"
-            echo "Including custom dictionary: $f"
-        fi
-    done
-fi
-
 # Execute the passed command (freeradius -X)
 exec "$@"

@@ -44,10 +44,8 @@ COPY linelog /etc/raddb/mods-available/linelog
 RUN cd /etc/raddb/mods-enabled && \
     ln -sf ../mods-available/linelog linelog
 
-# Custom dictionaries provided via volume mount from docker-compose
-# Dictionary includes added dynamically by docker-entrypoint.sh
-# Remove any old hardcoded includes that might cause errors
-RUN sed -i '/Cambium_450i/d' /etc/raddb/dictionary || true
+# Custom dictionaries (uploaded via API) are loaded at runtime by the entrypoint.
+# No hardcoded includes — all vendor dictionaries are removed below.
 
 # COMPLETELY REMOVE all vendor dictionary files from the image
 # This ensures they're not available for grep queries in the backend
