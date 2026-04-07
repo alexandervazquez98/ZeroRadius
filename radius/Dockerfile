@@ -99,7 +99,8 @@ RUN cd /usr/share/freeradius && \
     sed -i 's/^#\$INCLUDE dictionary\.iana/$INCLUDE dictionary.iana/' dictionary && \
     sed -i 's/^#\$INCLUDE dictionary\.freeradius\.internal/$INCLUDE dictionary.freeradius.internal/' dictionary && \
     sed -i 's/^#\$INCLUDE dictionary\.compat/$INCLUDE dictionary.compat/' dictionary && \
-    sed -i 's/dictionary\.compatible/dictionary.compat/' dictionary
+    sed -i 's/dictionary\.compatible/dictionary.compat/' dictionary && \
+    sed -i 's/^#\$INCLUDE dictionary\.microsoft/$INCLUDE dictionary.microsoft/' dictionary
 
 # Enable EAP-TTLS
 # CRITICAL: For EAP-TTLS to return SQL attributes (like Cambium-Canopy-UserLevel),
