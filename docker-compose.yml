@@ -93,6 +93,7 @@ services:
       - "514:514/udp"
     environment:
       TZ: UTC
+      SYSLOG_API_KEY: ${SYSLOG_API_KEY:-syslog-secret-key}
     volumes:
       - /etc/localtime:/etc/localtime:ro
     depends_on:

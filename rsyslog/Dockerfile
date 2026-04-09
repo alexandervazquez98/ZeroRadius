@@ -9,4 +9,5 @@ COPY rsyslog.conf /etc/rsyslog.conf
 
 EXPOSE 514/udp
 
-CMD ["rsyslogd", "-n"]
+# Run without -n so rsyslog logs to stdout automatically
+CMD ["rsyslogd"]

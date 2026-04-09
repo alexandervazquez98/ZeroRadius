@@ -283,6 +283,40 @@ class NTPStatusResponse(BaseModel):
     alert: bool
 
 
+# T24 — Container stats response schema
+class ContainerStatsResponse(BaseModel):
+    id: str
+    name: str
+    status: str
+    state: str
+    cpu_percent: float
+    memory_usage_mb: float
+    memory_limit_mb: float
+    memory_percent: float
+    network_rx_mb: float
+    network_tx_mb: float
+
+
+class ContainerStatsListResponse(BaseModel):
+    containers: list[ContainerStatsResponse]
+    total: int
+    running: int
+    stopped: int
+
+
+# T25 — System resources response schema
+class SystemResourcesResponse(BaseModel):
+    cpu_percent: float
+    cpu_count: int
+    memory_total_gb: float
+    memory_used_gb: float
+    memory_percent: float
+    disk_total_gb: float
+    disk_used_gb: float
+    disk_percent: float
+    network_interfaces: list[str]
+
+
 # nas-categories: NasCategory schemas
 class NasCategoryBase(BaseModel):
     name: str

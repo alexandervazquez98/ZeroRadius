@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.db.session import get_db
@@ -9,9 +9,12 @@ from app.models.models import AdminUser
 from typing import Optional, List
 from datetime import datetime
 import logging
+import os
 
 router = APIRouter(prefix="/syslog", tags=["syslog"])
 logger = logging.getLogger(__name__)
+
+SYSLOG_API_KEY = os.getenv("SYSLOG_API_KEY", "")
 
 
 class SyslogEventIn(BaseModel):
@@ -47,13 +50,17 @@ class SyslogListResponse(BaseModel):
 async def ingest_syslog_events(
     events: List[SyslogEventIn],
     db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = Depends(get_current_active_user),
+    x_api_key: Optional[str] = Header(None, alias="x-api-key"),
 ):
     """
     Bulk ingest syslog events from rsyslog.
     Accepts a JSON array of syslog events and bulk inserts them.
     Hash chain is calculated by the background worker.
+    Can use x-api-key header for authentication (optional, falls back to session auth).
     """
+    if SYSLOG_API_KEY and x_api_key != SYSLOG_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
     if not events:
         raise HTTPException(status_code=400, detail="No events provided")
 

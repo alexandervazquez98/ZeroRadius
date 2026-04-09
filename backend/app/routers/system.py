@@ -25,8 +25,16 @@ from app.core.security import (
 )
 from app.db.session import SessionLocal, get_db
 from app.models.models import AdminUser
-from app.schemas.schemas import NTPStatusResponse
+from app.schemas.schemas import (
+    NTPStatusResponse,
+    ContainerStatsListResponse,
+    SystemResourcesResponse,
+)
 from app.services.ntp_status import get_status as get_ntp_status
+from app.services.system_health import (
+    get_container_stats,
+    get_system_resources,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +78,54 @@ async def ntp_status(
         reference_server=status.reference_server,
         last_sync=status.last_sync,
         alert=status.alert,
+    )
+
+
+# ---------------------------------------------------------------------------
+# System Health endpoints
+# ---------------------------------------------------------------------------
+@router.get("/health/containers", response_model=ContainerStatsListResponse)
+@limiter.limit("30/minute")
+async def list_containers(
+    request: Request,
+    current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
+):
+    """
+    Returns list of all Docker containers with their status and resource usage.
+    Requires admin or superadmin role.
+    """
+    containers = get_container_stats()
+    running = sum(1 for c in containers if c.state == "running")
+    stopped = sum(1 for c in containers if c.state != "running")
+    return ContainerStatsListResponse(
+        containers=containers,
+        total=len(containers),
+        running=running,
+        stopped=stopped,
+    )
+
+
+@router.get("/health/resources", response_model=SystemResourcesResponse)
+@limiter.limit("30/minute")
+async def system_resources(
+    request: Request,
+    current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
+):
+    """
+    Returns host system resources (CPU, RAM, disk, network).
+    Requires admin or superadmin role.
+    """
+    resources = get_system_resources()
+    return SystemResourcesResponse(
+        cpu_percent=resources.cpu_percent,
+        cpu_count=resources.cpu_count,
+        memory_total_gb=resources.memory_total_gb,
+        memory_used_gb=resources.memory_used_gb,
+        memory_percent=resources.memory_percent,
+        disk_total_gb=resources.disk_total_gb,
+        disk_used_gb=resources.disk_used_gb,
+        disk_percent=resources.disk_percent,
+        network_interfaces=resources.network_interfaces,
     )
 
 
