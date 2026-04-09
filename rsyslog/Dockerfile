@@ -1,13 +1,10 @@
-FROM rsyslog/rsyslog:latest
+FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y \
-    rsyslog-omhttp \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir requests
 
-COPY rsyslog.conf /etc/rsyslog.conf
+COPY syslog-forwarder.py /usr/local/bin/syslog-forwarder.py
+RUN chmod +x /usr/local/bin/syslog-forwarder.py
 
 EXPOSE 514/udp
 
-# Run without -n so rsyslog logs to stdout automatically
-CMD ["rsyslogd"]
+CMD ["python", "/usr/local/bin/syslog-forwarder.py"]

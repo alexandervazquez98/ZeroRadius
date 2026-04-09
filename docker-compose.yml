@@ -93,7 +93,10 @@ services:
       - "514:514/udp"
     environment:
       TZ: UTC
-      SYSLOG_API_KEY: ${SYSLOG_API_KEY:-syslog-secret-key}
+      BACKEND_URL: http://backend:8000/syslog/ingest
+      API_KEY: ${SYSLOG_API_KEY:-syslog-secret-key}
+      BATCH_SIZE: "50"
+      BATCH_TIMEOUT: "5"
     volumes:
       - /etc/localtime:/etc/localtime:ro
     depends_on:
