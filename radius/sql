@@ -52,5 +52,7 @@ sql {
     simul_verify_query = "SELECT radacctid, acctsessionid, username, nasipaddress, nasportid, framedipaddress, callingstationid, framedprotocol FROM radacct WHERE username = '%{User-Name}' AND acctstoptime IS NULL"
 
     # Post-Auth (Logging) — T09: pass is [REDACTED] (ISO 27001 A.5.17), NAS context added (A.8.15)
-    postauth_query = "INSERT INTO radpostauth (username, pass, reply, authdate, nas_ip_address, nas_identifier, calling_station_id, reply_message, event_source) VALUES ('%{User-Name}', '[REDACTED]', '%{reply:Packet-Type}', '%{Event-Timestamp}', '%{NAS-IP-Address}', '%{NAS-Identifier}', '%{Calling-Station-Id}', '%{reply:Reply-Message}', 'radius')"
+    post-auth {
+        query = "INSERT INTO radpostauth (username, pass, reply, authdate, nas_ip_address, nas_identifier, calling_station_id, reply_message, event_source) VALUES ('%{User-Name}', '[REDACTED]', '%{reply:Packet-Type}', FROM_UNIXTIME(%{%{integer:Event-Timestamp}:-%l}), '%{NAS-IP-Address}', '%{NAS-Identifier}', '%{Calling-Station-Id}', '%{reply:Reply-Message}', 'radius')"
+    }
 }
