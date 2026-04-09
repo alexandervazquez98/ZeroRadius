@@ -103,8 +103,10 @@ find /etc/raddb -type f -exec chmod go-w {} \; 2>/dev/null || true
 INCLUDE_FILE="/etc/raddb/dictionary"
 CUSTOM_INCLUDE_MARKER="# CUSTOM_DICTIONARIES"
 
-# Remove old custom includes if present (from previous container starts)
-grep -v "$CUSTOM_INCLUDE_MARKER" "$INCLUDE_FILE" > "${INCLUDE_FILE}.tmp" && mv "${INCLUDE_FILE}.tmp" "$INCLUDE_FILE"
+# Remove ALL old custom includes (lines with custom_dictionaries path) AND the marker
+# This ensures stale references are cleaned when dictionaries are deleted via UI
+sed -i "/custom_dictionaries/d" "$INCLUDE_FILE"
+sed -i "/$CUSTOM_INCLUDE_MARKER/d" "$INCLUDE_FILE"
 
 if [ -d "/etc/raddb/custom_dictionaries" ]; then
     FILE_COUNT=$(ls -1 /etc/raddb/custom_dictionaries/ 2>/dev/null | wc -l)

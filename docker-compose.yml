@@ -6,11 +6,13 @@ services:
     env_file:
       - .env
     environment:
+      TZ: UTC
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
       - db_data:/var/lib/mysql
     healthcheck:
@@ -39,7 +41,9 @@ services:
       DB_NAME: ${MYSQL_DATABASE}
       # Debug mode enabling
       RADIUS_DEBUG: "${RADIUS_DEBUG:-no}"
+      TZ: UTC
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - ./backend/dictionaries:/etc/raddb/custom_dictionaries
       - ./radius/sql:/etc/raddb/mods-available/sql
       - ./radius/clients.conf:/etc/raddb/clients.conf
@@ -60,6 +64,7 @@ services:
       - ./radius/certs:/app/radius-certs
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp:/tmp:ro
+      - /etc/localtime:/etc/localtime:ro
     env_file:
       - .env
     environment:
@@ -68,8 +73,30 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       ALGORITHM: ${ALGORITHM}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES}
+      TZ: UTC
     depends_on:
       db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  syslog:
+    restart: unless-stopped
+    build:
+      context: ./rsyslog
+    container_name: radius-syslog
+    ports:
+      - "514:514/udp"
+    environment:
+      TZ: UTC
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      backend:
         condition: service_healthy
 
   frontend:
@@ -80,7 +107,10 @@ services:
     ports:
       - "3009:80"
       - "443:443"
+    environment:
+      TZ: UTC
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - ./certs:/etc/nginx/certs
 
 volumes:

@@ -1,5 +1,5 @@
 -- FreeRADIUS schema with ISO 27001:2022 compliance enhancements
--- Updated: 2026-04-01 (nas-categories feature)
+-- Updated: 2026-04-09 (syslog-compliance: Phase 2 - syslog_events table)
 
 CREATE TABLE IF NOT EXISTS radcheck (
   id int(11) unsigned NOT NULL auto_increment,
@@ -221,6 +221,40 @@ CREATE TABLE IF NOT EXISTS nas_categories (
     INDEX idx_nc_name (name),
     INDEX idx_nc_criticality (criticality)
 ) ENGINE=InnoDB;
+
+-- syslog-compliance: Phase 2 - syslog_events table with partitioning by month
+-- Partitioning strategy: PARTITION BY RANGE (YEAR(received_at) * 100 + MONTH(received_at))
+-- Hash chain fields: previous_hash, hash (SHA256)
+CREATE TABLE IF NOT EXISTS syslog_events (
+    id BIGINT AUTO_INCREMENT,
+    received_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    device_ip VARCHAR(45) NOT NULL,
+    facility INT NULL,
+    severity INT NULL,
+    program VARCHAR(64) NULL,
+    message TEXT NOT NULL,
+    previous_hash VARCHAR(64) NULL,
+    hash VARCHAR(64) NULL,
+    PRIMARY KEY (id, received_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+PARTITION BY RANGE (YEAR(received_at) * 100 + MONTH(received_at)) (
+    PARTITION p202604 VALUES LESS THAN (202605),
+    PARTITION p202605 VALUES LESS THAN (202606),
+    PARTITION p202606 VALUES LESS THAN (202607),
+    PARTITION p202607 VALUES LESS THAN (202608),
+    PARTITION p202608 VALUES LESS THAN (202609),
+    PARTITION p202609 VALUES LESS THAN (202610),
+    PARTITION p202610 VALUES LESS THAN (202611),
+    PARTITION p202611 VALUES LESS THAN (202612),
+    PARTITION p202612 VALUES LESS THAN (202701),
+    PARTITION pmax VALUES LESS THAN MAXVALUE
+);
+
+-- Indexes for syslog_events
+CREATE INDEX idx_syslog_device_ip ON syslog_events(device_ip);
+CREATE INDEX idx_syslog_received_at ON syslog_events(received_at);
+CREATE INDEX idx_syslog_severity ON syslog_events(severity);
+CREATE INDEX idx_syslog_facility ON syslog_events(facility);
 
 -- IAM & NAC RBAC tables
 

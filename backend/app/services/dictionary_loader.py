@@ -665,7 +665,8 @@ class DictionaryService:
         """Validate and overwrite a dictionary file with new content.
 
         Auto-converts FreeRADIUS 4.x types before validation.
-        Auto-renames vendor attributes that collide with standard names.
+        NOTE: Auto-prefix disabled - dictionaries uploaded via UI must keep
+        their original attribute names without modification.
         Rejects files that still redefine standard RADIUS attributes
         at the top level after auto-rename.
         Returns {"conversions": int, "renames": list} with fixes applied.
@@ -673,8 +674,9 @@ class DictionaryService:
         self._validate_path(filename)
         converted, conversions = _convert_v4_types(content)
 
-        # Auto-rename vendor-specific attributes that collide with base names
-        converted, renames = _auto_prefix_vendor_attributes(converted)
+        # NOTE: Auto-prefix disabled - dictionaries uploaded via UI must keep
+        # their original attribute names without modification.
+        renames = []
 
         # Check for remaining duplicate attributes (top-level, not auto-fixable)
         duplicates = _find_duplicate_attributes(converted)
@@ -736,8 +738,10 @@ class DictionaryService:
         text = content.decode("utf-8", errors="replace")
         converted, conversions = _convert_v4_types(text)
 
-        # Auto-rename vendor-specific attributes that collide with base names
-        converted, renames = _auto_prefix_vendor_attributes(converted)
+        # NOTE: Auto-prefix disabled - dictionaries uploaded via UI must keep
+        # their original attribute names without modification.
+        # Original logic that auto-prefixed vendor attributes has been removed.
+        renames = []
 
         # Check for remaining duplicate attributes (top-level, not auto-fixable)
         duplicates = _find_duplicate_attributes(converted)

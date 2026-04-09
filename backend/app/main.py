@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import users, nas, auth, groups, audit, dictionary, admin_users
-from app.routers import system, privilege_map, sessions, iam_nac, nas_categories
+from app.routers import system, privilege_map, sessions, iam_nac, nas_categories, syslog
 from app.db.session import engine, Base
 from app.core.limiter import limiter
 from app.middleware.force_password_change import ForcePasswordChangeMiddleware
@@ -294,11 +294,18 @@ app.include_router(nas_categories.router)
 
 
 # ---------------------------------------------------------------------------
+# Syslog Compliance API
+# ---------------------------------------------------------------------------
+app.include_router(syslog.router)
+
+
+# ---------------------------------------------------------------------------
 # T33 — Background integrity hash job
 # Runs every 60 seconds, backfilling integrity_hash for new radpostauth rows.
 # ---------------------------------------------------------------------------
 
 _integrity_task: asyncio.Task | None = None
+_syslog_integrity_task: asyncio.Task | None = None
 
 
 async def _integrity_hash_loop() -> None:
@@ -321,18 +328,40 @@ async def _integrity_hash_loop() -> None:
         await asyncio.sleep(60)
 
 
+async def _syslog_integrity_loop() -> None:
+    """Periodic background task: backfill missing syslog hashes every 60 seconds."""
+    from app.db.session import SessionLocal  # type: ignore[attr-defined]
+    from app.services.syslog_integrity import backfill_syslog_hashes
+
+    while True:
+        try:
+            async with SessionLocal() as db:  # type: ignore[attr-defined]
+                count = await backfill_syslog_hashes(db, batch_size=500)
+            if count > 0:
+                logger.info(
+                    "Background syslog integrity job: hashed %d new syslog records.",
+                    count,
+                )
+        except Exception as exc:  # pragma: no cover
+            logger.error("Background syslog integrity job error: %s", exc)
+
+        await asyncio.sleep(60)
+
+
 @app.on_event("startup")
 async def start_background_jobs() -> None:
     """Start the integrity hash background loop on application startup."""
-    global _integrity_task
+    global _integrity_task, _syslog_integrity_task
     _integrity_task = asyncio.create_task(_integrity_hash_loop())
+    _syslog_integrity_task = asyncio.create_task(_syslog_integrity_loop())
     logger.info("Background integrity hash job started.")
+    logger.info("Background syslog integrity hash job started.")
 
 
 @app.on_event("shutdown")
 async def stop_background_jobs() -> None:
     """Cancel background tasks gracefully on shutdown."""
-    global _integrity_task
+    global _integrity_task, _syslog_integrity_task
     if _integrity_task and not _integrity_task.done():
         _integrity_task.cancel()
         try:
@@ -340,6 +369,14 @@ async def stop_background_jobs() -> None:
         except asyncio.CancelledError:
             pass
     logger.info("Background integrity hash job stopped.")
+
+    if _syslog_integrity_task and not _syslog_integrity_task.done():
+        _syslog_integrity_task.cancel()
+        try:
+            await _syslog_integrity_task
+        except asyncio.CancelledError:
+            pass
+    logger.info("Background syslog integrity hash job stopped.")
 
 
 @app.get("/")

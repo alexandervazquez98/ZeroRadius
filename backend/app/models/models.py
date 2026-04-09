@@ -377,3 +377,27 @@ class NasCategory(Base):
     )
 
     nases: Mapped[list["Nas"]] = relationship("Nas", back_populates="category")
+
+
+# syslog-compliance: Phase 2 - SyslogEvent model with hash chain for integrity
+class SyslogEvent(Base):
+    __tablename__ = "syslog_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    received_at: Mapped[datetime.datetime] = mapped_column(
+        MySQLDATETIME(fsp=6), server_default=func.now(), nullable=False
+    )
+    device_ip: Mapped[str] = mapped_column(String(45), nullable=False)
+    facility: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    severity: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    program: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    previous_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+    __table_args__ = (
+        Index("idx_syslog_device_ip", "device_ip"),
+        Index("idx_syslog_received_at", "received_at"),
+        Index("idx_syslog_severity", "severity"),
+        Index("idx_syslog_facility", "facility"),
+    )
