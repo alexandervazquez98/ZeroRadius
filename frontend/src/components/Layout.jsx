@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Server, Radio, Activity, Shield, Layers, BookOpen, LogOut, UserCog, Map, Clock, ScrollText } from 'lucide-react';
+import { LayoutDashboard, Users, Server, Radio, Activity, Shield, Layers, BookOpen, LogOut, UserCog, Map, Clock, ScrollText, FileText } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NTPIndicator from './NTPIndicator';
 import LogViewer from './LogViewer';
@@ -27,6 +27,7 @@ const Layout = () => {
         { name: 'IAM & Zonas', path: '/iam', icon: Shield, allowedRoles: ['superadmin', 'admin'] },
         { name: 'Dictionaries', path: '/dictionaries', icon: BookOpen },
         { name: 'Audit Logs', path: '/audit', icon: Shield },
+        { name: 'Syslog', path: '/syslog', icon: FileText },
         { name: 'System Users', path: '/admin-users', icon: UserCog, allowedRoles: ['superadmin'] },
     ];
 

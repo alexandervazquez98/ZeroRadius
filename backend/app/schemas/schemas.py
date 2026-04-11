@@ -283,6 +283,40 @@ class NTPStatusResponse(BaseModel):
     alert: bool
 
 
+# T24 — Container stats response schema
+class ContainerStatsResponse(BaseModel):
+    id: str
+    name: str
+    status: str
+    state: str
+    cpu_percent: float
+    memory_usage_mb: float
+    memory_limit_mb: float
+    memory_percent: float
+    network_rx_mb: float
+    network_tx_mb: float
+
+
+class ContainerStatsListResponse(BaseModel):
+    containers: list[ContainerStatsResponse]
+    total: int
+    running: int
+    stopped: int
+
+
+# T25 — System resources response schema
+class SystemResourcesResponse(BaseModel):
+    cpu_percent: float
+    cpu_count: int
+    memory_total_gb: float
+    memory_used_gb: float
+    memory_percent: float
+    disk_total_gb: float
+    disk_used_gb: float
+    disk_percent: float
+    network_interfaces: list[str]
+
+
 # nas-categories: NasCategory schemas
 class NasCategoryBase(BaseModel):
     name: str
@@ -309,11 +343,79 @@ class NasCategoryOut(NasCategoryBase):
         from_attributes = True
 
 
+# network-segments-v1: NetworkSegment schemas
+class NetworkSegmentBase(BaseModel):
+    name: str
+    cidr: str
+    description: Optional[str] = None
+
+
+class NetworkSegmentCreate(NetworkSegmentBase):
+    @field_validator("cidr")
+    @classmethod
+    def validate_cidr(cls, v: str) -> str:
+        try:
+            network = ipaddress.ip_network(v, strict=False)
+            # FIX #55: Only IPv4 is supported (RADIUS authorization is IPv4-only)
+            if not isinstance(network, ipaddress.IPv4Network):
+                raise ValueError("cidr must be IPv4 only (IPv6 not supported)")
+            # Normalize CIDR to canonical form: 10.0.0.5/24 -> 10.0.0.0/24
+            return f"{network.network_address}/{network.prefixlen}"
+        except ValueError:
+            raise ValueError("cidr must be a valid IPv4 network CIDR")
+
+
+class NetworkSegmentUpdate(BaseModel):
+    name: Optional[str] = None
+    cidr: Optional[str] = None
+    description: Optional[str] = None
+
+    @field_validator("cidr")
+    @classmethod
+    def validate_cidr(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        try:
+            network = ipaddress.ip_network(v, strict=False)
+            # FIX #55: Only IPv4 is supported (RADIUS authorization is IPv4-only)
+            if not isinstance(network, ipaddress.IPv4Network):
+                raise ValueError("cidr must be IPv4 only (IPv6 not supported)")
+            # Normalize CIDR to canonical form
+            return f"{network.network_address}/{network.prefixlen}"
+        except ValueError:
+            raise ValueError("cidr must be a valid IPv4 network CIDR")
+
+
+class NetworkSegmentOut(NetworkSegmentBase):
+    id: int
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
 # T23 — UserNasPrivilegeMap schemas
 class UserNasPrivilegeMapCreate(BaseModel):
     username: str
     nas_ip: Optional[str] = None  # IP-based targeting
+
+    @field_validator("nas_ip")
+    @classmethod
+    def validate_nas_ip(cls, v):
+        if v is None:
+            return v
+        try:
+            ip = ipaddress.ip_address(v)
+            if not isinstance(ip, ipaddress.IPv4Address):
+                raise ValueError("nas_ip must be IPv4 only (IPv6 not supported)")
+            return str(ip)
+        except ValueError:
+            raise ValueError("nas_ip must be a valid IPv4 address")
     nas_category_id: Optional[int] = None  # Category-based targeting
+    segment_id: Optional[int] = None  # network-segments-v1: Segment targeting
+    target_start_ip: Optional[str] = None  # network-segments-v1: Exception start
+    target_end_ip: Optional[str] = None  # network-segments-v1: Exception end
     nas_identifier: Optional[str] = None
     nas_vendor: Optional[str] = None
     radius_group: str
@@ -325,13 +427,57 @@ class UserNasPrivilegeMapCreate(BaseModel):
 
     @model_validator(mode="after")
     def require_nas_target(self) -> "UserNasPrivilegeMapCreate":
-        """Exactly one of nas_ip or nas_category_id must be provided."""
+        """Exactly one targeting mode (IP, Category, or Segment) must be provided."""
         has_ip = self.nas_ip is not None and self.nas_ip.strip() != ""
         has_cat = self.nas_category_id is not None
-        if not has_ip and not has_cat:
-            raise ValueError("Either nas_ip or nas_category_id must be provided")
-        if has_ip and has_cat:
-            raise ValueError("Provide either nas_ip or nas_category_id, not both")
+        has_seg = self.segment_id is not None
+
+        provided = sum([has_ip, has_cat, has_seg])
+        if provided == 0:
+            raise ValueError(
+                "Either nas_ip, nas_category_id, or segment_id must be provided"
+            )
+        if provided > 1:
+            raise ValueError(
+                "Provide exactly one targeting method: nas_ip, nas_category_id, or segment_id"
+            )
+
+        if has_seg:
+            has_start = (
+                self.target_start_ip is not None and self.target_start_ip.strip() != ""
+            )
+            has_end = (
+                self.target_end_ip is not None and self.target_end_ip.strip() != ""
+            )
+
+            if has_start != has_end:
+                raise ValueError(
+                    "Both target_start_ip and target_end_ip must be provided for a range exception, or neither for a base rule"
+                )
+
+            if has_start and has_end:
+                try:
+                    start_ip = ipaddress.ip_address(self.target_start_ip)
+                    end_ip = ipaddress.ip_address(self.target_end_ip)
+                except ValueError:
+                    # FIX #55: Provide clear error for IPv6 or invalid format
+                    raise ValueError(
+                        "Exception IPs must be IPv4 only (IPv6 not supported)"
+                    )
+                # FIX #55: Only IPv4 is supported (RADIUS authorization is IPv4-only)
+                if not isinstance(start_ip, ipaddress.IPv4Address):
+                    raise ValueError(
+                        "Exception IPs must be IPv4 only (IPv6 not supported)"
+                    )
+                if not isinstance(end_ip, ipaddress.IPv4Address):
+                    raise ValueError(
+                        "Exception IPs must be IPv4 only (IPv6 not supported)"
+                    )
+                if start_ip > end_ip:
+                    raise ValueError(
+                        "target_start_ip cannot be greater than target_end_ip"
+                    )
+
         return self
 
 
@@ -340,6 +486,20 @@ class UserNasPrivilegeMapBulkCreate(BaseModel):
 
     username: str
     nas_ips: List[str]
+
+    @field_validator("nas_ips")
+    @classmethod
+    def validate_nas_ips(cls, v):
+        if not v:
+            return v
+        for ip_str in v:
+            try:
+                ip = ipaddress.ip_address(ip_str)
+                if not isinstance(ip, ipaddress.IPv4Address):
+                    raise ValueError("nas_ips must be IPv4 only (IPv6 not supported)")
+            except ValueError:
+                raise ValueError("nas_ips must be valid IPv4 addresses: " + ip_str + " is invalid")
+        return v
     nas_identifier: Optional[str] = None
     nas_vendor: Optional[str] = None
     radius_group: str
@@ -356,6 +516,10 @@ class UserNasPrivilegeMapOut(BaseModel):
     nas_ip: Optional[str] = None
     nas_category_id: Optional[int] = None
     nas_category_name: Optional[str] = None  # resolved from relationship in router
+    segment_id: Optional[int] = None
+    segment_name: Optional[str] = None  # resolved from relationship in router
+    target_start_ip: Optional[str] = None
+    target_end_ip: Optional[str] = None
     nas_identifier: Optional[str] = None
     nas_vendor: Optional[str] = None
     radius_group: str

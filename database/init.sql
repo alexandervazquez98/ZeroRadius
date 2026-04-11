@@ -1,5 +1,5 @@
 -- FreeRADIUS schema with ISO 27001:2022 compliance enhancements
--- Updated: 2026-04-01 (nas-categories feature)
+-- Updated: 2026-04-09 (syslog-compliance: Phase 2 - syslog_events table)
 
 CREATE TABLE IF NOT EXISTS radcheck (
   id int(11) unsigned NOT NULL auto_increment,
@@ -191,6 +191,10 @@ CREATE TABLE IF NOT EXISTS user_nas_privilege_map (
     username        VARCHAR(64)  NOT NULL,
     nas_ip          VARCHAR(50)  NULL,                  -- NULL when using category-based mapping
     nas_category_id INT          NULL DEFAULT NULL,     -- NULL when using IP-based mapping
+    segment_id      INT          NULL DEFAULT NULL,
+    segment_target_key VARCHAR(128) NOT NULL DEFAULT '',
+    target_start_ip VARCHAR(50)  NULL,
+    target_end_ip   VARCHAR(50)  NULL,
     nas_identifier  VARCHAR(64)  NULL,
     nas_vendor      VARCHAR(64)  NULL,
     radius_group    VARCHAR(64)  NOT NULL,
@@ -204,6 +208,7 @@ CREATE TABLE IF NOT EXISTS user_nas_privilege_map (
     -- Separate unique keys per targeting mode
     UNIQUE KEY uq_user_nas_ip  (username, nas_ip),
     UNIQUE KEY uq_user_nas_cat (username, nas_category_id),
+    UNIQUE KEY uq_user_segment_target (username, segment_id, segment_target_key),
     INDEX idx_unpm_nas_ip     (nas_ip),
     INDEX idx_unpm_category   (nas_category_id),
     INDEX idx_unpm_is_active  (is_active),
@@ -222,7 +227,51 @@ CREATE TABLE IF NOT EXISTS nas_categories (
     INDEX idx_nc_criticality (criticality)
 ) ENGINE=InnoDB;
 
+-- syslog-compliance: Phase 2 - syslog_events table with partitioning by month
+-- Partitioning strategy: PARTITION BY RANGE (YEAR(received_at) * 100 + MONTH(received_at))
+-- Hash chain fields: previous_hash, hash (SHA256)
+CREATE TABLE IF NOT EXISTS syslog_events (
+    id BIGINT AUTO_INCREMENT,
+    received_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    device_ip VARCHAR(45) NOT NULL,
+    facility INT NULL,
+    severity INT NULL,
+    program VARCHAR(64) NULL,
+    message TEXT NOT NULL,
+    previous_hash VARCHAR(64) NULL,
+    hash VARCHAR(64) NULL,
+    PRIMARY KEY (id, received_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+PARTITION BY RANGE (YEAR(received_at) * 100 + MONTH(received_at)) (
+    PARTITION p202604 VALUES LESS THAN (202605),
+    PARTITION p202605 VALUES LESS THAN (202606),
+    PARTITION p202606 VALUES LESS THAN (202607),
+    PARTITION p202607 VALUES LESS THAN (202608),
+    PARTITION p202608 VALUES LESS THAN (202609),
+    PARTITION p202609 VALUES LESS THAN (202610),
+    PARTITION p202610 VALUES LESS THAN (202611),
+    PARTITION p202611 VALUES LESS THAN (202612),
+    PARTITION p202612 VALUES LESS THAN (202701),
+    PARTITION pmax VALUES LESS THAN MAXVALUE
+);
+
+-- Indexes for syslog_events
+CREATE INDEX idx_syslog_device_ip ON syslog_events(device_ip);
+CREATE INDEX idx_syslog_received_at ON syslog_events(received_at);
+CREATE INDEX idx_syslog_severity ON syslog_events(severity);
+CREATE INDEX idx_syslog_facility ON syslog_events(facility);
+
 -- IAM & NAC RBAC tables
+
+CREATE TABLE IF NOT EXISTS network_segments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    cidr VARCHAR(50) NOT NULL,
+    description TEXT NULL,
+    created_at DATETIME(6) DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at DATETIME(6) DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    INDEX idx_ns_name (name)
+) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS hardware_zones (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -265,6 +314,14 @@ ALTER TABLE nas ADD CONSTRAINT fk_nas_category FOREIGN KEY (category_id) REFEREN
 
 -- Add FK for user_nas_privilege_map.nas_category_id to nas_categories
 ALTER TABLE user_nas_privilege_map ADD CONSTRAINT fk_unpm_category FOREIGN KEY (nas_category_id) REFERENCES nas_categories(id) ON DELETE SET NULL;
+
+-- Add FK for user_nas_privilege_map.segment_id to network_segments
+-- Add FK for user_nas_privilege_map.segment_id to network_segments
+-- FIX #55: Changed from ON DELETE SET NULL to ON DELETE RESTRICT to enforce:
+-- 1. DB-level protection against orphaned privilege-map rows
+-- 2. Matches API-level protection (router checks before delete)
+-- 3. Consistent behavior regardless of delete path (API vs direct SQL)
+ALTER TABLE user_nas_privilege_map ADD CONSTRAINT fk_unpm_segment FOREIGN KEY (segment_id) REFERENCES network_segments(id) ON DELETE RESTRICT;
 
 -- nas_cidr_ranges VIEW: pre-computes network range boundaries for CIDR-aware policy lookup.
 -- Used by the FreeRADIUS nas_based_authorization policy (Step 2: category fallback).
