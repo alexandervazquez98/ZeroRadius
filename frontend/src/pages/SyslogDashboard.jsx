@@ -33,6 +33,7 @@ const SyslogDashboard = () => {
         start_date: '',
         end_date: '',
         device_ip: '',
+        message: '',
         severity: '',
     });
 
@@ -41,6 +42,7 @@ const SyslogDashboard = () => {
         if (filters.start_date) params.start_date = filters.start_date;
         if (filters.end_date) params.end_date = filters.end_date;
         if (filters.device_ip) params.device_ip = filters.device_ip;
+        if (filters.message) params.message = filters.message;
         if (filters.severity !== '') params.severity = parseInt(filters.severity, 10);
         return params;
     };
@@ -48,6 +50,7 @@ const SyslogDashboard = () => {
     const { data, isLoading, error } = useQuery({
         queryKey: ['syslog', limit, offset, filters],
         queryFn: () => api.get('/syslog', { params: buildQueryParams() }).then(r => r.data),
+        staleTime: 30000,
     });
 
     const handleFilterChange = (key, value) => {
@@ -56,7 +59,7 @@ const SyslogDashboard = () => {
     };
 
     const clearFilters = () => {
-        setFilters({ start_date: '', end_date: '', device_ip: '', severity: '' });
+        setFilters({ start_date: '', end_date: '', device_ip: '', message: '', severity: '' });
         setOffset(0);
     };
 
@@ -108,13 +111,23 @@ const SyslogDashboard = () => {
                         />
                     </div>
                     <div>
-                        <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Device IP</label>
+                        <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Device IP (partial)</label>
                         <input
                             type="text"
                             className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-indigo-500"
-                            placeholder="192.168.1.1"
+                            placeholder="192.168"
                             value={filters.device_ip}
                             onChange={e => handleFilterChange('device_ip', e.target.value)}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Message (partial)</label>
+                        <input
+                            type="text"
+                            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                            placeholder="error, wan, etc."
+                            value={filters.message}
+                            onChange={e => handleFilterChange('message', e.target.value)}
                         />
                     </div>
                     <div>

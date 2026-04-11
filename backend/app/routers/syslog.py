@@ -93,6 +93,7 @@ async def get_syslog_events(
     start_date: Optional[datetime] = Query(default=None, alias="start_date"),
     end_date: Optional[datetime] = Query(default=None, alias="end_date"),
     device_ip: Optional[str] = Query(default=None, max_length=45),
+    message: Optional[str] = Query(default=None, max_length=500),
     severity: Optional[int] = Query(default=None, ge=0, le=7),
     facility: Optional[int] = Query(default=None, ge=0, le=23),
     db: AsyncSession = Depends(get_db),
@@ -100,8 +101,9 @@ async def get_syslog_events(
 ):
     """
     Retrieve syslog events with pagination and filtering.
+    Supports DataTables-style partial matching for device_ip and message.
     """
-    from sqlalchemy import and_
+    from sqlalchemy import and_, or_
 
     stmt = select(SyslogEvent)
     count_stmt = select(func.count(SyslogEvent.id))
@@ -112,8 +114,11 @@ async def get_syslog_events(
     if end_date:
         filters.append(SyslogEvent.received_at <= end_date)
     if device_ip:
-        # Use LIKE for partial IP matching (e.g., "192.168" matches "192.168.1.50")
-        filters.append(SyslogEvent.device_ip.like(f"{device_ip}%"))
+        # Case-insensitive partial IP matching (e.g., "192.168" matches "192.168.1.50")
+        filters.append(SyslogEvent.device_ip.ilike(f"{device_ip}%"))
+    if message:
+        # Case-insensitive partial message matching for search
+        filters.append(SyslogEvent.message.ilike(f"%{message}%"))
     if severity is not None:
         filters.append(SyslogEvent.severity == severity)
     if facility is not None:
