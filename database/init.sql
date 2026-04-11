@@ -191,6 +191,10 @@ CREATE TABLE IF NOT EXISTS user_nas_privilege_map (
     username        VARCHAR(64)  NOT NULL,
     nas_ip          VARCHAR(50)  NULL,                  -- NULL when using category-based mapping
     nas_category_id INT          NULL DEFAULT NULL,     -- NULL when using IP-based mapping
+    segment_id      INT          NULL DEFAULT NULL,
+    segment_target_key VARCHAR(128) NOT NULL DEFAULT '',
+    target_start_ip VARCHAR(50)  NULL,
+    target_end_ip   VARCHAR(50)  NULL,
     nas_identifier  VARCHAR(64)  NULL,
     nas_vendor      VARCHAR(64)  NULL,
     radius_group    VARCHAR(64)  NOT NULL,
@@ -204,6 +208,7 @@ CREATE TABLE IF NOT EXISTS user_nas_privilege_map (
     -- Separate unique keys per targeting mode
     UNIQUE KEY uq_user_nas_ip  (username, nas_ip),
     UNIQUE KEY uq_user_nas_cat (username, nas_category_id),
+    UNIQUE KEY uq_user_segment_target (username, segment_id, segment_target_key),
     INDEX idx_unpm_nas_ip     (nas_ip),
     INDEX idx_unpm_category   (nas_category_id),
     INDEX idx_unpm_is_active  (is_active),
@@ -258,6 +263,16 @@ CREATE INDEX idx_syslog_facility ON syslog_events(facility);
 
 -- IAM & NAC RBAC tables
 
+CREATE TABLE IF NOT EXISTS network_segments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    cidr VARCHAR(50) NOT NULL,
+    description TEXT NULL,
+    created_at DATETIME(6) DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at DATETIME(6) DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    INDEX idx_ns_name (name)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS hardware_zones (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL UNIQUE,
@@ -299,6 +314,14 @@ ALTER TABLE nas ADD CONSTRAINT fk_nas_category FOREIGN KEY (category_id) REFEREN
 
 -- Add FK for user_nas_privilege_map.nas_category_id to nas_categories
 ALTER TABLE user_nas_privilege_map ADD CONSTRAINT fk_unpm_category FOREIGN KEY (nas_category_id) REFERENCES nas_categories(id) ON DELETE SET NULL;
+
+-- Add FK for user_nas_privilege_map.segment_id to network_segments
+-- Add FK for user_nas_privilege_map.segment_id to network_segments
+-- FIX #55: Changed from ON DELETE SET NULL to ON DELETE RESTRICT to enforce:
+-- 1. DB-level protection against orphaned privilege-map rows
+-- 2. Matches API-level protection (router checks before delete)
+-- 3. Consistent behavior regardless of delete path (API vs direct SQL)
+ALTER TABLE user_nas_privilege_map ADD CONSTRAINT fk_unpm_segment FOREIGN KEY (segment_id) REFERENCES network_segments(id) ON DELETE RESTRICT;
 
 -- nas_cidr_ranges VIEW: pre-computes network range boundaries for CIDR-aware policy lookup.
 -- Used by the FreeRADIUS nas_based_authorization policy (Step 2: category fallback).
