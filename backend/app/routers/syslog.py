@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, Query, HTTPException, Header
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_
 from app.db.session import get_db
 from app.models.models import SyslogEvent
 from app.core.security import get_current_active_user
@@ -112,7 +112,8 @@ async def get_syslog_events(
     if end_date:
         filters.append(SyslogEvent.received_at <= end_date)
     if device_ip:
-        filters.append(SyslogEvent.device_ip == device_ip)
+        # Use LIKE for partial IP matching (e.g., "192.168" matches "192.168.1.50")
+        filters.append(SyslogEvent.device_ip.like(f"{device_ip}%"))
     if severity is not None:
         filters.append(SyslogEvent.severity == severity)
     if facility is not None:
