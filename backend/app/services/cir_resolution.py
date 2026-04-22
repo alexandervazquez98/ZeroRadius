@@ -10,11 +10,11 @@ from sqlalchemy.orm import selectinload
 
 from app.models.models import UserNasPrivilegeMap
 from app.routers.privilege_map import _to_out
-from app.services.cir_profiles import (
+from app.schemas.cir_schemas import (
     CIRPreviewResponse,
     CIRResolutionTraceItem,
-    get_profile,
 )
+from app.services.cir_profiles import get_profile
 
 
 @dataclass
