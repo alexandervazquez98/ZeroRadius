@@ -1,6 +1,7 @@
 import datetime
 import hashlib
 import ipaddress
+import re
 from sqlalchemy import (
     Column,
     Integer,
@@ -18,13 +19,28 @@ from sqlalchemy import (
     event,
 )
 from sqlalchemy.dialects.mysql import DATETIME as MySQLDATETIME
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.sql import func
 from sqlalchemy.schema import FetchedValue
 from typing import Optional
 from app.db.session import Base
 import datetime
 import secrets
+
+
+_MAC_ACCEPTED_FORMATS = (
+    re.compile(r"^[0-9a-fA-F]{12}$"),
+    re.compile(r"^(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$"),
+    re.compile(r"^(?:[0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}$"),
+    re.compile(r"^(?:[0-9a-fA-F]{4}\.){2}[0-9a-fA-F]{4}$"),
+)
+
+
+def _normalize_mac(value: str) -> str:
+    """Validate exact supported MAC formats, then normalize to 12 lowercase hex."""
+    if not any(pattern.fullmatch(value) for pattern in _MAC_ACCEPTED_FORMATS):
+        raise ValueError("invalid MAC address format (must be 12 hex chars)")
+    return re.sub(r"[:.\-]", "", value).lower()
 
 
 def _generate_secret() -> str:
@@ -154,12 +170,19 @@ class RadAcct(Base):
     acctauthentic: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     connectinfo_start: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     connectinfo_stop: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    acctinputoctets: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    acctoutputoctets: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    acctinputoctets: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    acctoutputoctets: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     calledstationid: Mapped[str] = mapped_column(String(50), nullable=False, default="")
     callingstationid: Mapped[str] = mapped_column(
         String(50), nullable=False, default=""
     )
+
+    @validates("callingstationid")
+    def validate_callingstationid(self, key, value):
+        if value is None:
+            return value
+        return _normalize_mac(value)
+
     acctterminatecause: Mapped[str] = mapped_column(
         String(32), nullable=False, default=""
     )
@@ -190,6 +213,13 @@ class RadPostAuth(Base):
     nas_identifier: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     nas_port: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     calling_station_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    @validates("calling_station_id")
+    def validate_calling_station_id(self, key, value):
+        if value is None:
+            return value
+        return _normalize_mac(value)
+
     called_station_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     reply_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     event_source: Mapped[str] = mapped_column(
@@ -273,14 +303,26 @@ class UserNasPrivilegeMap(Base):
     nas_ip: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     calling_station_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     nas_category_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("nas_categories.id", ondelete="SET NULL"), nullable=True
+        Integer,
+        ForeignKey(
+            "nas_categories.id",
+            ondelete="SET NULL",
+            name="fk_unpm_category",
+        ),
+        nullable=True,
     )
     category: Mapped[Optional["NasCategory"]] = relationship(
         "NasCategory", foreign_keys=[nas_category_id]
     )
     # network-segments-v1: targeting by network segment and IP ranges
     segment_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("network_segments.id", ondelete="SET NULL"), nullable=True
+        Integer,
+        ForeignKey(
+            "network_segments.id",
+            ondelete="RESTRICT",
+            name="fk_unpm_segment",
+        ),
+        nullable=True,
     )
     segment: Mapped[Optional["NetworkSegment"]] = relationship(
         "NetworkSegment", foreign_keys=[segment_id]
@@ -313,18 +355,41 @@ class UserNasPrivilegeMap(Base):
 
     __table_args__ = (
         UniqueConstraint("target_key", name="uq_unpm_target_key"),
+        UniqueConstraint("username", "nas_ip", name="uq_user_nas_ip"),
+        UniqueConstraint("username", "nas_category_id", name="uq_user_nas_cat"),
+        UniqueConstraint(
+            "username",
+            "segment_id",
+            "segment_target_key",
+            name="uq_user_segment_target",
+        ),
     )
 
+    @validates("calling_station_id")
+    def validate_calling_station_id(self, key, value):
+        if value is None:
+            return value
+        return _normalize_mac(value)
+
     def compute_target_key(self) -> str:
-        """Deterministic sha256 hash for absolute uniqueness. Normalizes NULLs to empty strings."""
+        """Deterministic sha256 hash for absolute uniqueness. 
+        Uses length-prefixed components to prevent delimiter injection attacks.
+        Distinguishes None from empty values.
+        """
+        def safe(val): 
+            if val is None:
+                return "4:None"
+            s = str(val)
+            return f"{len(s)}:{s}"
+
         components = [
-            self.username or "",
-            self.nas_ip or "",
-            self.calling_station_id or "",
-            str(self.nas_category_id or 0),
-            str(self.segment_id or 0),
-            self.target_start_ip or "",
-            self.target_end_ip or "",
+            safe(self.username),
+            safe(self.nas_ip),
+            safe(self.calling_station_id),
+            safe(self.nas_category_id),
+            safe(self.segment_id),
+            safe(self.target_start_ip),
+            safe(self.target_end_ip),
         ]
         raw = "|".join(components)
         return hashlib.sha256(raw.encode()).hexdigest()
@@ -345,13 +410,20 @@ def _build_segment_target_key(
     target_start_ip: Optional[str],
     target_end_ip: Optional[str],
 ) -> str:
+    """Build logical key for segment rules. Matches compute_target_key logic."""
+    def safe(val): 
+        if val is None:
+            return "4:None"
+        s = str(val)
+        return f"{len(s)}:{s}"
+
     if segment_id is None:
         return ""
 
-    if target_start_ip is None and target_end_ip is None:
+    if not target_start_ip and not target_end_ip:
         return "__base__"
 
-    return f"{target_start_ip or ''}|{target_end_ip or ''}"
+    return f"{safe(target_start_ip)}|{safe(target_end_ip)}"
 
 
 @event.listens_for(UserNasPrivilegeMap, "before_insert")
