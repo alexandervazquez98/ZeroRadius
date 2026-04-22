@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 from dataclasses import dataclass
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.models import Nas, UserNasPrivilegeMap
+from app.models.models import UserNasPrivilegeMap
 from app.routers.privilege_map import _to_out
 from app.schemas.schemas import (
     CIRPreviewResponse,
@@ -27,7 +28,10 @@ def _ip_in_range(ip: ipaddress.IPv4Address, start: str, end: str) -> bool:
 
 
 async def _resolve_exact_or_range(
-    db: AsyncSession, username: str, nas_ip: ipaddress.IPv4Address
+    db: AsyncSession,
+    username: str,
+    nas_ip: ipaddress.IPv4Address,
+    calling_station_id: str | None = None,
 ) -> _Candidate | None:
     result = await db.execute(
         select(UserNasPrivilegeMap)
@@ -44,11 +48,38 @@ async def _resolve_exact_or_range(
     )
     rows = result.scalars().all()
 
+    # Priority 1: MAC + IP
+    if calling_station_id:
+        mac_ip = [
+            r
+            for r in rows
+            if r.calling_station_id == calling_station_id
+            and r.nas_ip
+            and ipaddress.ip_address(r.nas_ip) == nas_ip
+        ]
+        if mac_ip:
+            return _Candidate(
+                path="mac+ip", mapping=sorted(mac_ip, key=lambda r: r.id)[0]
+            )
+
+        # Priority 2: MAC only
+        mac_only = [
+            r
+            for r in rows
+            if r.calling_station_id == calling_station_id and not r.nas_ip
+        ]
+        if mac_only:
+            return _Candidate(
+                path="mac", mapping=sorted(mac_only, key=lambda r: r.id)[0]
+            )
+
+    # Priority 3: Exact IP
     exact = [r for r in rows if r.nas_ip and ipaddress.ip_address(r.nas_ip) == nas_ip]
     if exact:
         exact_sorted = sorted(exact, key=lambda r: r.id)
         return _Candidate(path="exact", mapping=exact_sorted[0])
 
+    # Priority 4: IP Range
     ranged = [
         r
         for r in rows
@@ -104,30 +135,18 @@ async def _resolve_segment(
 
 
 async def _resolve_nas_category(db: AsyncSession, nas_ip: ipaddress.IPv4Address) -> int | None:
-    result = await db.execute(select(Nas).where(Nas.category_id.is_not(None)))
-    rows = result.scalars().all()
+    # SQL-based CIDR lookup using the nas_cidr_ranges view (O(log N) vs O(N))
+    stmt = text(
+        """
+        SELECT category_id FROM nas_cidr_ranges 
+        WHERE :nas_ip_int BETWEEN net_start AND net_end 
+        ORDER BY prefix_len DESC LIMIT 1
+    """
+    )
 
-    candidates: list[tuple[int, int]] = []
-    for row in rows:
-        try:
-            ip = ipaddress.ip_address(row.nasname)
-            if ip == nas_ip:
-                candidates.append((32, row.category_id))
-                continue
-        except ValueError:
-            pass
-
-        try:
-            network = ipaddress.ip_network(row.nasname, strict=False)
-            if nas_ip in network:
-                candidates.append((network.prefixlen, row.category_id))
-        except ValueError:
-            continue
-
-    if not candidates:
-        return None
-    candidates.sort(key=lambda x: -x[0])
-    return candidates[0][1]
+    result = await db.execute(stmt, {"nas_ip_int": int(nas_ip)})
+    row = result.fetchone()
+    return row[0] if row else None
 
 
 async def _resolve_category(
@@ -157,12 +176,20 @@ async def _resolve_category(
 
 
 async def resolve_preview(
-    db: AsyncSession, username: str, nas_ip: str
+    db: AsyncSession, username: str, nas_ip: str, calling_station_id: str | None = None
 ) -> CIRPreviewResponse:
     ip = ipaddress.ip_address(nas_ip)
+    
+    # Normalize MAC if provided for consistent lookup
+    clean_mac = None
+    if calling_station_id:
+        clean_mac = re.sub(r"[:-]", "", calling_station_id).lower()
+
     trace: list[CIRResolutionTraceItem] = []
 
-    exact_or_range = await _resolve_exact_or_range(db, username, ip)
+    exact_or_range = await _resolve_exact_or_range(
+        db, username, ip, calling_station_id=clean_mac
+    )
     if exact_or_range:
         profile = await get_profile(db, exact_or_range.mapping.radius_group)
         trace.append(

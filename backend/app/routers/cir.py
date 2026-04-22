@@ -16,7 +16,7 @@ from app.db.session import get_db
 from app.models.models import AdminUser, UserNasPrivilegeMap
 from app.routers.privilege_map import (
     _to_out,
-    raise_segment_conflict,
+    raise_nas_conflict,
     validate_segment_exception,
 )
 from app.schemas.schemas import (
@@ -103,10 +103,25 @@ async def _find_existing_assignment(
 ) -> UserNasPrivilegeMap | None:
     filters = [UserNasPrivilegeMap.username == payload.username]
 
-    if payload.nas_ip:
+    if payload.calling_station_id and payload.nas_ip:
+        filters.extend(
+            [
+                UserNasPrivilegeMap.calling_station_id == payload.calling_station_id,
+                UserNasPrivilegeMap.nas_ip == payload.nas_ip,
+            ]
+        )
+    elif payload.calling_station_id:
+        filters.extend(
+            [
+                UserNasPrivilegeMap.calling_station_id == payload.calling_station_id,
+                UserNasPrivilegeMap.nas_ip.is_(None),
+            ]
+        )
+    elif payload.nas_ip:
         filters.extend(
             [
                 UserNasPrivilegeMap.nas_ip == payload.nas_ip,
+                UserNasPrivilegeMap.calling_station_id.is_(None),
                 UserNasPrivilegeMap.segment_id.is_(None),
                 UserNasPrivilegeMap.nas_category_id.is_(None),
             ]
@@ -174,7 +189,9 @@ async def create_or_replace_cir_assignment(
     )
 
     if existing:
+        existing.username = payload.username
         existing.nas_ip = payload.nas_ip
+        existing.calling_station_id = payload.calling_station_id
         existing.nas_category_id = payload.nas_category_id
         existing.segment_id = payload.segment_id
         existing.target_start_ip = payload.target_start_ip
@@ -202,6 +219,7 @@ async def create_or_replace_cir_assignment(
     row = UserNasPrivilegeMap(
         username=payload.username,
         nas_ip=payload.nas_ip,
+        calling_station_id=payload.calling_station_id,
         nas_category_id=payload.nas_category_id,
         segment_id=payload.segment_id,
         target_start_ip=payload.target_start_ip,
@@ -220,7 +238,7 @@ async def create_or_replace_cir_assignment(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise_segment_conflict(payload)
+        raise_nas_conflict(payload)
     await db.refresh(row)
 
     result = await db.execute(
@@ -254,6 +272,7 @@ async def update_cir_assignment(
 
     row.username = payload.username
     row.nas_ip = payload.nas_ip
+    row.calling_station_id = payload.calling_station_id
     row.nas_category_id = payload.nas_category_id
     row.segment_id = payload.segment_id
     row.target_start_ip = payload.target_start_ip
@@ -272,7 +291,12 @@ async def update_cir_assignment(
     row.is_active = payload.is_active
     row.updated_at = datetime.utcnow()
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise_nas_conflict(payload)
+
     await db.refresh(row)
     return _to_out(row)
 
@@ -309,4 +333,6 @@ async def preview_cir_resolution(
         ipaddress.ip_address(payload.nas_ip)
     except ValueError:
         raise HTTPException(status_code=422, detail="nas_ip must be a valid IPv4 address")
-    return await resolve_preview(db, payload.username, payload.nas_ip)
+    return await resolve_preview(
+        db, payload.username, payload.nas_ip, calling_station_id=payload.calling_station_id
+    )

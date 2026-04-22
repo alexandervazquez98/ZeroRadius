@@ -412,6 +412,22 @@ class UserNasPrivilegeMapCreate(BaseModel):
             return str(ip)
         except ValueError:
             raise ValueError("nas_ip must be a valid IPv4 address")
+
+    calling_station_id: Optional[str] = None  # MAC-based targeting
+
+    @field_validator("calling_station_id")
+    @classmethod
+    def validate_mac(cls, v):
+        if v is None:
+            return v
+        # Support various delimiters: AA:BB, AA-BB, AA.BB.CC, AABB, etc.
+        clean = re.sub(r"[:.\-]", "", v).lower()
+        if not re.match(r"^[0-9a-f]{12}$", clean):
+            raise ValueError(
+                "calling_station_id must be a valid MAC address (12 hex chars)"
+            )
+        return clean
+
     nas_category_id: Optional[int] = None  # Category-based targeting
     segment_id: Optional[int] = None  # network-segments-v1: Segment targeting
     target_start_ip: Optional[str] = None  # network-segments-v1: Exception start
@@ -427,20 +443,41 @@ class UserNasPrivilegeMapCreate(BaseModel):
 
     @model_validator(mode="after")
     def require_nas_target(self) -> "UserNasPrivilegeMapCreate":
-        """Exactly one targeting mode (IP, Category, or Segment) must be provided."""
+        """Exactly one targeting mode (IP, Category, Segment, or MAC) must be provided."""
         has_ip = self.nas_ip is not None and self.nas_ip.strip() != ""
+        has_mac = (
+            self.calling_station_id is not None
+            and self.calling_station_id.strip() != ""
+        )
         has_cat = self.nas_category_id is not None
         has_seg = self.segment_id is not None
 
-        provided = sum([has_ip, has_cat, has_seg])
-        if provided == 0:
-            raise ValueError(
-                "Either nas_ip, nas_category_id, or segment_id must be provided"
-            )
-        if provided > 1:
-            raise ValueError(
-                "Provide exactly one targeting method: nas_ip, nas_category_id, or segment_id"
-            )
+        # Determine if this is a range exception (Segment + IPs)
+        is_range_exception = has_seg and (
+            (self.target_start_ip and self.target_start_ip.strip() != "")
+            or (self.target_end_ip and self.target_end_ip.strip() != "")
+        )
+
+        # Ensure we don't mix Category with anything else
+        if has_cat and (has_ip or has_mac or has_seg):
+            raise ValueError("nas_category_id cannot be combined with other targeting methods")
+
+        # Ensure we don't mix Segment (base or exception) with IP or MAC
+        if has_seg and (has_ip or has_mac):
+             raise ValueError("Network Segment targeting cannot be combined with NAS IP or MAC")
+
+        # Basic targeting exclusivity (one primary method)
+        # Exception: MAC+IP is a specific supported combination (higher specificity)
+        if not (has_ip and has_mac):
+            provided_count = sum([has_ip, has_mac, has_cat, has_seg])
+            if provided_count == 0:
+                raise ValueError(
+                    "Either nas_ip, calling_station_id, nas_category_id, or segment_id must be provided"
+                )
+            if provided_count > 1 and not is_range_exception:
+                raise ValueError(
+                    "Only one targeting method allowed (except MAC+IP or Segment Exception)"
+                )
 
         if has_seg:
             has_start = (
@@ -514,6 +551,7 @@ class UserNasPrivilegeMapOut(BaseModel):
     id: int
     username: str
     nas_ip: Optional[str] = None
+    calling_station_id: Optional[str] = None
     nas_category_id: Optional[int] = None
     nas_category_name: Optional[str] = None  # resolved from relationship in router
     segment_id: Optional[int] = None
@@ -587,6 +625,7 @@ class CIRAssignmentPayload(UserNasPrivilegeMapCreate):
 class CIRPreviewRequest(BaseModel):
     username: str
     nas_ip: str
+    calling_station_id: Optional[str] = None
 
     @field_validator("username")
     @classmethod

@@ -1,3 +1,6 @@
+import datetime
+import hashlib
+import ipaddress
 from sqlalchemy import (
     Column,
     Integer,
@@ -264,8 +267,11 @@ class UserNasPrivilegeMap(Base):
     __tablename__ = "user_nas_privilege_map"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(64), nullable=False)
+    # T26 — target_key for absolute uniqueness (sha256 hash)
+    target_key: Mapped[str] = mapped_column(String(128), nullable=False)
     # nas-categories: nas_ip is nullable when using category-based targeting
     nas_ip: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    calling_station_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     nas_category_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("nas_categories.id", ondelete="SET NULL"), nullable=True
     )
@@ -306,15 +312,32 @@ class UserNasPrivilegeMap(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("username", "nas_ip", name="uq_user_nas_ip"),
-        UniqueConstraint("username", "nas_category_id", name="uq_user_nas_cat"),
-        UniqueConstraint(
-            "username",
-            "segment_id",
-            "segment_target_key",
-            name="uq_user_segment_target",
-        ),
+        UniqueConstraint("target_key", name="uq_unpm_target_key"),
     )
+
+    def compute_target_key(self) -> str:
+        """Deterministic sha256 hash for absolute uniqueness. Normalizes NULLs to empty strings."""
+        components = [
+            self.username or "",
+            self.nas_ip or "",
+            self.calling_station_id or "",
+            str(self.nas_category_id or 0),
+            str(self.segment_id or 0),
+            self.target_start_ip or "",
+            self.target_end_ip or "",
+        ]
+        raw = "|".join(components)
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+
+@event.listens_for(UserNasPrivilegeMap, "before_insert")
+def set_target_key_on_insert(mapper, connection, target: UserNasPrivilegeMap):
+    target.target_key = target.compute_target_key()
+
+
+@event.listens_for(UserNasPrivilegeMap, "before_update")
+def set_target_key_on_update(mapper, connection, target: UserNasPrivilegeMap):
+    target.target_key = target.compute_target_key()
 
 
 def _build_segment_target_key(
