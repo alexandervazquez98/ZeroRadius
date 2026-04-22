@@ -5,48 +5,6 @@ from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-# cir-metrics-ui: CIR base schemas
-_CIR_RATE_PATTERN = re.compile(r"^\d+$")
-
-
-class CIRProfilePayload(BaseModel):
-    name: str
-    downlink_high: str
-    uplink_high: str
-    downlink_low: str
-    uplink_low: str
-
-    @field_validator("name")
-    @classmethod
-    def validate_name(cls, v: str) -> str:
-        value = (v or "").strip()
-        if not value:
-            raise ValueError("name is required")
-        return value
-
-    @field_validator(
-        "downlink_high", "uplink_high", "downlink_low", "uplink_low", mode="before"
-    )
-    @classmethod
-    def validate_rate(cls, v: str) -> str:
-        value = str(v or "").strip()
-        if not value:
-            raise ValueError("rate value is required")
-        if not _CIR_RATE_PATTERN.match(value):
-            raise ValueError("rate must be numeric")
-        return value
-
-
-class CIRProfileOut(CIRProfilePayload):
-    groupname: str
-    model_config = ConfigDict(from_attributes=True)
-
-
-class CIRResolutionTraceItem(BaseModel):
-    step: str
-    matched: bool
-    detail: Optional[str] = None
-
 
 # RadCheck Schemas
 class RadCheckBase(BaseModel):
@@ -178,7 +136,10 @@ class UserNasPrivilegeMapCreate(BaseModel):
     @model_validator(mode="after")
     def require_nas_target(self):
         has_ip = self.nas_ip is not None and self.nas_ip.strip() != ""
-        has_mac = self.calling_station_id is not None and self.calling_station_id.strip() != ""
+        has_mac = (
+            self.calling_station_id is not None
+            and self.calling_station_id.strip() != ""
+        )
         has_cat = self.nas_category_id is not None
         has_seg = self.segment_id is not None
 
@@ -214,32 +175,7 @@ class UserNasPrivilegeMapOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class CIRAssignmentPayload(UserNasPrivilegeMapCreate):
-    @field_validator("radius_group")
-    @classmethod
-    def validate_radius_group(cls, v: str) -> str:
-        value = (v or "").strip()
-        if not value:
-            raise ValueError("radius_group is required")
-        if not value.startswith("cir_"):
-            raise ValueError("radius_group must start with cir_")
-        return value
-
-
-class CIRPreviewRequest(BaseModel):
-    username: str
-    nas_ip: str
-    calling_station_id: Optional[str] = None
-
-
-class CIRPreviewResponse(BaseModel):
-    resolution_path: str
-    mapping: Optional[UserNasPrivilegeMapOut] = None
-    profile: Optional[CIRProfileOut] = None
-    trace: List[CIRResolutionTraceItem]
-
-
-# Other Schemas
+# Session Schema
 class SessionOut(BaseModel):
     radacctid: int
     username: str
@@ -253,6 +189,7 @@ class SessionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+# Audit Log Schema
 class AuditLogOut(BaseModel):
     id: int
     admin_user: str
@@ -265,6 +202,7 @@ class AuditLogOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+# Auth Schemas
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -288,6 +226,7 @@ class RadPostAuthOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+# Admin User Schemas
 class AdminUserBase(BaseModel):
     username: str
     email: Optional[str] = None
