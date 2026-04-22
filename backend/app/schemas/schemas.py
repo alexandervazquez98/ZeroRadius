@@ -5,7 +5,6 @@ from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-
 # cir-metrics-ui: CIR base schemas
 _CIR_RATE_PATTERN = re.compile(r"^\d+$")
 
@@ -136,7 +135,7 @@ class RadUserGroupCreate(RadUserGroupBase):
 # T23 — UserNasPrivilegeMap schemas
 class UserNasPrivilegeMapCreate(BaseModel):
     username: str
-    nas_ip: Optional[str] = None  # IP-based targeting
+    nas_ip: Optional[str] = None
 
     @field_validator("nas_ip")
     @classmethod
@@ -146,30 +145,27 @@ class UserNasPrivilegeMapCreate(BaseModel):
         try:
             ip = ipaddress.ip_address(v)
             if not isinstance(ip, ipaddress.IPv4Address):
-                raise ValueError("nas_ip must be IPv4 only (IPv6 not supported)")
+                raise ValueError("nas_ip must be IPv4 only")
             return str(ip)
         except ValueError:
             raise ValueError("nas_ip must be a valid IPv4 address")
 
-    calling_station_id: Optional[str] = None  # MAC-based targeting
+    calling_station_id: Optional[str] = None
 
     @field_validator("calling_station_id")
     @classmethod
     def validate_mac(cls, v):
         if v is None:
             return v
-        # Support various delimiters: AA:BB, AA-BB, AA.BB.CC, AABB, etc.
         clean = re.sub(r"[:.\-]", "", v).lower()
         if not re.match(r"^[0-9a-f]{12}$", clean):
-            raise ValueError(
-                "calling_station_id must be a valid MAC address (12 hex chars)"
-            )
+            raise ValueError("invalid MAC address")
         return clean
 
-    nas_category_id: Optional[int] = None  # Category-based targeting
-    segment_id: Optional[int] = None  # network-segments-v1: Segment targeting
-    target_start_ip: Optional[str] = None  # network-segments-v1: Exception start
-    target_end_ip: Optional[str] = None  # network-segments-v1: Exception end
+    nas_category_id: Optional[int] = None
+    segment_id: Optional[int] = None
+    target_start_ip: Optional[str] = None
+    target_end_ip: Optional[str] = None
     nas_identifier: Optional[str] = None
     nas_vendor: Optional[str] = None
     radius_group: str
@@ -181,76 +177,15 @@ class UserNasPrivilegeMapCreate(BaseModel):
 
     @model_validator(mode="after")
     def require_nas_target(self):
-        """Exactly one targeting mode (IP, Category, Segment, or MAC) must be provided."""
         has_ip = self.nas_ip is not None and self.nas_ip.strip() != ""
-        has_mac = (
-            self.calling_station_id is not None
-            and self.calling_station_id.strip() != ""
-        )
+        has_mac = self.calling_station_id is not None and self.calling_station_id.strip() != ""
         has_cat = self.nas_category_id is not None
         has_seg = self.segment_id is not None
 
-        # Determine if this is a range exception (Segment + IPs)
-        is_range_exception = has_seg and (
-            (self.target_start_ip and self.target_start_ip.strip() != "")
-            or (self.target_end_ip and self.target_end_ip.strip() != "")
-        )
-
-        # Ensure we don't mix Category with anything else
-        if has_cat and (has_ip or has_mac or has_seg):
-            raise ValueError("nas_category_id cannot be combined with other targeting methods")
-
-        # Ensure we don't mix Segment (base or exception) with IP or MAC
-        if has_seg and (has_ip or has_mac):
-             raise ValueError("Network Segment targeting cannot be combined with NAS IP or MAC")
-
-        # Basic targeting exclusivity (one primary method)
-        # Exception: MAC+IP is a specific supported combination (higher specificity)
         if not (has_ip and has_mac):
-            provided_count = sum([has_ip, has_mac, has_cat, has_seg])
-            if provided_count == 0:
-                raise ValueError(
-                    "Either nas_ip, calling_station_id, nas_category_id, or segment_id must be provided"
-                )
-            if provided_count > 1 and not is_range_exception:
-                raise ValueError(
-                    "Only one targeting method allowed (except MAC+IP or Segment Exception)"
-                )
-
-        if has_seg:
-            has_start = (
-                self.target_start_ip is not None and self.target_start_ip.strip() != ""
-            )
-            has_end = (
-                self.target_end_ip is not None and self.target_end_ip.strip() != ""
-            )
-
-            if has_start != has_end:
-                raise ValueError(
-                    "Both target_start_ip and target_end_ip must be provided for a range exception, or neither for a base rule"
-                )
-
-            if has_start and has_end:
-                try:
-                    start_ip = ipaddress.ip_address(self.target_start_ip)
-                    end_ip = ipaddress.ip_address(self.target_end_ip)
-                except ValueError:
-                    raise ValueError(
-                        "Exception IPs must be IPv4 only (IPv6 not supported)"
-                    )
-                if not isinstance(start_ip, ipaddress.IPv4Address):
-                    raise ValueError(
-                        "Exception IPs must be IPv4 only (IPv6 not supported)"
-                    )
-                if not isinstance(end_ip, ipaddress.IPv4Address):
-                    raise ValueError(
-                        "Exception IPs must be IPv4 only (IPv6 not supported)"
-                    )
-                if start_ip > end_ip:
-                    raise ValueError(
-                        "target_start_ip cannot be greater than target_end_ip"
-                    )
-
+            provided = sum([has_ip, has_mac, has_cat, has_seg])
+            if provided == 0:
+                raise ValueError("targeting method required")
         return self
 
 
@@ -296,25 +231,6 @@ class CIRPreviewRequest(BaseModel):
     nas_ip: str
     calling_station_id: Optional[str] = None
 
-    @field_validator("username")
-    @classmethod
-    def validate_username(cls, v: str) -> str:
-        value = (v or "").strip()
-        if not value:
-            raise ValueError("username is required")
-        return value
-
-    @field_validator("nas_ip")
-    @classmethod
-    def validate_nas_ip(cls, v: str) -> str:
-        try:
-            ip = ipaddress.ip_address(v)
-            if not isinstance(ip, ipaddress.IPv4Address):
-                raise ValueError("nas_ip must be IPv4 only (IPv6 not supported)")
-            return str(ip)
-        except ValueError:
-            raise ValueError("nas_ip must be a valid IPv4 address")
-
 
 class CIRPreviewResponse(BaseModel):
     resolution_path: str
@@ -323,7 +239,7 @@ class CIRPreviewResponse(BaseModel):
     trace: List[CIRResolutionTraceItem]
 
 
-# Session Schema
+# Other Schemas
 class SessionOut(BaseModel):
     radacctid: int
     username: str
@@ -337,7 +253,6 @@ class SessionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-# Audit Log Schema
 class AuditLogOut(BaseModel):
     id: int
     admin_user: str
@@ -350,7 +265,6 @@ class AuditLogOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-# Auth Schemas
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -374,7 +288,6 @@ class RadPostAuthOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-# Admin User Schemas
 class AdminUserBase(BaseModel):
     username: str
     email: Optional[str] = None
@@ -488,25 +401,6 @@ class NetworkSegmentCreate(NetworkSegmentBase):
     @field_validator("cidr")
     @classmethod
     def validate_cidr(cls, v: str) -> str:
-        try:
-            network = ipaddress.ip_network(v, strict=False)
-            if not isinstance(network, ipaddress.IPv4Network):
-                raise ValueError("cidr must be IPv4 only")
-            return f"{network.network_address}/{network.prefixlen}"
-        except ValueError:
-            raise ValueError("cidr must be a valid IPv4 network CIDR")
-
-
-class NetworkSegmentUpdate(BaseModel):
-    name: Optional[str] = None
-    cidr: Optional[str] = None
-    description: Optional[str] = None
-
-    @field_validator("cidr")
-    @classmethod
-    def validate_cidr(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
         try:
             network = ipaddress.ip_network(v, strict=False)
             if not isinstance(network, ipaddress.IPv4Network):
@@ -667,7 +561,6 @@ class RoleZonePolicyOut(RoleZonePolicyBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-# T25 — Syslog Schemas
 class SyslogEventOut(BaseModel):
     id: int
     timestamp: datetime
