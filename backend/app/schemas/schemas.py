@@ -1,11 +1,53 @@
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, field_validator, model_validator, ConfigDict
 from typing import Optional, List, Any
 from datetime import datetime, date
 import re
 import ipaddress
 
 
-# RadCheck Schemas
+# cir-metrics-ui: CIR base schemas
+_CIR_RATE_PATTERN = re.compile(r"^\d+$")
+
+
+class CIRProfilePayload(BaseModel):
+    name: str
+    downlink_high: str
+    uplink_high: str
+    downlink_low: str
+    uplink_low: str
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        value = (v or "").strip()
+        if not value:
+            raise ValueError("name is required")
+        return value
+
+    @field_validator(
+        "downlink_high", "uplink_high", "downlink_low", "uplink_low", mode="before"
+    )
+    @classmethod
+    def validate_rate(cls, v: str) -> str:
+        value = str(v or "").strip()
+        if not value:
+            raise ValueError("rate value is required")
+        if not _CIR_RATE_PATTERN.match(value):
+            raise ValueError("rate must be numeric")
+        return value
+
+
+class CIRProfileOut(CIRProfilePayload):
+    groupname: str
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CIRResolutionTraceItem(BaseModel):
+    step: str
+    matched: bool
+    detail: Optional[str] = None
+
+
 class RadCheckBase(BaseModel):
     username: str
     attribute: str
@@ -26,9 +68,7 @@ class RadCheckUpdate(BaseModel):
 
 class RadCheckOut(RadCheckBase):
     id: int
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # RadReply Schemas
@@ -45,9 +85,7 @@ class RadReplyCreate(RadReplyBase):
 
 class RadReplyOut(RadReplyBase):
     id: int
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Group Schemas
@@ -64,9 +102,7 @@ class RadGroupCheckCreate(RadGroupCheckBase):
 
 class RadGroupCheckOut(RadGroupCheckBase):
     id: int
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RadGroupReplyBase(BaseModel):
@@ -82,9 +118,7 @@ class RadGroupReplyCreate(RadGroupReplyBase):
 
 class RadGroupReplyOut(RadGroupReplyBase):
     id: int
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RadUserGroupBase(BaseModel):
@@ -108,9 +142,7 @@ class SessionOut(BaseModel):
     session_time: Optional[int] = None  # Calculated
     input_octets: Optional[int] = None
     output_octets: Optional[int] = None
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Audit Log Schema
@@ -123,9 +155,7 @@ class AuditLogOut(BaseModel):
     timestamp: datetime
     old_value: Optional[str] = None
     new_value: Optional[str] = None
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Auth Schemas
@@ -150,9 +180,7 @@ class RadPostAuthOut(BaseModel):
     called_station_id: Optional[str] = None
     reply_message: Optional[str] = None
     event_source: Optional[str] = None
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Admin User Schemas
@@ -181,9 +209,7 @@ class AdminUserOut(BaseModel):
     is_active: int
     role: str
     force_password_change: int
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # T23 — SIEM event schema (REQ-BE-005)
@@ -263,9 +289,7 @@ class NasCategoryCreate(NasCategoryBase):
 class NasCategoryOut(NasCategoryBase):
     id: int
     created_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # network-segments-v1: NetworkSegment schemas
@@ -315,9 +339,7 @@ class NetworkSegmentOut(NetworkSegmentBase):
     id: int
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # NAS validation schema with secret length enforcement (T17 / T23)
@@ -379,9 +401,7 @@ class NasOut(BaseModel):
     category_id: Optional[int] = None
     id: int
     category_name: Optional[str] = None
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # T23 — UserNasPrivilegeMap schemas
@@ -558,9 +578,51 @@ class UserNasPrivilegeMapOut(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     days_until_review: Optional[int] = None
+    model_config = ConfigDict(from_attributes=True)
 
-    class Config:
-        from_attributes = True
+
+class CIRAssignmentPayload(UserNasPrivilegeMapCreate):
+    @field_validator("radius_group")
+    @classmethod
+    def validate_radius_group(cls, v: str) -> str:
+        value = (v or "").strip()
+        if not value:
+            raise ValueError("radius_group is required")
+        if not value.startswith("cir_"):
+            raise ValueError("radius_group must start with cir_")
+        return value
+
+
+class CIRPreviewRequest(BaseModel):
+    username: str
+    nas_ip: str
+    calling_station_id: Optional[str] = None
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, v: str) -> str:
+        value = (v or "").strip()
+        if not value:
+            raise ValueError("username is required")
+        return value
+
+    @field_validator("nas_ip")
+    @classmethod
+    def validate_nas_ip(cls, v: str) -> str:
+        try:
+            ip = ipaddress.ip_address(v)
+            if not isinstance(ip, ipaddress.IPv4Address):
+                raise ValueError("nas_ip must be IPv4 only (IPv6 not supported)")
+            return str(ip)
+        except ValueError:
+            raise ValueError("nas_ip must be a valid IPv4 address")
+
+
+class CIRPreviewResponse(BaseModel):
+    resolution_path: str
+    mapping: Optional[UserNasPrivilegeMapOut] = None
+    profile: Optional[CIRProfileOut] = None
+    trace: list[CIRResolutionTraceItem]
 
 
 # T23 — LoginAttempt output schema
@@ -570,9 +632,7 @@ class LoginAttemptOut(BaseModel):
     ip_address: Optional[str] = None
     attempted_at: Optional[datetime] = None
     success: int
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # --- IAM & NAC RBAC Schemas ---
@@ -589,9 +649,7 @@ class HardwareZoneCreate(HardwareZoneBase):
 
 class HardwareZoneOut(HardwareZoneBase):
     id: int
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class IAMRoleBase(BaseModel):
@@ -605,9 +663,7 @@ class IAMRoleCreate(IAMRoleBase):
 
 class IAMRoleOut(IAMRoleBase):
     id: int
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PolicyMacroBase(BaseModel):
@@ -622,9 +678,7 @@ class PolicyMacroCreate(PolicyMacroBase):
 
 class PolicyMacroOut(PolicyMacroBase):
     id: int
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RoleZonePolicyBase(BaseModel):
@@ -639,6 +693,4 @@ class RoleZonePolicyCreate(RoleZonePolicyBase):
 
 class RoleZonePolicyOut(RoleZonePolicyBase):
     id: int
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
