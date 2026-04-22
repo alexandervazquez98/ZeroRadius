@@ -5,11 +5,12 @@ from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+
 # --- Base Constants ---
 _CIR_RATE_PATTERN = re.compile(r"^\d+$")
 
 
-# --- CIR Schemas (Top level to avoid ForwardRef issues) ---
+# --- CIR Schemas ---
 
 class CIRProfilePayload(BaseModel):
     name: str
@@ -40,6 +41,12 @@ class CIRProfilePayload(BaseModel):
 class CIRProfileOut(CIRProfilePayload):
     groupname: str
     model_config = ConfigDict(from_attributes=True)
+
+
+class CIRResolutionTraceItem(BaseModel):
+    step: str
+    matched: bool
+    detail: Optional[str] = None
 
 
 # --- Radius Core Schemas ---
@@ -317,12 +324,6 @@ class CIRPreviewRequest(BaseModel):
     calling_station_id: Optional[str] = None
 
 
-class CIRResolutionTraceItem(BaseModel):
-    step: str
-    matched: bool
-    detail: Optional[str] = None
-
-
 class CIRPreviewResponse(BaseModel):
     resolution_path: str
     mapping: Optional[UserNasPrivilegeMapOut] = None
@@ -330,7 +331,7 @@ class CIRPreviewResponse(BaseModel):
     trace: List[CIRResolutionTraceItem]
 
 
-# --- Other Schemas ---
+# --- Session & Audit Schemas ---
 
 class SessionOut(BaseModel):
     radacctid: int
@@ -356,6 +357,8 @@ class AuditLogOut(BaseModel):
     new_value: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
+
+# --- Auth & Admin Schemas ---
 
 class Token(BaseModel):
     access_token: str
@@ -404,6 +407,8 @@ class AdminUserOut(BaseModel):
     force_password_change: int
     model_config = ConfigDict(from_attributes=True)
 
+
+# --- Utility & System Schemas ---
 
 class SIEMEvent(BaseModel):
     event_id: int
@@ -457,35 +462,67 @@ class SystemResourcesResponse(BaseModel):
     network_interfaces: list[str]
 
 
-class HardwareZoneOut(BaseModel):
-    id: int
+# --- IAM & NAC Schemas ---
+
+class HardwareZoneBase(BaseModel):
     name: str
     description: Optional[str] = None
+
+
+class HardwareZoneCreate(HardwareZoneBase):
+    pass
+
+
+class HardwareZoneOut(HardwareZoneBase):
+    id: int
     model_config = ConfigDict(from_attributes=True)
 
 
-class IAMRoleOut(BaseModel):
-    id: int
+class IAMRoleBase(BaseModel):
     name: str
     description: Optional[str] = None
+
+
+class IAMRoleCreate(IAMRoleBase):
+    pass
+
+
+class IAMRoleOut(IAMRoleBase):
+    id: int
     model_config = ConfigDict(from_attributes=True)
 
 
-class PolicyMacroOut(BaseModel):
-    id: int
+class PolicyMacroBase(BaseModel):
     name: str
     description: Optional[str] = None
-    attributes_json: dict
+    attributes_json: dict = {}
+
+
+class PolicyMacroCreate(PolicyMacroBase):
+    pass
+
+
+class PolicyMacroOut(PolicyMacroBase):
+    id: int
     model_config = ConfigDict(from_attributes=True)
 
 
-class RoleZonePolicyOut(BaseModel):
-    id: int
+class RoleZonePolicyBase(BaseModel):
     role_id: int
     zone_id: int
     policy_id: int
+
+
+class RoleZonePolicyCreate(RoleZonePolicyBase):
+    pass
+
+
+class RoleZonePolicyOut(RoleZonePolicyBase):
+    id: int
     model_config = ConfigDict(from_attributes=True)
 
+
+# --- Syslog Schemas ---
 
 class SyslogEventOut(BaseModel):
     id: int
