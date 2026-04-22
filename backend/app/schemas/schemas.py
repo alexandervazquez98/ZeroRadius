@@ -5,12 +5,11 @@ from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-
-# --- Base Constants ---
+# --- Base Types ---
 _CIR_RATE_PATTERN = re.compile(r"^\d+$")
 
 
-# --- CIR Schemas ---
+# --- CIR Base Schemas ---
 
 class CIRProfilePayload(BaseModel):
     name: str
@@ -176,6 +175,25 @@ class NetworkSegmentCreate(NetworkSegmentBase):
             raise ValueError("cidr must be a valid IPv4 network CIDR")
 
 
+class NetworkSegmentUpdate(BaseModel):
+    name: Optional[str] = None
+    cidr: Optional[str] = None
+    description: Optional[str] = None
+
+    @field_validator("cidr")
+    @classmethod
+    def validate_cidr(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        try:
+            network = ipaddress.ip_network(v, strict=False)
+            if not isinstance(network, ipaddress.IPv4Network):
+                raise ValueError("cidr must be IPv4 only")
+            return f"{network.network_address}/{network.prefixlen}"
+        except ValueError:
+            raise ValueError("cidr must be a valid IPv4 network CIDR")
+
+
 class NetworkSegmentOut(NetworkSegmentBase):
     id: int
     created_at: Optional[datetime] = None
@@ -331,7 +349,7 @@ class CIRPreviewResponse(BaseModel):
     trace: List[CIRResolutionTraceItem]
 
 
-# --- Session & Audit Schemas ---
+# --- Other Core Schemas ---
 
 class SessionOut(BaseModel):
     radacctid: int
@@ -357,8 +375,6 @@ class AuditLogOut(BaseModel):
     new_value: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
-
-# --- Auth & Admin Schemas ---
 
 class Token(BaseModel):
     access_token: str
@@ -407,8 +423,6 @@ class AdminUserOut(BaseModel):
     force_password_change: int
     model_config = ConfigDict(from_attributes=True)
 
-
-# --- Utility & System Schemas ---
 
 class SIEMEvent(BaseModel):
     event_id: int
@@ -462,7 +476,8 @@ class SystemResourcesResponse(BaseModel):
     network_interfaces: list[str]
 
 
-# --- IAM & NAC Schemas ---
+# --- IAM & NAC RBAC Schemas ---
+
 
 class HardwareZoneBase(BaseModel):
     name: str
