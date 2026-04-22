@@ -7,7 +7,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.models import RadGroupReply
-from app.schemas.cir_schemas import CIRProfileOut, CIRProfilePayload
+from app.schemas.schemas import CIRProfileOut, CIRProfilePayload
 
 CIR_GROUP_PREFIX = "cir_"
 
