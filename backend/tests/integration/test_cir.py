@@ -182,6 +182,54 @@ async def test_cir_preview_exact_wins_and_no_match(
     assert no_match.json()["resolution_path"] == "none"
 
 
+async def test_cir_preview_mac_priority(async_client: AsyncClient, superadmin_token: str):
+    await _create_profile(async_client, superadmin_token, "mac_specific")
+    await _create_profile(async_client, superadmin_token, "ip_general")
+
+    # NAS IP 10.250.0.1 (AP)
+    # SM MAC SM-MAC-123
+
+    # Rule 1: IP general
+    await async_client.post(
+        "/cir/assignments",
+        json={
+            "username": "macuser",
+            "nas_ip": "10.250.0.1",
+            "radius_group": "cir_ip_general",
+            "is_active": 1,
+        },
+        headers=_auth(superadmin_token),
+    )
+
+    # Rule 2: MAC specific
+    await async_client.post(
+        "/cir/assignments",
+        json={
+            "username": "macuser",
+            "calling_station_id": "0a003e45764a",
+            "radius_group": "cir_mac_specific",
+            "is_active": 1,
+        },
+        headers=_auth(superadmin_token),
+    )
+
+    # Preview with MAC + IP -> MAC should win
+    preview = await async_client.post(
+        "/cir/preview",
+        json={
+            "username": "macuser",
+            "nas_ip": "10.250.0.1",
+            "calling_station_id": "0a:00:3e:45:76:4a",
+        },
+        headers=_auth(superadmin_token),
+    )
+    assert preview.status_code == 200
+    payload = preview.json()
+    assert payload["resolution_path"] == "mac"
+    assert payload["profile"]["name"] == "mac_specific"
+    assert "matched mac" in payload["trace"][0]["detail"]
+
+
 async def test_cir_rbac_readonly_behavior(
     async_client: AsyncClient,
     superadmin_token: str,

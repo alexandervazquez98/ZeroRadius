@@ -4,6 +4,7 @@ const EMPTY_FORM = {
   username: '',
   targetType: 'nas_ip',
   nas_ip: '',
+  calling_station_id: '',
   segment_id: '',
   nas_category_id: '',
   target_start_ip: '',
@@ -12,6 +13,8 @@ const EMPTY_FORM = {
 }
 
 function renderTarget(row) {
+  if (row.calling_station_id && row.nas_ip) return `MAC: ${row.calling_station_id} @ NAS: ${row.nas_ip}`
+  if (row.calling_station_id) return `MAC: ${row.calling_station_id}`
   if (row.nas_ip) return `NAS IP: ${row.nas_ip}`
   if (row.segment_id && row.target_start_ip && row.target_end_ip) {
     return `Segment Exception: ${row.target_start_ip}-${row.target_end_ip}`
@@ -22,7 +25,9 @@ function renderTarget(row) {
 }
 
 function sameTarget(existing, draft) {
-  if (draft.targetType === 'nas_ip') return existing.nas_ip === draft.nas_ip
+  if (draft.targetType === 'mac_plus_ip') return existing.calling_station_id === draft.calling_station_id && existing.nas_ip === draft.nas_ip
+  if (draft.targetType === 'mac') return existing.calling_station_id === draft.calling_station_id && !existing.nas_ip
+  if (draft.targetType === 'nas_ip') return existing.nas_ip === draft.nas_ip && !existing.calling_station_id
   if (draft.targetType === 'segment') {
     return String(existing.segment_id || '') === String(draft.segment_id || '') && !existing.target_start_ip
   }
@@ -68,6 +73,11 @@ export default function CIRAssignmentTable({
       approved_by: 'cir-ui',
     }
 
+    if (form.targetType === 'mac_plus_ip') {
+      payload.calling_station_id = form.calling_station_id
+      payload.nas_ip = form.nas_ip
+    }
+    if (form.targetType === 'mac') payload.calling_station_id = form.calling_station_id
     if (form.targetType === 'nas_ip') payload.nas_ip = form.nas_ip
     if (form.targetType === 'segment') payload.segment_id = Number(form.segment_id)
     if (form.targetType === 'range') {
@@ -112,6 +122,8 @@ export default function CIRAssignmentTable({
               value={form.targetType}
               onChange={(e) => setForm((prev) => ({ ...prev, targetType: e.target.value }))}
             >
+              <option value="mac_plus_ip">MAC + NAS IP</option>
+              <option value="mac">Global MAC</option>
               <option value="nas_ip">Legacy IP</option>
               <option value="segment">Segment</option>
               <option value="range">Range Exception</option>
@@ -137,7 +149,21 @@ export default function CIRAssignmentTable({
             </select>
           </label>
 
-          {form.targetType === 'nas_ip' && (
+          {(form.targetType === 'mac' || form.targetType === 'mac_plus_ip') && (
+            <label className="text-sm font-bold text-slate-700">
+              Target MAC
+              <input
+                aria-label="Target MAC"
+                placeholder="0A:00:3E... or 0011.22..."
+                className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2"
+                value={form.calling_station_id}
+                onChange={(e) => setForm((prev) => ({ ...prev, calling_station_id: e.target.value }))}
+                required
+              />
+            </label>
+          )}
+
+          {(form.targetType === 'nas_ip' || form.targetType === 'mac_plus_ip') && (
             <label className="text-sm font-bold text-slate-700">
               Target NAS IP
               <input

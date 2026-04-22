@@ -44,13 +44,14 @@ const vendorBadge = (vendor) => {
 
 const EMPTY_FORM = {
     username: '',
-    mapping_mode: 'segment', // 'segment' | 'ip_range' | 'category' | 'ip'
+    mapping_mode: 'segment', // 'segment' | 'ip_range' | 'category' | 'ip' | 'mac' | 'mac_plus_ip'
     segment_id: null,
     target_start_ip: '',
     target_end_ip: '',
     nas_category_id: null,
     nas_ips: [],
     nas_ip: '',
+    calling_station_id: '',
     nas_vendor: '',
     radius_group: '',
     privilege_level: '',
@@ -185,8 +186,10 @@ const PrivilegeMapPage = () => {
         let mode = 'ip';
         if (item.segment_id) mode = item.target_start_ip ? 'ip_range' : 'segment';
         else if (item.nas_category_id) mode = 'category';
+        else if (item.calling_station_id && item.nas_ip) mode = 'mac_plus_ip';
+        else if (item.calling_station_id) mode = 'mac';
         
-        setShowAdvanced(mode === 'category');
+        setShowAdvanced(mode === 'category' || mode === 'mac' || mode === 'mac_plus_ip');
         
         setForm({
             username: item.username,
@@ -196,6 +199,7 @@ const PrivilegeMapPage = () => {
             target_end_ip: item.target_end_ip || '',
             nas_category_id: item.nas_category_id || null,
             nas_ip: item.nas_ip || '',
+            calling_station_id: item.calling_station_id || '',
             nas_ips: [],
             nas_vendor: item.nas_vendor || '',
             radius_group: item.radius_group,
@@ -232,6 +236,11 @@ const PrivilegeMapPage = () => {
             payload.target_end_ip = form.target_end_ip || form.target_start_ip; // single IP if end is empty
         } else if (form.mapping_mode === 'category') {
             payload.nas_category_id = form.nas_category_id;
+        } else if (form.mapping_mode === 'mac') {
+            payload.calling_station_id = form.calling_station_id;
+        } else if (form.mapping_mode === 'mac_plus_ip') {
+            payload.calling_station_id = form.calling_station_id;
+            payload.nas_ip = form.nas_ip;
         } else if (form.mapping_mode === 'ip' && editItem) {
             payload.nas_ip = form.nas_ip;
         }
@@ -481,6 +490,20 @@ const PrivilegeMapPage = () => {
                                                                              {item.nas_category_name || `Category #${item.nas_category_id}`}
                                                                          </span>
                                                                      </div>
+                                                                 ) : item.calling_station_id ? (
+                                                                    <div className="flex flex-col gap-1">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <User size={13} className="text-amber-500 flex-shrink-0" />
+                                                                            <span className="text-xs font-mono font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-1 rounded">
+                                                                                MAC: {item.calling_station_id}
+                                                                            </span>
+                                                                        </div>
+                                                                        {item.nas_ip && (
+                                                                            <div className="flex items-center gap-2 pl-5">
+                                                                                <span className="text-[10px] text-slate-400 font-mono">@ NAS: {item.nas_ip}</span>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
                                                                  ) : (
                                                                      <div className="flex items-center gap-2">
                                                                          <Server size={14} className="text-slate-400 flex-shrink-0" />
@@ -645,6 +668,24 @@ const PrivilegeMapPage = () => {
                                                 </button>
                                                 <button
                                                     type="button"
+                                                    onClick={() => setForm(f => ({ ...f, mapping_mode: 'mac', nas_category_id: null, nas_ips: [] }))}
+                                                    className={`px-3 py-2 border rounded-xl text-xs font-bold transition-colors ${
+                                                        form.mapping_mode === 'mac' ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-50'
+                                                    }`}
+                                                >
+                                                    MAC Address
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setForm(f => ({ ...f, mapping_mode: 'mac_plus_ip', nas_category_id: null, nas_ips: [] }))}
+                                                    className={`px-3 py-2 border rounded-xl text-xs font-bold transition-colors ${
+                                                        form.mapping_mode === 'mac_plus_ip' ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-50'
+                                                    }`}
+                                                >
+                                                    MAC + Specific NAS
+                                                </button>
+                                                <button
+                                                    type="button"
                                                     onClick={() => setForm(f => ({ ...f, mapping_mode: 'ip', nas_category_id: null }))}
                                                     className={`col-span-2 px-3 py-2 border rounded-xl text-xs font-bold transition-colors ${
                                                         form.mapping_mode === 'ip' ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-50'
@@ -678,6 +719,20 @@ const PrivilegeMapPage = () => {
                                                     <span className="text-sm font-bold text-violet-700">
                                                         {categoriesList.find(c => c.id === form.nas_category_id)?.name || `Category #${form.nas_category_id}`}
                                                     </span>
+                                                </div>
+                                            ) : form.mapping_mode === 'mac' || form.mapping_mode === 'mac_plus_ip' ? (
+                                                <div className="p-4 border border-slate-200 rounded-xl bg-slate-50 space-y-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <User size={14} className="text-amber-500" />
+                                                        <span className="text-sm font-mono font-bold text-slate-700">
+                                                            MAC: {form.calling_station_id}
+                                                        </span>
+                                                    </div>
+                                                    {form.mapping_mode === 'mac_plus_ip' && (
+                                                        <div className="text-xs font-mono text-slate-500 pl-6">
+                                                            @ NAS: {form.nas_ip}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             ) : (
                                                 <input
@@ -777,6 +832,32 @@ const PrivilegeMapPage = () => {
                                                             <option key={c.id} value={c.id}>{c.name}</option>
                                                         ))}
                                                     </select>
+                                                )}
+
+                                                {(form.mapping_mode === 'mac' || form.mapping_mode === 'mac_plus_ip') && (
+                                                    <div>
+                                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Target MAC Address</label>
+                                                        <input
+                                                            required
+                                                            placeholder="e.g. 0A:00:3E:45:76:4A"
+                                                            className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono"
+                                                            value={form.calling_station_id}
+                                                            onChange={e => setForm(f => ({ ...f, calling_station_id: e.target.value }))}
+                                                        />
+                                                    </div>
+                                                )}
+
+                                                {form.mapping_mode === 'mac_plus_ip' && (
+                                                    <div>
+                                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Specific NAS IP</label>
+                                                        <input
+                                                            required
+                                                            placeholder="e.g. 192.168.1.11"
+                                                            className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono"
+                                                            value={form.nas_ip}
+                                                            onChange={e => setForm(f => ({ ...f, nas_ip: e.target.value }))}
+                                                        />
+                                                    </div>
                                                 )}
                                             </div>
                                         )}

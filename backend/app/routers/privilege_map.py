@@ -28,18 +28,23 @@ from app.services.audit import log_audit, EventCode
 router = APIRouter(prefix="/privilege-map", tags=["privilege-map"])
 
 
-def raise_segment_conflict(payload: UserNasPrivilegeMapCreate):
-    if (
+def raise_nas_conflict(payload: UserNasPrivilegeMapCreate):
+    if payload.nas_ip and payload.calling_station_id:
+        detail = f"Privilege map entry for user {payload.username} at NAS {payload.nas_ip} with MAC {payload.calling_station_id} already exists"
+    elif payload.calling_station_id:
+        detail = f"Privilege map entry for user {payload.username} with MAC {payload.calling_station_id} already exists"
+    elif payload.nas_ip:
+        detail = f"Privilege map entry for user {payload.username} at NAS {payload.nas_ip} already exists"
+    elif (
         payload.segment_id is not None
         and payload.target_start_ip is None
         and payload.target_end_ip is None
     ):
-        raise HTTPException(
-            status_code=409,
-            detail="A base policy for this user and network segment already exists",
-        )
-
-    raise HTTPException(status_code=409, detail="Privilege map entry already exists")
+        detail = "A base policy for this user and network segment already exists"
+    else:
+        detail = "Privilege map entry already exists"
+    
+    raise HTTPException(status_code=409, detail=detail)
 
 
 def _compute_days_until_review(review_date: Optional[datetime]) -> Optional[int]:
@@ -65,6 +70,7 @@ def _to_out(record: UserNasPrivilegeMap) -> UserNasPrivilegeMapOut:
         id=record.id,
         username=record.username,
         nas_ip=record.nas_ip,
+        calling_station_id=record.calling_station_id,
         nas_category_id=record.nas_category_id,
         nas_category_name=category_name,
         nas_identifier=record.nas_identifier,
@@ -284,6 +290,7 @@ async def create_privilege_map_category(
     record = UserNasPrivilegeMap(
         username=payload.username,
         nas_ip=payload.nas_ip,
+        calling_station_id=payload.calling_station_id,
         nas_category_id=payload.nas_category_id,
         segment_id=payload.segment_id,
         target_start_ip=payload.target_start_ip,
@@ -302,7 +309,7 @@ async def create_privilege_map_category(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise_segment_conflict(payload)
+        raise_nas_conflict(payload)
     await db.refresh(record)
 
     # Load relationship for the response
@@ -365,6 +372,7 @@ async def update_privilege_map(
 
     record.username = payload.username
     record.nas_ip = payload.nas_ip
+    record.calling_station_id = payload.calling_station_id
     record.nas_category_id = payload.nas_category_id
     record.segment_id = payload.segment_id
     record.target_start_ip = payload.target_start_ip
@@ -383,7 +391,7 @@ async def update_privilege_map(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise_segment_conflict(payload)
+        raise_nas_conflict(payload)
 
     # Reload with relationship for response
     result = await db.execute(
@@ -410,7 +418,8 @@ async def update_privilege_map(
 
 
 # Backwards-compatible aliases for modules that still import private helpers.
-_raise_segment_conflict = raise_segment_conflict
+raise_segment_conflict = raise_nas_conflict
+_raise_segment_conflict = raise_nas_conflict
 _validate_segment_exception = validate_segment_exception
 
 

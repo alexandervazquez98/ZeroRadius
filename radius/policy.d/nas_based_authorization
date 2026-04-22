@@ -25,15 +25,17 @@ nas_based_authorization {
 
     if (&NAS-IP-Address) {
 
-        # ── STEP 1: Exact IP match or IP Range Exception ────────────────────
-        # Most specific: Exact NAS-IP or falling within an exception range.
+        # ── STEP 1: Exact MAC, Exact IP or IP Range Exception ───────────────
+        # Priority: MAC+IP > MAC > IP > Range Exception
+        # MACs are normalized to lowercase without separators in DB.
         update control {
             Tmp-String-0 := "%{sql:SELECT unpm.radius_group FROM user_nas_privilege_map unpm \
                 LEFT JOIN network_segments ns ON unpm.segment_id = ns.id \
-                WHERE unpm.username='%{User-Name}' \
+                WHERE unpm.username='%{SQL-User-Name}' \
                 AND unpm.is_active=1 \
                 AND ( \
-                    unpm.nas_ip='%{NAS-IP-Address}' \
+                    (unpm.calling_station_id IS NOT NULL AND unpm.calling_station_id=LOWER(REPLACE(REPLACE(REPLACE('%{SQL-Calling-Station-Id}', '-', ''), ':', ''), '.', ''))) \
+                    OR unpm.nas_ip='%{SQL-NAS-IP-Address}' \
                     OR (unpm.segment_id IS NOT NULL \
                         AND unpm.target_start_ip IS NOT NULL AND unpm.target_end_ip IS NOT NULL \
                         AND ns.id IS NOT NULL \
@@ -47,10 +49,15 @@ nas_based_authorization {
                             INET_ATON(SUBSTRING_INDEX(ns.cidr, '/', 1)) + POW(2, 32 - CAST( \
                                 CASE WHEN LOCATE('/', ns.cidr) > 0 THEN SUBSTRING_INDEX(ns.cidr, '/', -1) ELSE '32' END \
                             AS UNSIGNED)) - 1 \
-                        AND INET_ATON('%{NAS-IP-Address}') BETWEEN INET_ATON(unpm.target_start_ip) AND INET_ATON(unpm.target_end_ip)) \
+                        AND INET_ATON('%{SQL-NAS-IP-Address}') BETWEEN INET_ATON(unpm.target_start_ip) AND INET_ATON(unpm.target_end_ip)) \
                 ) \
                 ORDER BY \
-                    CASE WHEN unpm.nas_ip='%{NAS-IP-Address}' THEN 0 ELSE 1 END ASC, \
+                    CASE \
+                        WHEN unpm.calling_station_id IS NOT NULL AND unpm.calling_station_id=LOWER(REPLACE(REPLACE(REPLACE('%{SQL-Calling-Station-Id}', '-', ''), ':', ''), '.', '')) AND unpm.nas_ip='%{SQL-NAS-IP-Address}' THEN 0 \
+                        WHEN unpm.calling_station_id IS NOT NULL AND unpm.calling_station_id=LOWER(REPLACE(REPLACE(REPLACE('%{SQL-Calling-Station-Id}', '-', ''), ':', ''), '.', '')) THEN 1 \
+                        WHEN unpm.nas_ip='%{SQL-NAS-IP-Address}' THEN 2 \
+                        ELSE 3 \
+                    END ASC, \
                     CASE \
                         WHEN unpm.target_start_ip IS NOT NULL AND unpm.target_end_ip IS NOT NULL \
                         THEN INET_ATON(unpm.target_end_ip) - INET_ATON(unpm.target_start_ip) \
@@ -75,10 +82,10 @@ nas_based_authorization {
                 Tmp-String-0 := "%{sql:SELECT unpm.radius_group \
                     FROM user_nas_privilege_map unpm \
                     JOIN network_segments ns ON unpm.segment_id = ns.id \
-                     WHERE unpm.username='%{User-Name}' \
+                     WHERE unpm.username='%{SQL-User-Name}' \
                      AND unpm.is_active=1 \
                      AND unpm.target_start_ip IS NULL AND unpm.target_end_ip IS NULL \
-                     AND INET_ATON('%{NAS-IP-Address}') BETWEEN \
+                     AND INET_ATON('%{SQL-NAS-IP-Address}') BETWEEN \
                          INET_ATON(SUBSTRING_INDEX(ns.cidr, '/', 1)) AND \
                          INET_ATON(SUBSTRING_INDEX(ns.cidr, '/', 1)) + POW(2, 32 - CAST( \
                              CASE WHEN LOCATE('/', ns.cidr) > 0 THEN SUBSTRING_INDEX(ns.cidr, '/', -1) ELSE '32' END \
@@ -102,13 +109,13 @@ nas_based_authorization {
                 update control {
                     Tmp-String-0 := "%{sql:SELECT unpm.radius_group \
                         FROM user_nas_privilege_map unpm \
-                        WHERE unpm.username='%{User-Name}' \
+                        WHERE unpm.username='%{SQL-User-Name}' \
                         AND unpm.nas_ip IS NULL \
                         AND unpm.segment_id IS NULL \
                         AND unpm.is_active=1 \
                         AND unpm.nas_category_id = ( \
                             SELECT category_id FROM nas_cidr_ranges \
-                            WHERE INET_ATON('%{NAS-IP-Address}') BETWEEN net_start AND net_end \
+                            WHERE INET_ATON('%{SQL-NAS-IP-Address}') BETWEEN net_start AND net_end \
                             ORDER BY prefix_len DESC LIMIT 1 \
                         ) \
                         LIMIT 1}"
@@ -131,38 +138,36 @@ nas_based_authorization {
         }
 
         # Apply reply attributes for the resolved dynamic group.
-        # Some deployments do not materialize group reply attributes when
-        # SQL-Group is assigned only in policy logic, so we hydrate required
-        # reply attributes explicitly from radgroupreply.
+        # SQL-Group is now correctly escapable or used in simple SELECTs.
         if (&control:SQL-Group && "%{control:SQL-Group}" != "") {
             update reply {
                 Reply-Message := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply \
-                    WHERE groupname='%{control:SQL-Group}' \
+                    WHERE groupname='%{SQL-Group}' \
                     AND attribute='Reply-Message' \
                     ORDER BY id LIMIT 1}"
             }
 
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPDLCIR' ORDER BY id LIMIT 1}" != "") {
+            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{SQL-Group}' AND attribute='Cambium-Canopy-HPDLCIR' ORDER BY id LIMIT 1}" != "") {
                 update reply {
-                    Cambium-Canopy-HPDLCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPDLCIR' ORDER BY id LIMIT 1}"
+                    Cambium-Canopy-HPDLCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{SQL-Group}' AND attribute='Cambium-Canopy-HPDLCIR' ORDER BY id LIMIT 1}"
                 }
             }
 
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPULCIR' ORDER BY id LIMIT 1}" != "") {
+            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{SQL-Group}' AND attribute='Cambium-Canopy-HPULCIR' ORDER BY id LIMIT 1}" != "") {
                 update reply {
-                    Cambium-Canopy-HPULCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPULCIR' ORDER BY id LIMIT 1}"
+                    Cambium-Canopy-HPULCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{SQL-Group}' AND attribute='Cambium-Canopy-HPULCIR' ORDER BY id LIMIT 1}"
                 }
             }
 
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-LPDLCIR' ORDER BY id LIMIT 1}" != "") {
+            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{SQL-Group}' AND attribute='Cambium-Canopy-LPDLCIR' ORDER BY id LIMIT 1}" != "") {
                 update reply {
-                    Cambium-Canopy-LPDLCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-LPDLCIR' ORDER BY id LIMIT 1}"
+                    Cambium-Canopy-LPDLCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{SQL-Group}' AND attribute='Cambium-Canopy-LPDLCIR' ORDER BY id LIMIT 1}"
                 }
             }
 
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-LPULCIR' ORDER BY id LIMIT 1}" != "") {
+            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{SQL-Group}' AND attribute='Cambium-Canopy-LPULCIR' ORDER BY id LIMIT 1}" != "") {
                 update reply {
-                    Cambium-Canopy-LPULCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-LPULCIR' ORDER BY id LIMIT 1}"
+                    Cambium-Canopy-LPULCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{SQL-Group}' AND attribute='Cambium-Canopy-LPULCIR' ORDER BY id LIMIT 1}"
                 }
             }
         }
