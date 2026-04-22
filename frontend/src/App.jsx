@@ -16,6 +16,8 @@ import Audit from './pages/Audit';
 import Dictionaries from './pages/Dictionaries';
 import AdminUsers from './pages/AdminUsers';
 import PrivilegeMap from './pages/PrivilegeMap';
+import NetworkSegments from './pages/NetworkSegments';
+import CIRManager from './pages/CIRManager';
 import IAM from './pages/IAM';
 import SyslogDashboard from './pages/SyslogDashboard';
 
@@ -79,6 +81,29 @@ function App() {
                                 <ErrorBoundary>
                                     <RoleGuard allowedRoles={['superadmin', 'admin', 'auditor']} fallback={<Unauthorized />}>
                                         <PrivilegeMap />
+                                    </RoleGuard>
+                                </ErrorBoundary>
+                            }
+                        />
+
+                        <Route
+                            path="cir"
+                            element={
+                                <ErrorBoundary>
+                                    <RoleGuard allowedRoles={['superadmin', 'admin', 'auditor']} fallback={<Unauthorized />}>
+                                        <CIRManager />
+                                    </RoleGuard>
+                                </ErrorBoundary>
+                            }
+                        />
+
+                        {/* Network Segments */}
+                        <Route
+                            path="network-segments"
+                            element={
+                                <ErrorBoundary>
+                                    <RoleGuard allowedRoles={['superadmin', 'admin']} fallback={<Unauthorized />}>
+                                        <NetworkSegments />
                                     </RoleGuard>
                                 </ErrorBoundary>
                             }

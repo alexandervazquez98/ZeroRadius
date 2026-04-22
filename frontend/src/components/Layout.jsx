@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Server, Radio, Activity, Shield, Layers, BookOpen, LogOut, UserCog, Map, Clock, ScrollText, FileText } from 'lucide-react';
+import { LayoutDashboard, Users, Server, Radio, Activity, Shield, Layers, BookOpen, LogOut, UserCog, Map, Clock, ScrollText, FileText, Gauge } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NTPIndicator from './NTPIndicator';
 import LogViewer from './LogViewer';
@@ -23,7 +23,9 @@ const Layout = () => {
         { name: 'NAS Devices', path: '/nas', icon: Server },
         { name: 'Active Sessions', path: '/sessions', icon: Activity },
         { name: 'Groups', path: '/groups', icon: Layers },
-        { name: 'Privilege Map', path: '/privilege-map', icon: Map, allowedRoles: ['superadmin', 'admin', 'auditor'] },
+        { name: 'Access Policies', path: '/privilege-map', icon: Map, allowedRoles: ['superadmin', 'admin', 'auditor'] },
+        { name: 'CIR Manager', path: '/cir', icon: Gauge, allowedRoles: ['superadmin', 'admin', 'auditor'] },
+        { name: 'Network Segments', path: '/network-segments', icon: Server, allowedRoles: ['superadmin', 'admin'] },
         { name: 'IAM & Zonas', path: '/iam', icon: Shield, allowedRoles: ['superadmin', 'admin'] },
         { name: 'Dictionaries', path: '/dictionaries', icon: BookOpen },
         { name: 'Audit Logs', path: '/audit', icon: Shield },

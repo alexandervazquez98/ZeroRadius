@@ -155,3 +155,98 @@ async def test_regression_update_network_segment_rejects_overlapping_cidr(
     )
     assert update_resp.status_code == 409
     assert "overlaps with existing segment" in update_resp.json()["detail"]
+
+
+async def test_regression_cross_area_like_segment_isolation_by_distinct_cidrs(
+    async_client: AsyncClient, superadmin_token: str
+):
+    headers = {"Authorization": f"Bearer {superadmin_token}"}
+
+    area_a_segment = await async_client.post(
+        "/network-segments",
+        json={"name": "Area-A Shared Name", "cidr": "10.160.0.0/24"},
+        headers=headers,
+    )
+    area_b_segment = await async_client.post(
+        "/network-segments",
+        json={"name": "Area-B Shared Name", "cidr": "10.161.0.0/24"},
+        headers=headers,
+    )
+
+    assert area_a_segment.status_code == 201
+    assert area_b_segment.status_code == 201
+
+    area_a_id = area_a_segment.json()["id"]
+    area_b_id = area_b_segment.json()["id"]
+
+    map_a = await async_client.post(
+        "/privilege-map/category",
+        json={
+            "username": "segment_admin_a",
+            "segment_id": area_a_id,
+            "radius_group": "area_a_group",
+        },
+        headers=headers,
+    )
+    map_b = await async_client.post(
+        "/privilege-map/category",
+        json={
+            "username": "segment_reader_b",
+            "segment_id": area_b_id,
+            "radius_group": "area_b_group",
+        },
+        headers=headers,
+    )
+    assert map_a.status_code == 201
+    assert map_b.status_code == 201
+
+    list_a = await async_client.get("/privilege-map?username=segment_admin_a", headers=headers)
+    list_b = await async_client.get("/privilege-map?username=segment_reader_b", headers=headers)
+    assert list_a.status_code == 200
+    assert list_b.status_code == 200
+
+    segment_names_a = {item["segment_name"] for item in list_a.json() if item["segment_name"]}
+    segment_names_b = {item["segment_name"] for item in list_b.json() if item["segment_name"]}
+    assert "Area-A Shared Name" in segment_names_a
+    assert "Area-A Shared Name" not in segment_names_b
+    assert "Area-B Shared Name" in segment_names_b
+    assert "Area-B Shared Name" not in segment_names_a
+
+
+async def test_regression_deterministic_user_segment_match_and_no_match_paths(
+    async_client: AsyncClient, superadmin_token: str
+):
+    headers = {"Authorization": f"Bearer {superadmin_token}"}
+
+    segment = await async_client.post(
+        "/network-segments",
+        json={"name": "Deterministic Match Segment", "cidr": "10.162.0.0/24"},
+        headers=headers,
+    )
+    assert segment.status_code == 201
+    segment_id = segment.json()["id"]
+
+    mapping = await async_client.post(
+        "/privilege-map/category",
+        json={
+            "username": "matchpathuser",
+            "segment_id": segment_id,
+            "radius_group": "deterministic_match_group",
+        },
+        headers=headers,
+    )
+    assert mapping.status_code == 201
+
+    list_match = await async_client.get(
+        "/privilege-map?username=matchpathuser", headers=headers
+    )
+    list_no_match = await async_client.get(
+        "/privilege-map?username=nomatchuser", headers=headers
+    )
+    assert list_match.status_code == 200
+    assert list_no_match.status_code == 200
+
+    assert any(
+        row["radius_group"] == "deterministic_match_group" for row in list_match.json()
+    )
+    assert len(list_no_match.json()) == 0

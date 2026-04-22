@@ -81,6 +81,9 @@ fi
 #   "Configuration file ... is globally writable. Refusing to start."
 # We copy them to an internal path owned by freerad and use those copies.
 for src in \
+    /etc/raddb/clients.conf \
+    /etc/freeradius/clients.conf \
+    /etc/freeradius/sites-enabled/default \
     /etc/raddb/mods-available/sql \
     /etc/raddb/mods-enabled/sql
 do

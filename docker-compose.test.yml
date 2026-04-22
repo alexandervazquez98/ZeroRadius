@@ -48,7 +48,6 @@ services:
       - ./radius/sql:/etc/raddb/mods-available/sql
       - ./radius/clients.conf:/etc/raddb/clients.conf
       - ./radius/default.conf:/etc/freeradius/sites-enabled/default
-      - ./radius/certs:/etc/freeradius/certs
     ports:
       - "1812:1812/udp"
       - "1813:1813/udp"
@@ -62,7 +61,6 @@ services:
     container_name: zeroradius-test-backend
     volumes:
       - ./backend:/app
-      - ./radius/certs:/etc/freeradius/certs
     environment:
       DATABASE_URL: mysql+aiomysql://test_user:test_password@test-db/zeroradius_test
       SECRET_KEY: test-secret-key-not-for-production-use-32chars
