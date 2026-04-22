@@ -97,33 +97,6 @@ class RadUserGroupCreate(RadUserGroupBase):
     pass
 
 
-# NAS Schemas
-class NasBase(BaseModel):
-    nasname: str
-    shortname: Optional[str] = None
-    type: Optional[str] = "other"
-    ports: Optional[int] = None
-    secret: str
-    description: Optional[str] = None
-    zone_id: Optional[int] = None
-    category_id: Optional[int] = None
-
-    @field_validator("secret")
-    @classmethod
-    def secret_min_length(cls, v: str) -> str:
-        if len(v) < 32:
-            raise ValueError("NAS secret must be at least 32 characters")
-        return v
-
-
-class NasOut(NasBase):
-    id: int
-    category_name: Optional[str] = None  # populated by router from relationship
-
-    class Config:
-        from_attributes = True
-
-
 # Session Schema
 class SessionOut(BaseModel):
     radacctid: int
@@ -211,54 +184,6 @@ class AdminUserOut(BaseModel):
 
     class Config:
         from_attributes = True
-
-
-# NAS validation schema with secret length enforcement (T17 / T23)
-class NasCreate(BaseModel):
-    nasname: str
-    shortname: Optional[str] = None
-    type: Optional[str] = "other"
-    ports: Optional[int] = None
-    secret: str = "secret"
-    description: Optional[str] = None
-    zone_id: Optional[int] = None
-    category_id: Optional[int] = None
-
-    @field_validator("secret")
-    @classmethod
-    def secret_min_length(cls, v: str) -> str:
-        if len(v) < 32:
-            raise ValueError(
-                f"NAS secret must be at least 32 characters (got {len(v)}). "
-                "Use a strong randomly-generated secret."
-            )
-        return v
-
-    @field_validator("nasname")
-    @classmethod
-    def validate_nasname(cls, v: str) -> str:
-        # Try IP address
-        try:
-            ipaddress.ip_address(v)
-            return v
-        except ValueError:
-            pass
-        # Try CIDR
-        try:
-            ipaddress.ip_network(v, strict=False)
-            return v
-        except ValueError:
-            pass
-        # Try hostname RFC-1123
-        hostname_re = re.compile(
-            r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)*"
-            r"[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$"
-        )
-        if hostname_re.match(v):
-            return v
-        raise ValueError(
-            "nasname must be a valid IP address, CIDR, or RFC-1123 hostname"
-        )
 
 
 # T23 — SIEM event schema (REQ-BE-005)
@@ -390,6 +315,70 @@ class NetworkSegmentOut(NetworkSegmentBase):
     id: int
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# NAS validation schema with secret length enforcement (T17 / T23)
+class NasCreate(BaseModel):
+    nasname: str
+    shortname: Optional[str] = None
+    type: Optional[str] = "other"
+    ports: Optional[int] = None
+    secret: str = "secret"
+    description: Optional[str] = None
+    zone_id: Optional[int] = None
+    category_id: Optional[int] = None
+
+    @field_validator("secret")
+    @classmethod
+    def secret_min_length(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError(
+                f"NAS secret must be at least 32 characters (got {len(v)}). "
+                "Use a strong randomly-generated secret."
+            )
+        return v
+
+    @field_validator("nasname")
+    @classmethod
+    def validate_nasname(cls, v: str) -> str:
+        # Try IP address
+        try:
+            ipaddress.ip_address(v)
+            return v
+        except ValueError:
+            pass
+        # Try CIDR
+        try:
+            ipaddress.ip_network(v, strict=False)
+            return v
+        except ValueError:
+            pass
+        # Try hostname RFC-1123
+        hostname_re = re.compile(
+            r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)*"
+            r"[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$"
+        )
+        if hostname_re.match(v):
+            return v
+        raise ValueError(
+            "nasname must be a valid IP address, CIDR, or RFC-1123 hostname"
+        )
+
+
+class NasOut(BaseModel):
+    nasname: str
+    shortname: Optional[str] = None
+    type: Optional[str] = "other"
+    ports: Optional[int] = None
+    secret: str
+    description: Optional[str] = None
+    zone_id: Optional[int] = None
+    category_id: Optional[int] = None
+    id: int
+    category_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -572,92 +561,6 @@ class UserNasPrivilegeMapOut(BaseModel):
 
     class Config:
         from_attributes = True
-
-
-# cir-metrics-ui: CIR schemas
-_CIR_RATE_PATTERN = re.compile(r"^\d+$")
-
-
-class CIRProfilePayload(BaseModel):
-    name: str
-    downlink_high: str
-    uplink_high: str
-    downlink_low: str
-    uplink_low: str
-
-    @field_validator("name")
-    @classmethod
-    def validate_name(cls, v: str) -> str:
-        value = (v or "").strip()
-        if not value:
-            raise ValueError("name is required")
-        return value
-
-    @field_validator(
-        "downlink_high", "uplink_high", "downlink_low", "uplink_low", mode="before"
-    )
-    @classmethod
-    def validate_rate(cls, v: str) -> str:
-        value = str(v or "").strip()
-        if not value:
-            raise ValueError("rate value is required")
-        if not _CIR_RATE_PATTERN.match(value):
-            raise ValueError("rate must be numeric")
-        return value
-
-
-class CIRProfileOut(CIRProfilePayload):
-    groupname: str
-
-
-class CIRAssignmentPayload(UserNasPrivilegeMapCreate):
-    @field_validator("radius_group")
-    @classmethod
-    def validate_radius_group(cls, v: str) -> str:
-        value = (v or "").strip()
-        if not value:
-            raise ValueError("radius_group is required")
-        if not value.startswith("cir_"):
-            raise ValueError("radius_group must start with cir_")
-        return value
-
-
-class CIRPreviewRequest(BaseModel):
-    username: str
-    nas_ip: str
-    calling_station_id: Optional[str] = None
-
-    @field_validator("username")
-    @classmethod
-    def validate_username(cls, v: str) -> str:
-        value = (v or "").strip()
-        if not value:
-            raise ValueError("username is required")
-        return value
-
-    @field_validator("nas_ip")
-    @classmethod
-    def validate_nas_ip(cls, v: str) -> str:
-        try:
-            ip = ipaddress.ip_address(v)
-            if not isinstance(ip, ipaddress.IPv4Address):
-                raise ValueError("nas_ip must be IPv4 only (IPv6 not supported)")
-            return str(ip)
-        except ValueError:
-            raise ValueError("nas_ip must be a valid IPv4 address")
-
-
-class CIRResolutionTraceItem(BaseModel):
-    step: str
-    matched: bool
-    detail: Optional[str] = None
-
-
-class CIRPreviewResponse(BaseModel):
-    resolution_path: str
-    mapping: Optional[UserNasPrivilegeMapOut] = None
-    profile: Optional[CIRProfileOut] = None
-    trace: list[CIRResolutionTraceItem]
 
 
 # T23 — LoginAttempt output schema

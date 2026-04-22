@@ -73,6 +73,21 @@ async def test_engine():
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Create nas_cidr_ranges view for tests (Simplified for SQLite)
+        await conn.execute(text("DROP VIEW IF EXISTS nas_cidr_ranges"))
+        await conn.execute(text("""
+            CREATE VIEW nas_cidr_ranges AS
+            SELECT
+                id,
+                nasname,
+                category_id,
+                'test' as category_name,
+                'standard' as category_criticality,
+                0 as net_start,
+                4294967295 as net_end,
+                32 as prefix_len
+            FROM nas
+        """))
     yield engine
     await engine.dispose()
 
