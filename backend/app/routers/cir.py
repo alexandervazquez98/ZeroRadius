@@ -20,12 +20,14 @@ from app.routers.privilege_map import (
     validate_segment_exception,
 )
 from app.schemas.schemas import (
+    UserNasPrivilegeMapOut,
+)
+from app.schemas.cir_schemas import (
     CIRAssignmentPayload,
     CIRPreviewRequest,
     CIRPreviewResponse,
     CIRProfileOut,
     CIRProfilePayload,
-    UserNasPrivilegeMapOut,
 )
 from app.services.cir_profiles import (
     delete_profile,
