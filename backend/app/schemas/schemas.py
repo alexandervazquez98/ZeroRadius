@@ -5,8 +5,22 @@ from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+
 # --- Base Types ---
 _CIR_RATE_PATTERN = re.compile(r"^\d+$")
+_MAC_ACCEPTED_FORMATS = (
+    re.compile(r"^[0-9a-fA-F]{12}$"),
+    re.compile(r"^(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$"),
+    re.compile(r"^(?:[0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}$"),
+    re.compile(r"^(?:[0-9a-fA-F]{4}\.){2}[0-9a-fA-F]{4}$"),
+)
+
+
+def _normalize_mac(value: str) -> str:
+    """Validate exact supported MAC formats, then normalize to 12 lowercase hex."""
+    if not any(pattern.fullmatch(value) for pattern in _MAC_ACCEPTED_FORMATS):
+        raise ValueError("invalid MAC address format (must be 12 hex chars)")
+    return re.sub(r"[:.\-]", "", value).lower()
 
 
 # --- CIR Base Schemas ---
@@ -136,7 +150,7 @@ class RadUserGroupCreate(RadUserGroupBase):
 class NasCategoryBase(BaseModel):
     name: str
     description: Optional[str] = None
-    criticality: str = "standard"
+    criticality: str = "standard"  # critical | standard | restricted
     vendor: Optional[str] = None
 
 
@@ -241,7 +255,7 @@ class NasOut(BaseModel):
     id: int
     nasname: str
     shortname: Optional[str] = None
-    type: str
+    type: str = "other"
     ports: Optional[int] = None
     secret: str
     description: Optional[str] = None
@@ -256,11 +270,47 @@ class NasOut(BaseModel):
 class UserNasPrivilegeMapCreate(BaseModel):
     username: str
     nas_ip: Optional[str] = None
+
+    @field_validator("nas_ip")
+    @classmethod
+    def validate_nas_ip(cls, v):
+        if v is None:
+            return v
+        try:
+            ip = ipaddress.ip_address(v)
+            if not isinstance(ip, ipaddress.IPv4Address):
+                raise ValueError("nas_ip must be IPv4 only")
+            return str(ip)
+        except ValueError:
+            raise ValueError("nas_ip must be a valid IPv4 address")
+
     calling_station_id: Optional[str] = None
+
+    @field_validator("calling_station_id")
+    @classmethod
+    def validate_mac(cls, v):
+        if v is None:
+            return v
+        return _normalize_mac(v)
+
     nas_category_id: Optional[int] = None
     segment_id: Optional[int] = None
     target_start_ip: Optional[str] = None
     target_end_ip: Optional[str] = None
+
+    @field_validator("target_start_ip", "target_end_ip")
+    @classmethod
+    def validate_range_ip(cls, v):
+        if v is None or v.strip() == "":
+            return v
+        try:
+            ip = ipaddress.ip_address(v)
+            if not isinstance(ip, ipaddress.IPv4Address):
+                raise ValueError("Exception IPs must be IPv4 only")
+            return str(ip)
+        except ValueError:
+            raise ValueError("Exception IPs must be valid IPv4 addresses")
+
     nas_identifier: Optional[str] = None
     nas_vendor: Optional[str] = None
     radius_group: str
@@ -272,15 +322,41 @@ class UserNasPrivilegeMapCreate(BaseModel):
 
     @model_validator(mode="after")
     def require_nas_target(self):
-        has_ip = self.nas_ip is not None and self.nas_ip.strip() != ""
-        has_mac = self.calling_station_id is not None and self.calling_station_id.strip() != ""
+        has_ip = bool(self.nas_ip and self.nas_ip.strip())
+        has_mac = bool(
+            self.calling_station_id and self.calling_station_id.strip()
+        )
         has_cat = self.nas_category_id is not None
         has_seg = self.segment_id is not None
 
-        if not (has_ip and has_mac):
-            provided = sum([has_ip, has_mac, has_cat, has_seg])
-            if provided == 0:
-                raise ValueError("targeting method required")
+        is_range_exception = has_seg and (
+            bool(self.target_start_ip and self.target_start_ip.strip())
+            or bool(self.target_end_ip and self.target_end_ip.strip())
+        )
+
+        # 1. IP + MAC is allowed (high specificity), but NOTHING ELSE
+        if has_ip and has_mac:
+            if has_cat or has_seg:
+                raise ValueError(
+                    "IP+MAC targeting cannot be combined with Category or Segment"
+                )
+            return self
+
+        # 2. Range Exception (Segment + IPs) allowed, but NOTHING ELSE
+        if is_range_exception:
+            if has_cat or has_ip or has_mac:
+                raise ValueError(
+                    "Network Segment range exceptions cannot be combined with other methods"
+                )
+            return self
+
+        # 3. Otherwise, strictly ONE method
+        provided = sum([has_ip, has_mac, has_cat, has_seg])
+        if provided == 0:
+            raise ValueError("targeting method required")
+        if provided > 1:
+            raise ValueError("exactly one targeting method required")
+
         return self
 
 
@@ -321,6 +397,27 @@ class UserNasPrivilegeMapBulkCreate(BaseModel):
     review_date: Optional[date] = None
     is_active: int = 1
 
+    @field_validator("nas_ips")
+    @classmethod
+    def validate_nas_ips_ipv4_only(cls, v: List[str]) -> List[str]:
+        if not v:
+            raise ValueError("nas_ips must contain at least one IPv4 address")
+
+        normalized: List[str] = []
+        for ip_raw in v:
+            ip_candidate = ip_raw.strip()
+            try:
+                ip = ipaddress.ip_address(ip_candidate)
+            except ValueError:
+                raise ValueError("nas_ips entries must be valid IPv4 addresses")
+
+            if not isinstance(ip, ipaddress.IPv4Address):
+                raise ValueError("nas_ips entries must be IPv4 only")
+
+            normalized.append(str(ip))
+
+        return normalized
+
 
 # --- CIR Advanced Schemas ---
 
@@ -338,8 +435,36 @@ class CIRAssignmentPayload(UserNasPrivilegeMapCreate):
 
 class CIRPreviewRequest(BaseModel):
     username: str
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, v: str) -> str:
+        value = (v or "").strip()
+        if not value:
+            raise ValueError("username is required")
+        return value
+
     nas_ip: str
+
+    @field_validator("nas_ip")
+    @classmethod
+    def validate_nas_ip(cls, v: str) -> str:
+        try:
+            ip = ipaddress.ip_address(v)
+            if not isinstance(ip, ipaddress.IPv4Address):
+                raise ValueError("nas_ip must be IPv4 only")
+            return str(ip)
+        except ValueError:
+            raise ValueError("nas_ip must be a valid IPv4 address")
+
     calling_station_id: Optional[str] = None
+
+    @field_validator("calling_station_id")
+    @classmethod
+    def validate_mac(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        return _normalize_mac(v)
 
 
 class CIRPreviewResponse(BaseModel):
@@ -349,7 +474,7 @@ class CIRPreviewResponse(BaseModel):
     trace: List[CIRResolutionTraceItem]
 
 
-# --- Other Core Schemas ---
+# --- Session & Audit Schemas ---
 
 class SessionOut(BaseModel):
     radacctid: int
@@ -375,6 +500,8 @@ class AuditLogOut(BaseModel):
     new_value: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
+
+# --- Auth & Admin Schemas ---
 
 class Token(BaseModel):
     access_token: str
@@ -423,6 +550,8 @@ class AdminUserOut(BaseModel):
     force_password_change: int
     model_config = ConfigDict(from_attributes=True)
 
+
+# --- Utility & System Schemas ---
 
 class SIEMEvent(BaseModel):
     event_id: int

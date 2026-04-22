@@ -189,7 +189,9 @@ CREATE TABLE IF NOT EXISTS radius_reply_audit (
 CREATE TABLE IF NOT EXISTS user_nas_privilege_map (
     id              INT AUTO_INCREMENT PRIMARY KEY,
     username        VARCHAR(64)  NOT NULL,
+    target_key      VARCHAR(128) NOT NULL,
     nas_ip          VARCHAR(50)  NULL,                  -- NULL when using category-based mapping
+    calling_station_id VARCHAR(50) NULL,
     nas_category_id INT          NULL DEFAULT NULL,     -- NULL when using IP-based mapping
     segment_id      INT          NULL DEFAULT NULL,
     segment_target_key VARCHAR(128) NOT NULL DEFAULT '',
@@ -206,10 +208,12 @@ CREATE TABLE IF NOT EXISTS user_nas_privilege_map (
     created_at      DATETIME(6)  DEFAULT CURRENT_TIMESTAMP(6),
     updated_at      DATETIME(6)  DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     -- Separate unique keys per targeting mode
+    UNIQUE KEY uq_unpm_target_key (target_key),
     UNIQUE KEY uq_user_nas_ip  (username, nas_ip),
     UNIQUE KEY uq_user_nas_cat (username, nas_category_id),
     UNIQUE KEY uq_user_segment_target (username, segment_id, segment_target_key),
     INDEX idx_unpm_nas_ip     (nas_ip),
+    INDEX idx_unpm_calling_station_id (calling_station_id),
     INDEX idx_unpm_category   (nas_category_id),
     INDEX idx_unpm_is_active  (is_active),
     INDEX idx_unpm_review_date (review_date)

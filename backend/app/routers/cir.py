@@ -13,9 +13,9 @@ from starlette.requests import Request
 from app.core.limiter import limiter
 from app.core.rbac import Role, require_roles
 from app.db.session import get_db
-from app.models.models import AdminUser, UserNasPrivilegeMap
-from app.routers.privilege_map import (
-    _to_out,
+from app.models.models import AdminUser, UserNasPrivilegeMap, _build_segment_target_key
+from app.services.privilege_map_service import (
+    to_out_schema as _to_out,
     raise_nas_conflict,
     validate_segment_exception,
 )
@@ -38,12 +38,53 @@ from app.services.cir_resolution import resolve_preview
 router = APIRouter(prefix="/cir", tags=["cir"])
 
 
-def _segment_target_key(payload: CIRAssignmentPayload) -> str:
-    if payload.segment_id is None:
-        return ""
-    if payload.target_start_ip is None and payload.target_end_ip is None:
-        return "__base__"
-    return f"{payload.target_start_ip or ''}|{payload.target_end_ip or ''}"
+def _is_unique_integrity_error(exc: IntegrityError) -> bool:
+    orig = getattr(exc, "orig", None)
+
+    # Prefer structured driver metadata first (SQLSTATE/errno) instead of
+    # brittle message parsing.
+    if orig is not None:
+        sqlstate = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+        if isinstance(sqlstate, str) and sqlstate == "23505":
+            return True
+
+        errno = getattr(orig, "errno", None)
+        if errno is None:
+            args = getattr(orig, "args", ())
+            if args and isinstance(args[0], int):
+                errno = args[0]
+
+        # MySQL/MariaDB duplicate key (1062)
+        if errno == 1062:
+            return True
+
+        sqlite_errorcode = getattr(orig, "sqlite_errorcode", None)
+        if sqlite_errorcode in {1555, 2067}:
+            return True
+
+        sqlite_errorname = getattr(orig, "sqlite_errorname", None)
+        if sqlite_errorname in {"SQLITE_CONSTRAINT_PRIMARYKEY", "SQLITE_CONSTRAINT_UNIQUE"}:
+            return True
+
+    # Last resort fallback for drivers/messages without structured fields.
+    detail = str(getattr(exc, "orig", exc)).lower()
+    return (
+        "duplicate entry" in detail
+        or "duplicate key" in detail
+        or "unique constraint" in detail
+    )
+
+
+def _raise_assignment_integrity_error(
+    payload: CIRAssignmentPayload, exc: IntegrityError
+) -> None:
+    if _is_unique_integrity_error(exc):
+        raise_nas_conflict(payload)
+
+    raise HTTPException(
+        status_code=422,
+        detail="CIR assignment violates data integrity constraints",
+    ) from exc
 
 
 @router.get("/profiles", response_model=list[CIRProfileOut])
@@ -138,15 +179,14 @@ async def _find_existing_assignment(
         filters.extend(
             [
                 UserNasPrivilegeMap.segment_id == payload.segment_id,
-                UserNasPrivilegeMap.segment_target_key == _segment_target_key(payload),       
+                UserNasPrivilegeMap.segment_target_key == _build_segment_target_key(
+                    payload.segment_id, payload.target_start_ip, payload.target_end_ip
+                ),
             ]
         )
 
     result = await db.execute(select(UserNasPrivilegeMap).where(and_(*filters)))
-    row = result.scalars().first()
-    if row and is_cir_group(row.radius_group):
-        return row
-    return None
+    return result.scalars().first()
 
 
 @router.get("/assignments", response_model=list[UserNasPrivilegeMapOut])
@@ -155,7 +195,7 @@ async def list_cir_assignments(
     request: Request,
     username: str | None = None,
     db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = require_roles(Role.AUDITOR, Role.ADMIN, Role.SUPERADMIN),       
+    current_user: AdminUser = require_roles(Role.AUDITOR, Role.ADMIN, Role.SUPERADMIN),
 ):
     stmt = select(UserNasPrivilegeMap).options(
         selectinload(UserNasPrivilegeMap.category),
@@ -178,6 +218,11 @@ async def create_or_replace_cir_assignment(
     current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
 ):
     existing = await _find_existing_assignment(db, payload)
+
+    # Prevent collision with non-CIR groups
+    if existing and not is_cir_group(existing.radius_group):
+        raise_nas_conflict(payload)
+
     await validate_segment_exception(
         db, payload, exclude_id=existing.id if existing else None
     )
@@ -205,7 +250,12 @@ async def create_or_replace_cir_assignment(
         existing.review_date = review_dt
         existing.is_active = payload.is_active
         existing.updated_at = datetime.utcnow()
-        await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            _raise_assignment_integrity_error(payload, exc)
+        # Reload relationships
         result = await db.execute(
             select(UserNasPrivilegeMap)
             .options(
@@ -236,11 +286,12 @@ async def create_or_replace_cir_assignment(
     db.add(row)
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
-        raise_nas_conflict(payload)
+        _raise_assignment_integrity_error(payload, exc)
     await db.refresh(row)
 
+    # Reload relationships
     result = await db.execute(
         select(UserNasPrivilegeMap)
         .options(
@@ -293,9 +344,9 @@ async def update_cir_assignment(
 
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
-        raise_nas_conflict(payload)
+        _raise_assignment_integrity_error(payload, exc)
 
     await db.refresh(row)
     return _to_out(row)
@@ -326,13 +377,8 @@ async def preview_cir_resolution(
     request: Request,
     payload: CIRPreviewRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = require_roles(Role.AUDITOR, Role.ADMIN, Role.SUPERADMIN),       
+    current_user: AdminUser = require_roles(Role.AUDITOR, Role.ADMIN, Role.SUPERADMIN),
 ):
-    # keep explicit conversion for predictable ValueError path in service
-    try:
-        ipaddress.ip_address(payload.nas_ip)
-    except ValueError:
-        raise HTTPException(status_code=422, detail="nas_ip must be a valid IPv4 address")    
     return await resolve_preview(
-        db, payload.username, payload.nas_ip, calling_station_id=payload.calling_station_id   
+        db, payload.username, payload.nas_ip, calling_station_id=payload.calling_station_id
     )
