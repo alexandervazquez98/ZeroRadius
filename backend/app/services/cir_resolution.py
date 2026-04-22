@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.models import UserNasPrivilegeMap
 from app.routers.privilege_map import _to_out
-from app.schemas.cir_schemas import (
+from app.schemas.schemas import (
     CIRPreviewResponse,
     CIRResolutionTraceItem,
 )
