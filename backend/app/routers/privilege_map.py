@@ -7,12 +7,14 @@ Supports both IP-based and category-based targeting (nas-categories feature).
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from typing import Optional
 from datetime import datetime, date
 from starlette.requests import Request
+import ipaddress
 from app.db.session import get_db
-from app.models.models import UserNasPrivilegeMap, AdminUser
+from app.models.models import UserNasPrivilegeMap, AdminUser, NetworkSegment
 from app.schemas.schemas import (
     UserNasPrivilegeMapCreate,
     UserNasPrivilegeMapBulkCreate,
@@ -24,6 +26,20 @@ from app.core.limiter import limiter
 from app.services.audit import log_audit, EventCode
 
 router = APIRouter(prefix="/privilege-map", tags=["privilege-map"])
+
+
+def raise_segment_conflict(payload: UserNasPrivilegeMapCreate):
+    if (
+        payload.segment_id is not None
+        and payload.target_start_ip is None
+        and payload.target_end_ip is None
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="A base policy for this user and network segment already exists",
+        )
+
+    raise HTTPException(status_code=409, detail="Privilege map entry already exists")
 
 
 def _compute_days_until_review(review_date: Optional[datetime]) -> Optional[int]:
@@ -62,7 +78,80 @@ def _to_out(record: UserNasPrivilegeMap) -> UserNasPrivilegeMapOut:
         created_at=record.created_at,
         updated_at=record.updated_at,
         days_until_review=days,
+        segment_id=record.segment_id,
+        segment_name=record.segment.name if record.segment else None,
+        target_start_ip=record.target_start_ip,
+        target_end_ip=record.target_end_ip,
     )
+
+
+async def validate_segment_exception(
+    db: AsyncSession,
+    payload: UserNasPrivilegeMapCreate,
+    exclude_id: Optional[int] = None,
+):
+    if payload.segment_id is None:
+        return
+
+    segment_res = await db.execute(
+        select(NetworkSegment).where(NetworkSegment.id == payload.segment_id)
+    )
+    segment = segment_res.scalars().first()
+    if not segment:
+        raise HTTPException(status_code=404, detail="Network segment not found")
+
+    if payload.target_start_ip and payload.target_end_ip:
+        start_ip = ipaddress.ip_address(payload.target_start_ip)
+        end_ip = ipaddress.ip_address(payload.target_end_ip)
+        segment_net = ipaddress.ip_network(segment.cidr, strict=False)
+
+        if start_ip not in segment_net or end_ip not in segment_net:
+            raise HTTPException(
+                status_code=422,
+                detail="Exception IPs must strictly fall within the parent NetworkSegment CIDR",
+            )
+
+        stmt = select(UserNasPrivilegeMap).where(
+            and_(
+                UserNasPrivilegeMap.username == payload.username,
+                UserNasPrivilegeMap.segment_id == payload.segment_id,
+                UserNasPrivilegeMap.target_start_ip.is_not(None),
+            )
+        )
+        if exclude_id is not None:
+            stmt = stmt.where(UserNasPrivilegeMap.id != exclude_id)
+
+        existing_res = await db.execute(stmt)
+        existing = existing_res.scalars().all()
+
+        for exc in existing:
+            exc_start = ipaddress.ip_address(exc.target_start_ip)
+            exc_end = ipaddress.ip_address(exc.target_end_ip)
+            if start_ip <= exc_end and end_ip >= exc_start:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"IP range overlaps with existing exception: {exc.target_start_ip} - {exc.target_end_ip}",
+                )
+        return
+
+    stmt = select(UserNasPrivilegeMap).where(
+        and_(
+            UserNasPrivilegeMap.username == payload.username,
+            UserNasPrivilegeMap.segment_id == payload.segment_id,
+            UserNasPrivilegeMap.target_start_ip.is_(None),
+            UserNasPrivilegeMap.target_end_ip.is_(None),
+        )
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(UserNasPrivilegeMap.id != exclude_id)
+
+    existing_base_res = await db.execute(stmt)
+    existing_base = existing_base_res.scalars().first()
+    if existing_base:
+        raise HTTPException(
+            status_code=409,
+            detail="A base policy for this user and network segment already exists",
+        )
 
 
 @router.get("", response_model=list[UserNasPrivilegeMapOut])
@@ -84,7 +173,8 @@ async def list_privilege_maps(
     from app.models.models import NasCategory
 
     stmt = select(UserNasPrivilegeMap).options(
-        selectinload(UserNasPrivilegeMap.category)
+        selectinload(UserNasPrivilegeMap.category),
+        selectinload(UserNasPrivilegeMap.segment),
     )
     filters = []
 
@@ -130,6 +220,9 @@ async def create_privilege_map_bulk(
             username=payload.username,
             nas_ip=ip,
             nas_category_id=None,
+            segment_id=None,
+            target_start_ip=None,
+            target_end_ip=None,
             nas_identifier=payload.nas_identifier,
             nas_vendor=payload.nas_vendor,
             radius_group=payload.radius_group,
@@ -167,14 +260,20 @@ async def create_privilege_map_category(
     current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
 ):
     """
-    Create a single privilege mapping targeting a NAS category (not a specific IP).
+    Create a single privilege mapping targeting a NAS category or Network Segment.
     Requires admin or superadmin role.
     """
-    if payload.nas_category_id is None:
+    if (
+        payload.nas_category_id is None
+        and payload.segment_id is None
+        and payload.nas_ip is None
+    ):
         raise HTTPException(
             status_code=422,
-            detail="nas_category_id is required for category-based entries",
+            detail="A targeting method (nas_ip, nas_category_id, or segment_id) is required",
         )
+
+    await validate_segment_exception(db, payload)
 
     review_dt = (
         datetime.combine(payload.review_date, datetime.min.time())
@@ -184,8 +283,11 @@ async def create_privilege_map_category(
 
     record = UserNasPrivilegeMap(
         username=payload.username,
-        nas_ip=None,
+        nas_ip=payload.nas_ip,
         nas_category_id=payload.nas_category_id,
+        segment_id=payload.segment_id,
+        target_start_ip=payload.target_start_ip,
+        target_end_ip=payload.target_end_ip,
         nas_identifier=payload.nas_identifier,
         nas_vendor=payload.nas_vendor,
         radius_group=payload.radius_group,
@@ -196,13 +298,20 @@ async def create_privilege_map_category(
         is_active=payload.is_active,
     )
     db.add(record)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise_segment_conflict(payload)
     await db.refresh(record)
 
-    # Load category relationship for the response
+    # Load relationship for the response
     result = await db.execute(
         select(UserNasPrivilegeMap)
-        .options(selectinload(UserNasPrivilegeMap.category))
+        .options(
+            selectinload(UserNasPrivilegeMap.category),
+            selectinload(UserNasPrivilegeMap.segment),
+        )
         .where(UserNasPrivilegeMap.id == record.id)
     )
     record = result.scalars().first()
@@ -210,7 +319,7 @@ async def create_privilege_map_category(
     await log_audit(
         db,
         current_user.username,
-        "CREATE_CATEGORY",
+        "CREATE_SINGLE",
         "user_nas_privilege_map",
         payload.username,
         new_value=payload.model_dump(mode="json"),
@@ -234,12 +343,17 @@ async def update_privilege_map(
     """
     result = await db.execute(
         select(UserNasPrivilegeMap)
-        .options(selectinload(UserNasPrivilegeMap.category))
+        .options(
+            selectinload(UserNasPrivilegeMap.category),
+            selectinload(UserNasPrivilegeMap.segment),
+        )
         .where(UserNasPrivilegeMap.id == id)
     )
     record = result.scalars().first()
     if not record:
         raise HTTPException(status_code=404, detail="Privilege map entry not found")
+
+    await validate_segment_exception(db, payload, exclude_id=id)
 
     old_out = _to_out(record)
 
@@ -252,6 +366,9 @@ async def update_privilege_map(
     record.username = payload.username
     record.nas_ip = payload.nas_ip
     record.nas_category_id = payload.nas_category_id
+    record.segment_id = payload.segment_id
+    record.target_start_ip = payload.target_start_ip
+    record.target_end_ip = payload.target_end_ip
     record.nas_identifier = payload.nas_identifier
     record.nas_vendor = payload.nas_vendor
     record.radius_group = payload.radius_group
@@ -262,12 +379,19 @@ async def update_privilege_map(
     record.is_active = payload.is_active
     record.updated_at = datetime.utcnow()
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise_segment_conflict(payload)
 
     # Reload with relationship for response
     result = await db.execute(
         select(UserNasPrivilegeMap)
-        .options(selectinload(UserNasPrivilegeMap.category))
+        .options(
+            selectinload(UserNasPrivilegeMap.category),
+            selectinload(UserNasPrivilegeMap.segment),
+        )
         .where(UserNasPrivilegeMap.id == id)
     )
     record = result.scalars().first()
@@ -283,6 +407,11 @@ async def update_privilege_map(
         event_code=EventCode.ADMIN_002,
     )
     return _to_out(record)
+
+
+# Backwards-compatible aliases for modules that still import private helpers.
+_raise_segment_conflict = raise_segment_conflict
+_validate_segment_exception = validate_segment_exception
 
 
 @router.delete("/{id}")

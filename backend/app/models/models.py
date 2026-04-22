@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Enum,
     text,
+    event,
 )
 from sqlalchemy.dialects.mysql import DATETIME as MySQLDATETIME
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -271,6 +272,19 @@ class UserNasPrivilegeMap(Base):
     category: Mapped[Optional["NasCategory"]] = relationship(
         "NasCategory", foreign_keys=[nas_category_id]
     )
+    # network-segments-v1: targeting by network segment and IP ranges
+    segment_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("network_segments.id", ondelete="SET NULL"), nullable=True
+    )
+    segment: Mapped[Optional["NetworkSegment"]] = relationship(
+        "NetworkSegment", foreign_keys=[segment_id]
+    )
+    segment_target_key: Mapped[str] = mapped_column(
+        String(128), nullable=False, default=""
+    )
+    target_start_ip: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    target_end_ip: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
     nas_identifier: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     nas_vendor: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     radius_group: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -294,10 +308,61 @@ class UserNasPrivilegeMap(Base):
     __table_args__ = (
         UniqueConstraint("username", "nas_ip", name="uq_user_nas_ip"),
         UniqueConstraint("username", "nas_category_id", name="uq_user_nas_cat"),
+        UniqueConstraint(
+            "username",
+            "segment_id",
+            "segment_target_key",
+            name="uq_user_segment_target",
+        ),
+    )
+
+
+def _build_segment_target_key(
+    segment_id: Optional[int],
+    target_start_ip: Optional[str],
+    target_end_ip: Optional[str],
+) -> str:
+    if segment_id is None:
+        return ""
+
+    if target_start_ip is None and target_end_ip is None:
+        return "__base__"
+
+    return f"{target_start_ip or ''}|{target_end_ip or ''}"
+
+
+@event.listens_for(UserNasPrivilegeMap, "before_insert")
+@event.listens_for(UserNasPrivilegeMap, "before_update")
+def _sync_segment_target_key(mapper, connection, target):
+    target.segment_target_key = _build_segment_target_key(
+        target.segment_id,
+        target.target_start_ip,
+        target.target_end_ip,
     )
 
 
 # --- IAM & NAC RBAC Models ---
+
+
+class NetworkSegment(Base):
+    """Network Segments for access policy targeting."""
+
+    __tablename__ = "network_segments"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(
+        String(100), unique=True, nullable=False, index=True
+    )
+    cidr: Mapped[str] = mapped_column(String(50), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=True
+    )
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=False),
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=FetchedValue(),
+        nullable=True,
+    )
 
 
 class HardwareZone(Base):

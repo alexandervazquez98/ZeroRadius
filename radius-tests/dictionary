@@ -1,0 +1,13 @@
+ATTRIBUTE	User-Name	1	string
+ATTRIBUTE	User-Password	2	string
+ATTRIBUTE	NAS-IP-Address	4	ipaddr
+ATTRIBUTE	NAS-Port	5	integer
+ATTRIBUTE	Reply-Message	18	string
+
+VENDOR	Motorola	161
+BEGIN-VENDOR	Motorola
+ATTRIBUTE	Cambium-Canopy-HPDLCIR	222	integer
+ATTRIBUTE	Cambium-Canopy-HPULCIR	223	integer
+ATTRIBUTE	Cambium-Canopy-LPDLCIR	220	integer
+ATTRIBUTE	Cambium-Canopy-LPULCIR	221	integer
+END-VENDOR	Motorola

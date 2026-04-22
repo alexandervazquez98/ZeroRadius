@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     Shield, Plus, Trash2, Edit2, X, AlertTriangle, Clock,
-    Server, User, CheckCircle, ChevronRight, Search, Tag,
+    Server, User, CheckCircle, ChevronRight, Search, Tag, Map, HelpCircle
 } from 'lucide-react';
 import dayjs from 'dayjs';
 import api from '../api';
@@ -10,10 +10,11 @@ import { useAuth } from '../context/AuthContext';
 import PrivilegeMapService from '../services/privilegeMapService';
 import GroupsService from '../services/groups';
 import NasCategoriesService from '../services/nasCategoriesService';
+import NetworkSegmentsService from '../services/networkSegments';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const ReviewBadge = ({ reviewDate }) => {
+export const ReviewBadge = ({ reviewDate }) => {
     if (!reviewDate) return null;
     const daysUntil = dayjs(reviewDate).diff(dayjs(), 'day');
     if (daysUntil < 0)
@@ -43,8 +44,11 @@ const vendorBadge = (vendor) => {
 
 const EMPTY_FORM = {
     username: '',
-    mapping_mode: 'ip',        // 'ip' | 'category'
-    nas_category_id: null,     // set when mapping_mode === 'category'
+    mapping_mode: 'segment', // 'segment' | 'ip_range' | 'category' | 'ip'
+    segment_id: null,
+    target_start_ip: '',
+    target_end_ip: '',
+    nas_category_id: null,
     nas_ips: [],
     nas_ip: '',
     nas_vendor: '',
@@ -72,6 +76,7 @@ const PrivilegeMapPage = () => {
     const [form,          setForm]          = useState(EMPTY_FORM);
     const [deleteTarget,  setDeleteTarget]  = useState(null);
     const [nasSearchTerm, setNasSearchTerm] = useState('');
+    const [showAdvanced,  setShowAdvanced]  = useState(false);
 
     // ── Data ──────────────────────────────────────────────────────────────────
 
@@ -100,9 +105,13 @@ const PrivilegeMapPage = () => {
         queryFn: NasCategoriesService.getAll,
     });
 
+    const { data: segmentsList = [] } = useQuery({
+        queryKey: ['network-segments'],
+        queryFn: NetworkSegmentsService.getAll,
+    });
+
     // ── Derived state ─────────────────────────────────────────────────────────
 
-    // Group all mappings by username for the left panel
     const userGroups = useMemo(() => {
         const map = {};
         allMappings.forEach(m => {
@@ -145,8 +154,8 @@ const PrivilegeMapPage = () => {
         onSuccess: () => { invalidate(); closeModal(); },
     });
 
-    const createCategoryMutation = useMutation({
-        mutationFn: (data) => PrivilegeMapService.createCategory(data),
+    const createSingleMutation = useMutation({
+        mutationFn: PrivilegeMapService.createCategory, // This endpoint handles all single creations
         onSuccess: () => { invalidate(); closeModal(); },
     });
 
@@ -165,6 +174,7 @@ const PrivilegeMapPage = () => {
     const openCreate = (preselectedUser = null) => {
         setEditItem(null);
         setNasSearchTerm('');
+        setShowAdvanced(false);
         setForm({ ...EMPTY_FORM, nas_ips: [], username: preselectedUser || '', approved_by: user?.sub || '' });
         setShowModal(true);
     };
@@ -172,9 +182,18 @@ const PrivilegeMapPage = () => {
     const openEdit = (item) => {
         setEditItem(item);
         setNasSearchTerm('');
+        let mode = 'ip';
+        if (item.segment_id) mode = item.target_start_ip ? 'ip_range' : 'segment';
+        else if (item.nas_category_id) mode = 'category';
+        
+        setShowAdvanced(mode === 'category');
+        
         setForm({
             username: item.username,
-            mapping_mode: item.nas_category_id ? 'category' : 'ip',
+            mapping_mode: mode,
+            segment_id: item.segment_id || null,
+            target_start_ip: item.target_start_ip || '',
+            target_end_ip: item.target_end_ip || '',
             nas_category_id: item.nas_category_id || null,
             nas_ip: item.nas_ip || '',
             nas_ips: [],
@@ -193,32 +212,39 @@ const PrivilegeMapPage = () => {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (editItem) {
-            // Edit: unified PUT handles both IP and category rows
-            const payload = { ...form, review_date: form.review_date || null };
-            delete payload.nas_ips;
-            delete payload.mapping_mode;
-            updateMutation.mutate({ id: editItem.id, data: payload });
+        
+        const payload = {
+            username: form.username,
+            radius_group: form.radius_group,
+            privilege_level: form.privilege_level || undefined,
+            justification: form.justification || undefined,
+            approved_by: form.approved_by,
+            review_date: form.review_date || null,
+            is_active: form.is_active,
+            nas_vendor: form.nas_vendor || undefined,
+        };
+
+        if (form.mapping_mode === 'segment') {
+            payload.segment_id = form.segment_id;
+        } else if (form.mapping_mode === 'ip_range') {
+            payload.segment_id = form.segment_id;
+            payload.target_start_ip = form.target_start_ip;
+            payload.target_end_ip = form.target_end_ip || form.target_start_ip; // single IP if end is empty
         } else if (form.mapping_mode === 'category') {
-            // Category-based create — single entry, no IP list
-            createCategoryMutation.mutate({
-                username: form.username,
-                nas_category_id: form.nas_category_id,
-                nas_vendor: form.nas_vendor || undefined,
-                radius_group: form.radius_group,
-                privilege_level: form.privilege_level || undefined,
-                justification: form.justification || undefined,
-                approved_by: form.approved_by,
-                review_date: form.review_date || null,
-                is_active: form.is_active,
-            });
+            payload.nas_category_id = form.nas_category_id;
+        } else if (form.mapping_mode === 'ip' && editItem) {
+            payload.nas_ip = form.nas_ip;
+        }
+
+        if (editItem) {
+            updateMutation.mutate({ id: editItem.id, data: payload });
+        } else if (form.mapping_mode === 'ip') {
+            // Bulk IP creation
+            const bulkPayload = { ...payload, nas_ips: form.nas_ips };
+            createMutation.mutate(bulkPayload);
         } else {
-            // IP-based bulk create
-            const payload = { ...form, review_date: form.review_date || null };
-            delete payload.nas_ip;
-            delete payload.nas_category_id;
-            delete payload.mapping_mode;
-            createMutation.mutate(payload);
+            // Single creation (Segment, Exception, Category)
+            createSingleMutation.mutate(payload);
         }
     };
 
@@ -243,7 +269,6 @@ const PrivilegeMapPage = () => {
         });
     };
 
-    const isMutating = createMutation.isPending || updateMutation.isPending || createCategoryMutation.isPending;
     const isUsernameLocked = editItem !== null || (selectedUser !== null && form.username === selectedUser);
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -256,10 +281,10 @@ const PrivilegeMapPage = () => {
                 <div>
                     <h2 className="text-3xl font-extrabold text-slate-800 tracking-tight flex items-center gap-3">
                         <Shield className="text-indigo-600" size={32} />
-                        Privilege Map
+                        Access Policies
                     </h2>
                     <p className="text-slate-500 mt-1 uppercase text-[10px] font-black tracking-widest opacity-60">
-                        User–NAS Authorization Matrix
+                        Manage User Authorization per Segment and Device
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -272,7 +297,7 @@ const PrivilegeMapPage = () => {
                         <span className="w-px h-4 bg-slate-200" />
                         <span className="flex items-center gap-1.5">
                             <Server size={13} className="text-indigo-400" />
-                            {allMappings.length} Mappings
+                            {allMappings.length} Policies
                         </span>
                         {totalOverdue > 0 && (
                             <>
@@ -288,7 +313,7 @@ const PrivilegeMapPage = () => {
                             onClick={() => openCreate(selectedUser)}
                             className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-black text-xs hover:bg-indigo-700 transition-colors shadow-sm"
                         >
-                            <Plus size={16} /> Add Mapping
+                            <Plus size={16} /> Add Policy
                         </button>
                     )}
                 </div>
@@ -321,7 +346,7 @@ const PrivilegeMapPage = () => {
                         ) : filteredUsers.length === 0 ? (
                             <div className="text-center py-10 text-slate-400">
                                 <User size={32} className="mx-auto mb-2 opacity-40" />
-                                <p className="text-xs font-bold">No users with mappings</p>
+                                <p className="text-xs font-bold">No users with policies</p>
                             </div>
                         ) : (
                             filteredUsers.map(username => {
@@ -348,7 +373,7 @@ const PrivilegeMapPage = () => {
                                                 {username}
                                             </div>
                                             <div className={`text-[10px] mt-0.5 font-bold ${isSelected ? 'text-white/70' : 'text-slate-400'}`}>
-                                                {stats.total} NAS · {stats.active} active
+                                                {stats.total} Policies · {stats.active} active
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -377,7 +402,7 @@ const PrivilegeMapPage = () => {
                             </div>
                             <div className="text-center">
                                 <p className="text-lg font-black text-slate-600">Select a user</p>
-                                <p className="text-sm text-slate-400 mt-1">Choose a user from the left panel to view their NAS mappings</p>
+                                <p className="text-sm text-slate-400 mt-1">Choose a user from the left panel to view their Access Policies</p>
                             </div>
                         </div>
                     ) : (
@@ -391,7 +416,7 @@ const PrivilegeMapPage = () => {
                                     <div>
                                         <h3 className="text-xl font-black text-slate-800">{selectedUser}</h3>
                                         <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-0.5">
-                                            {selectedMappings.length} NAS mapping{selectedMappings.length !== 1 ? 's' : ''} &nbsp;·&nbsp;
+                                            {selectedMappings.length} Polic{selectedMappings.length !== 1 ? 'ies' : 'y'} &nbsp;·&nbsp;
                                             {selectedMappings.filter(m => m.is_active).length} active
                                         </p>
                                     </div>
@@ -401,7 +426,7 @@ const PrivilegeMapPage = () => {
                                         onClick={() => openCreate(selectedUser)}
                                         className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl font-black text-xs hover:bg-indigo-700 transition-colors shadow-sm"
                                     >
-                                        <Plus size={15} /> Add NAS
+                                        <Plus size={15} /> Add Policy
                                     </button>
                                 )}
                             </div>
@@ -411,13 +436,13 @@ const PrivilegeMapPage = () => {
                                 {selectedMappings.length === 0 ? (
                                     <div className="text-center py-16 opacity-50">
                                         <Server size={40} className="mx-auto mb-3 text-slate-400" />
-                                        <p className="font-black text-slate-500">No NAS mappings for this user</p>
+                                        <p className="font-black text-slate-500">No policies for this user</p>
                                         {canWrite && (
                                             <button
                                                 onClick={() => openCreate(selectedUser)}
                                                 className="mt-3 text-sm text-indigo-600 font-bold hover:underline"
                                             >
-                                                + Add first mapping
+                                                + Create first policy
                                             </button>
                                         )}
                                     </div>
@@ -426,7 +451,7 @@ const PrivilegeMapPage = () => {
                                         <table className="min-w-full divide-y divide-slate-100">
                                             <thead className="bg-slate-50">
                                                 <tr>
-                                                    <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">NAS Target</th>
+                                                    <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Target</th>
                                                     <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Vendor</th>
                                                     <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">RADIUS Group</th>
                                                     <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Priv Level</th>
@@ -440,22 +465,38 @@ const PrivilegeMapPage = () => {
                                             <tbody className="divide-y divide-slate-100">
                                                 {selectedMappings.map(item => (
                                                     <tr key={item.id} className="hover:bg-slate-50/70 transition-colors group">
-                                                                                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                             <div className="flex items-center gap-2">
-                                                                 {item.nas_category_id ? (
-                                                                     <>
+                                                         <td className="px-6 py-4 whitespace-nowrap">
+                                                             <div className="flex flex-col gap-1">
+                                                                 {item.segment_id ? (
+                                                                     <div className="flex items-center gap-2">
+                                                                         <Map size={14} className="text-indigo-500 flex-shrink-0" />
+                                                                         <span className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded">
+                                                                             {item.segment_name || `Segment #${item.segment_id}`}
+                                                                         </span>
+                                                                     </div>
+                                                                 ) : item.nas_category_id ? (
+                                                                     <div className="flex items-center gap-2">
                                                                          <Tag size={13} className="text-violet-400 flex-shrink-0" />
                                                                          <span className="text-xs font-bold text-violet-700 bg-violet-50 border border-violet-100 px-2 py-1 rounded">
                                                                              {item.nas_category_name || `Category #${item.nas_category_id}`}
                                                                          </span>
-                                                                     </>
+                                                                     </div>
                                                                  ) : (
-                                                                     <>
+                                                                     <div className="flex items-center gap-2">
                                                                          <Server size={14} className="text-slate-400 flex-shrink-0" />
                                                                          <span className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded">
                                                                              {item.nas_ip}
                                                                          </span>
-                                                                     </>
+                                                                     </div>
+                                                                 )}
+                                                                 
+                                                                 {/* Sub-target for Exceptions */}
+                                                                 {item.target_start_ip && (
+                                                                     <div className="flex items-center gap-1 pl-6">
+                                                                         <span className="text-[10px] text-slate-400 font-mono">
+                                                                             {item.target_start_ip} {item.target_end_ip && item.target_end_ip !== item.target_start_ip ? `- ${item.target_end_ip}` : ''}
+                                                                         </span>
+                                                                     </div>
                                                                  )}
                                                              </div>
                                                              {item.nas_identifier && (
@@ -512,7 +553,11 @@ const PrivilegeMapPage = () => {
                                                                     )}
                                                                     {canDelete && (
                                                                         <button
-                                                                            onClick={() => setDeleteTarget(item)}
+                                                                            onClick={() => {
+                                                                                if (window.confirm('Delete this policy?')) {
+                                                                                    deleteMutation.mutate(item.id);
+                                                                                }
+                                                                            }}
                                                                             className="p-2 text-slate-400 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 rounded-lg transition-colors"
                                                                             title="Delete"
                                                                         >
@@ -537,21 +582,21 @@ const PrivilegeMapPage = () => {
             {/* ── Modal: Create / Edit ── */}
             {showModal && (
                 <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden">
+                    <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden">
                         <div className="p-8 bg-slate-50 border-b flex justify-between items-center">
                             <h3 className="text-xl font-black text-slate-800">
                                 {editItem
-                                    ? 'Edit NAS Mapping'
-                                    : `Add Mapping${form.username ? ` for ${form.username}` : ''}`}
+                                    ? 'Edit Policy'
+                                    : `New Policy${form.username ? ` for ${form.username}` : ''}`}
                             </h3>
                             <button onClick={closeModal} className="p-3 hover:bg-slate-200 rounded-full transition-colors text-slate-500">
                                 <X size={20} />
                             </button>
                         </div>
-                        <form onSubmit={handleSubmit} className="p-8 space-y-5 max-h-[70vh] overflow-y-auto">
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                {/* Left: username + NAS selection */}
-                                <div className="space-y-4">
+                        <form onSubmit={handleSubmit} className="p-8 space-y-5 max-h-[75vh] overflow-y-auto">
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                {/* Left: Target Selection */}
+                                <div className="space-y-5">
                                     <div>
                                         <label htmlFor="pm-username" className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Username *</label>
                                         <select
@@ -572,46 +617,67 @@ const PrivilegeMapPage = () => {
                                     <div>
                                         <label className="flex items-center justify-between text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
                                             {editItem ? (
-                                                <span>NAS Target</span>
+                                                <span>Target</span>
                                             ) : (
-                                                <>
-                                                    <span>NAS Target *</span>
-                                                    <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setForm(f => ({ ...f, mapping_mode: 'ip', nas_category_id: null }))}
-                                                            className={`px-3 py-1 rounded-md text-[10px] font-black transition-colors normal-case tracking-normal ${
-                                                                form.mapping_mode === 'ip' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                                                            }`}
-                                                        >
-                                                            Specific IPs
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setForm(f => ({ ...f, mapping_mode: 'category', nas_ips: [] }))}
-                                                            className={`px-3 py-1 rounded-md text-[10px] font-black transition-colors normal-case tracking-normal ${
-                                                                form.mapping_mode === 'category' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                                                            }`}
-                                                        >
-                                                            By Category
-                                                        </button>
-                                                    </div>
-                                                </>
-                                            )}
-                                            {!editItem && form.mapping_mode === 'ip' && (
-                                                <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{form.nas_ips.length} selected</span>
+                                                <span>Target Mode *</span>
                                             )}
                                         </label>
 
+                                        {!editItem && (
+                                            <div className="grid grid-cols-2 gap-2 mb-3">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setForm(f => ({ ...f, mapping_mode: 'segment', nas_category_id: null, nas_ips: [] }))}
+                                                    className={`px-3 py-2 border rounded-xl text-xs font-bold transition-colors ${
+                                                        form.mapping_mode === 'segment' ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-50'
+                                                    }`}
+                                                >
+                                                    Network Segment
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setForm(f => ({ ...f, mapping_mode: 'ip_range', nas_category_id: null, nas_ips: [] }))}
+                                                    className={`px-3 py-2 border rounded-xl text-xs font-bold transition-colors ${
+                                                        form.mapping_mode === 'ip_range' ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-50'
+                                                    }`}
+                                                >
+                                                    IP or Range (Exception)
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setForm(f => ({ ...f, mapping_mode: 'ip', nas_category_id: null }))}
+                                                    className={`col-span-2 px-3 py-2 border rounded-xl text-xs font-bold transition-colors ${
+                                                        form.mapping_mode === 'ip' ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-50'
+                                                    }`}
+                                                >
+                                                    Specific NAS / IPs (Legacy)
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {/* Target Content */}
                                         {editItem ? (
-                                            /* Edit mode: show current target (IP or category) as read-only */
-                                            editItem.nas_category_id ? (
-                                                <div className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-xl bg-slate-50">
+                                            /* Edit mode read-only target display */
+                                            form.mapping_mode === 'segment' || form.mapping_mode === 'ip_range' ? (
+                                                <div className="p-4 border border-slate-200 rounded-xl bg-slate-50">
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <Map size={14} className="text-indigo-500" />
+                                                        <span className="text-sm font-bold text-slate-700">
+                                                            {segmentsList.find(s => s.id === form.segment_id)?.name || `Segment #${form.segment_id}`}
+                                                        </span>
+                                                    </div>
+                                                    {form.mapping_mode === 'ip_range' && (
+                                                        <div className="text-xs font-mono text-slate-500 pl-6">
+                                                            Exception: {form.target_start_ip} {form.target_end_ip && form.target_end_ip !== form.target_start_ip ? `- ${form.target_end_ip}` : ''}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ) : form.mapping_mode === 'category' ? (
+                                                <div className="flex items-center gap-2 px-4 py-3 border border-slate-200 rounded-xl bg-slate-50">
                                                     <Tag size={13} className="text-violet-400" />
                                                     <span className="text-sm font-bold text-violet-700">
-                                                        {editItem.nas_category_name || `Category #${editItem.nas_category_id}`}
+                                                        {categoriesList.find(c => c.id === form.nas_category_id)?.name || `Category #${form.nas_category_id}`}
                                                     </span>
-                                                    <span className="text-xs text-slate-400 ml-1">(category rule)</span>
                                                 </div>
                                             ) : (
                                                 <input
@@ -620,100 +686,143 @@ const PrivilegeMapPage = () => {
                                                     disabled
                                                 />
                                             )
-                                        ) : form.mapping_mode === 'category' ? (
-                                            /* Category selector */
-                                            <select
-                                                id="pm-category"
-                                                required
-                                                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-violet-500 text-sm bg-white"
-                                                value={form.nas_category_id || ''}
-                                                onChange={e => setForm(f => ({ ...f, nas_category_id: e.target.value ? parseInt(e.target.value, 10) : null }))}
-                                            >
-                                                <option value="">-- Select Category --</option>
-                                                {categoriesList.map(c => (
-                                                    <option key={c.id} value={c.id}>
-                                                        {c.name} ({c.criticality})
-                                                    </option>
-                                                ))}
-                                            </select>
                                         ) : (
-                                            /* IP multi-select list */
-                                            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white flex flex-col h-64">
-                                                <div className="p-2 border-b border-slate-100 bg-slate-50">
-                                                    <input
-                                                        type="text"
-                                                        placeholder="Search by IP or Shortname..."
-                                                        className="w-full px-3 py-1.5 text-sm bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-500"
-                                                        value={nasSearchTerm}
-                                                        onChange={e => setNasSearchTerm(e.target.value)}
-                                                    />
-                                                </div>
-                                                {filteredNasList.length > 0 && (
-                                                    <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                                                        <span className="text-xs text-slate-500 font-medium">Select devices:</span>
-                                                        <button type="button" onClick={toggleSelectAllFiltered} className="text-xs font-bold text-indigo-600 hover:text-indigo-700">
-                                                            Toggle All
-                                                        </button>
+                                            /* Create Mode Inputs */
+                                            <div className="space-y-3">
+                                                {(form.mapping_mode === 'segment' || form.mapping_mode === 'ip_range') && (
+                                                    <select
+                                                        required
+                                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white"
+                                                        value={form.segment_id || ''}
+                                                        onChange={e => setForm(f => ({ ...f, segment_id: e.target.value ? parseInt(e.target.value, 10) : null }))}
+                                                    >
+                                                        <option value="">-- Select Parent Segment --</option>
+                                                        {segmentsList.map(s => (
+                                                            <option key={s.id} value={s.id}>{s.name} ({s.cidr})</option>
+                                                        ))}
+                                                    </select>
+                                                )}
+
+                                                {form.mapping_mode === 'ip_range' && (
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div>
+                                                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Start IP / Single IP</label>
+                                                            <input
+                                                                required
+                                                                placeholder="e.g. 10.0.1.50"
+                                                                className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono"
+                                                                value={form.target_start_ip}
+                                                                onChange={e => setForm(f => ({ ...f, target_start_ip: e.target.value }))}
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">End IP (optional)</label>
+                                                            <input
+                                                                placeholder="e.g. 10.0.1.60"
+                                                                className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono"
+                                                                value={form.target_end_ip}
+                                                                onChange={e => setForm(f => ({ ...f, target_end_ip: e.target.value }))}
+                                                            />
+                                                        </div>
                                                     </div>
                                                 )}
-                                                <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                                                    {filteredNasList.length === 0 ? (
-                                                        <div className="text-center py-4 text-sm text-slate-400">No NAS matched</div>
-                                                    ) : (
-                                                        filteredNasList.map(n => (
-                                                            <label key={n.nasname} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded-lg cursor-pointer border border-transparent hover:border-slate-200 transition-colors">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={form.nas_ips.includes(n.nasname)}
-                                                                    onChange={() => toggleNasSelection(n.nasname, n.type)}
-                                                                    className="w-4 h-4 rounded accent-indigo-600"
-                                                                />
-                                                                <div className="flex flex-col">
-                                                                    <span className="text-sm font-mono font-bold text-slate-700">{n.nasname}</span>
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <span className="text-xs text-slate-500">{n.shortname || 'Unnamed'} · {n.type}</span>
-                                                                        {n.category_name && (
-                                                                            <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-600">
-                                                                                {n.category_name}
-                                                                            </span>
-                                                                        )}
+
+                                                {form.mapping_mode === 'ip' && (
+                                                    <div className="border border-slate-200 rounded-xl overflow-hidden bg-white flex flex-col h-64">
+                                                        <div className="p-2 border-b border-slate-100 bg-slate-50">
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Search by IP or Shortname..."
+                                                                className="w-full px-3 py-1.5 text-sm bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-500"
+                                                                value={nasSearchTerm}
+                                                                onChange={e => setNasSearchTerm(e.target.value)}
+                                                            />
+                                                        </div>
+                                                        {filteredNasList.length > 0 && (
+                                                            <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                                                                <span className="text-xs text-slate-500 font-medium">Selected: {form.nas_ips.length}</span>
+                                                                <button type="button" onClick={toggleSelectAllFiltered} className="text-xs font-bold text-indigo-600 hover:text-indigo-700">
+                                                                    Toggle All Filtered
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                                                            {filteredNasList.map(n => (
+                                                                <label key={n.nasname} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded-lg cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={form.nas_ips.includes(n.nasname)}
+                                                                        onChange={() => toggleNasSelection(n.nasname, n.type)}
+                                                                        className="w-4 h-4 rounded accent-indigo-600"
+                                                                    />
+                                                                    <div className="flex flex-col">
+                                                                        <span className="text-sm font-mono font-bold text-slate-700">{n.nasname}</span>
+                                                                        <span className="text-xs text-slate-500">{n.shortname || 'Unnamed'}</span>
                                                                     </div>
-                                                                </div>
-                                                            </label>
-                                                        ))
-                                                    )}
-                                                </div>
+                                                                </label>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                
+                                                {form.mapping_mode === 'category' && (
+                                                    <select
+                                                        required
+                                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-violet-500 text-sm bg-white"
+                                                        value={form.nas_category_id || ''}
+                                                        onChange={e => setForm(f => ({ ...f, nas_category_id: e.target.value ? parseInt(e.target.value, 10) : null }))}
+                                                    >
+                                                        <option value="">-- Select Category --</option>
+                                                        {categoriesList.map(c => (
+                                                            <option key={c.id} value={c.id}>{c.name}</option>
+                                                        ))}
+                                                    </select>
+                                                )}
                                             </div>
                                         )}
                                     </div>
+
+                                    {!editItem && (
+                                        <div className="pt-2">
+                                            <button 
+                                                type="button" 
+                                                onClick={() => setShowAdvanced(!showAdvanced)}
+                                                className="text-xs font-bold text-slate-400 hover:text-slate-600 flex items-center gap-1"
+                                            >
+                                                <HelpCircle size={12} /> 
+                                                {showAdvanced ? 'Hide advanced targets' : 'Advanced / Legacy Compatibility'}
+                                            </button>
+                                            
+                                            {showAdvanced && form.mapping_mode !== 'category' && (
+                                                <div className="mt-3 p-3 border border-dashed border-slate-300 rounded-xl bg-slate-50">
+                                                    <p className="text-xs text-slate-500 mb-2">Targeting by Legacy Categories</p>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setForm(f => ({ ...f, mapping_mode: 'category', nas_ips: [] }))}
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-bold bg-white text-slate-600 hover:bg-slate-100"
+                                                    >
+                                                        Switch to Category Target
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
 
-                                {/* Right: details */}
+                                {/* Right: Policy Rules & Metadata */}
                                 <div className="space-y-4">
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">NAS Vendor</label>
-                                            <input
-                                                type="text"
-                                                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
-                                                value={form.nas_vendor}
-                                                disabled
-                                                placeholder={editItem ? '' : 'Auto-filled'}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label htmlFor="pm-radius-group" className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">RADIUS Group *</label>
-                                            <select
-                                                id="pm-radius-group"
-                                                required
-                                                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white"
-                                                value={form.radius_group}
-                                                onChange={e => setForm(f => ({ ...f, radius_group: e.target.value }))}
-                                            >
-                                                <option value="">-- Select Group --</option>
-                                                {groupsList.map(g => <option key={g} value={g}>{g}</option>)}
-                                            </select>
-                                        </div>
+                                    <div>
+                                        <label htmlFor="pm-radius-group" className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">RADIUS Group (Policy) *</label>
+                                        <select
+                                            id="pm-radius-group"
+                                            required
+                                            className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white"
+                                            value={form.radius_group}
+                                            onChange={e => setForm(f => ({ ...f, radius_group: e.target.value }))}
+                                        >
+                                            <option value="">-- Select Policy Group --</option>
+                                            {groupsList.map(g => <option key={g} value={g}>{g}</option>)}
+                                        </select>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-4">
@@ -737,18 +846,30 @@ const PrivilegeMapPage = () => {
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label htmlFor="pm-approved-by" className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Approved By *</label>
-                                            <input
-                                                id="pm-approved-by"
-                                                required
-                                                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                                                value={form.approved_by}
-                                                onChange={e => setForm(f => ({ ...f, approved_by: e.target.value }))}
-                                            />
-                                        </div>
-                                        <div className="flex items-center gap-3 mt-8">
+                                    <div>
+                                        <label htmlFor="pm-approved-by" className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Approved By *</label>
+                                        <input
+                                            id="pm-approved-by"
+                                            required
+                                            className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                            value={form.approved_by}
+                                            onChange={e => setForm(f => ({ ...f, approved_by: e.target.value }))}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Justification</label>
+                                        <textarea
+                                            className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm resize-none"
+                                            rows={2}
+                                            value={form.justification}
+                                            onChange={e => setForm(f => ({ ...f, justification: e.target.value }))}
+                                            placeholder="Reason for this access policy..."
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center justify-between pt-2">
+                                        <div className="flex items-center gap-3">
                                             <input
                                                 type="checkbox"
                                                 id="is_active"
@@ -756,86 +877,29 @@ const PrivilegeMapPage = () => {
                                                 onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))}
                                                 className="w-4 h-4 rounded accent-indigo-600"
                                             />
-                                            <label htmlFor="is_active" className="text-sm font-bold text-slate-700">Active</label>
+                                            <label htmlFor="is_active" className="text-sm font-bold text-slate-700">Policy is Active</label>
                                         </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Justification</label>
-                                        <textarea
-                                            rows={2}
-                                            className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm resize-none"
-                                            value={form.justification}
-                                            onChange={e => setForm(f => ({ ...f, justification: e.target.value }))}
-                                            placeholder="Business justification..."
-                                        />
                                     </div>
                                 </div>
                             </div>
-
-                            {(createMutation.isError || updateMutation.isError || createCategoryMutation.isError) && (
-                                <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-sm text-rose-700 font-semibold">
-                                    {createCategoryMutation.error?.response?.data?.detail ||
-                                        createMutation.error?.response?.data?.detail ||
-                                        updateMutation.error?.response?.data?.detail ||
-                                        'Error saving mapping. Please try again.'}
-                                </div>
-                            )}
-
-                            <div className="flex gap-3 pt-2">
-                                <button
-                                    type="submit"
-                                    disabled={isMutating}
-                                    className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-black text-sm hover:bg-indigo-700 transition-colors disabled:opacity-50"
-                                >
-                                    {isMutating ? 'Saving...' : editItem ? 'Save Changes' : 'Create Mapping'}
-                                </button>
+                            
+                            <div className="flex justify-end gap-3 pt-6 border-t border-slate-100">
                                 <button
                                     type="button"
                                     onClick={closeModal}
-                                    className="px-6 py-3 border border-slate-200 text-slate-600 rounded-xl font-black text-sm hover:bg-slate-50 transition-colors"
+                                    className="px-6 py-2.5 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors"
                                 >
                                     Cancel
                                 </button>
+                                <button
+                                    type="submit"
+                                    disabled={createMutation.isPending || updateMutation.isPending || createSingleMutation.isPending}
+                                    className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-black hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                                >
+                                    {createMutation.isPending || updateMutation.isPending || createSingleMutation.isPending ? 'Saving...' : 'Save Policy'}
+                                </button>
                             </div>
                         </form>
-                    </div>
-                </div>
-            )}
-
-            {/* ── Delete confirmation ── */}
-            {deleteTarget && (
-                <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-8 text-center space-y-6">
-                        <div className="p-5 bg-rose-100 rounded-full w-fit mx-auto">
-                            <Trash2 className="text-rose-600" size={32} />
-                        </div>
-                        <div>
-                            <h3 className="text-xl font-black text-slate-800">Delete Mapping?</h3>
-                            <p className="text-sm text-slate-500 mt-2">
-                                Remove{' '}
-                                {deleteTarget.nas_category_id
-                                    ? <><span className="font-bold text-violet-700">{deleteTarget.nas_category_name || `Category #${deleteTarget.nas_category_id}`}</span>{' '}(category rule)</>                                        
-                                    : <span className="font-mono font-bold text-slate-800">{deleteTarget.nas_ip}</span>}{' '}
-                                from <span className="font-bold text-slate-800">{deleteTarget.username}</span>?{' '}
-                                This action cannot be undone.
-                            </p>
-                        </div>
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => deleteMutation.mutate(deleteTarget.id)}
-                                disabled={deleteMutation.isPending}
-                                className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-black text-sm hover:bg-rose-700 transition-colors disabled:opacity-50"
-                            >
-                                {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
-                            </button>
-                            <button
-                                onClick={() => setDeleteTarget(null)}
-                                className="flex-1 py-3 border border-slate-200 text-slate-600 rounded-xl font-black text-sm hover:bg-slate-50 transition-colors"
-                            >
-                                Cancel
-                            </button>
-                        </div>
                     </div>
                 </div>
             )}
@@ -843,5 +907,4 @@ const PrivilegeMapPage = () => {
     );
 };
 
-export { ReviewBadge };
 export default PrivilegeMapPage;
