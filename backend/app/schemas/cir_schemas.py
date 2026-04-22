@@ -1,10 +1,15 @@
 from __future__ import annotations
+
 import re
-from typing import Optional
-from pydantic import BaseModel, field_validator
-from .schemas import UserNasPrivilegeMapCreate, UserNasPrivilegeMapOut
+from typing import List, Optional
+
+from pydantic import BaseModel, ConfigDict, field_validator
+
+# We use absolute imports to prevent circular issues with relative ones
+from app.schemas.schemas import UserNasPrivilegeMapCreate, UserNasPrivilegeMapOut
 
 _CIR_RATE_PATTERN = re.compile(r"^\d+$")
+
 
 class CIRProfilePayload(BaseModel):
     name: str
@@ -33,8 +38,11 @@ class CIRProfilePayload(BaseModel):
             raise ValueError("rate must be numeric")
         return value
 
+
 class CIRProfileOut(CIRProfilePayload):
     groupname: str
+    model_config = ConfigDict(from_attributes=True)
+
 
 class CIRAssignmentPayload(UserNasPrivilegeMapCreate):
     @field_validator("radius_group")
@@ -47,18 +55,26 @@ class CIRAssignmentPayload(UserNasPrivilegeMapCreate):
             raise ValueError("radius_group must start with cir_")
         return value
 
+
 class CIRPreviewRequest(BaseModel):
     username: str
     nas_ip: str
     calling_station_id: Optional[str] = None
+
 
 class CIRResolutionTraceItem(BaseModel):
     step: str
     matched: bool
     detail: Optional[str] = None
 
+
 class CIRPreviewResponse(BaseModel):
     resolution_path: str
     mapping: Optional[UserNasPrivilegeMapOut] = None
     profile: Optional[CIRProfileOut] = None
-    trace: list[CIRResolutionTraceItem]
+    trace: List[CIRResolutionTraceItem]
+
+
+# Rebuild models explicitly
+CIRPreviewResponse.model_rebuild()
+CIRAssignmentPayload.model_rebuild()

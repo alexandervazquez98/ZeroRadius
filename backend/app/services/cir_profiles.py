@@ -1,95 +1,14 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Iterable, Optional, List
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel, ConfigDict, field_validator
-import re
-import ipaddress
 
 from app.models.models import RadGroupReply
-from app.schemas.schemas import UserNasPrivilegeMapCreate, UserNasPrivilegeMapOut
+from app.schemas.cir_schemas import CIRProfileOut, CIRProfilePayload
 
 CIR_GROUP_PREFIX = "cir_"
-_CIR_RATE_PATTERN = re.compile(r"^\d+$")
-
-class CIRProfilePayload(BaseModel):
-    name: str
-    downlink_high: str
-    uplink_high: str
-    downlink_low: str
-    uplink_low: str
-
-    @field_validator("name")
-    @classmethod
-    def validate_name(cls, v: str) -> str:
-        value = (v or "").strip()
-        if not value:
-            raise ValueError("name is required")
-        return value
-
-    @field_validator("downlink_high", "uplink_high", "downlink_low", "uplink_low", mode="before")
-    @classmethod
-    def validate_rate(cls, v: str) -> str:
-        value = str(v or "").strip()
-        if not value:
-            raise ValueError("rate value is required")
-        if not _CIR_RATE_PATTERN.match(value):
-            raise ValueError("rate must be numeric")
-        return value
-
-class CIRProfileOut(CIRProfilePayload):
-    groupname: str
-    model_config = ConfigDict(from_attributes=True)
-
-class CIRAssignmentPayload(UserNasPrivilegeMapCreate):
-    @field_validator("radius_group")
-    @classmethod
-    def validate_radius_group(cls, v: str) -> str:
-        value = (v or "").strip()
-        if not value:
-            raise ValueError("radius_group is required")
-        if not value.startswith("cir_"):
-            raise ValueError("radius_group must start with cir_")
-        return value
-
-class CIRPreviewRequest(BaseModel):
-    username: str
-    nas_ip: str
-    calling_station_id: Optional[str] = None
-
-    @field_validator("username")
-    @classmethod
-    def validate_username(cls, v: str) -> str:
-        value = (v or "").strip()
-        if not value:
-            raise ValueError("username is required")
-        return value
-
-    @field_validator("nas_ip")
-    @classmethod
-    def validate_nas_ip(cls, v: str) -> str:
-        try:
-            ip = ipaddress.ip_address(v)
-            if not isinstance(ip, ipaddress.IPv4Address):
-                raise ValueError("nas_ip must be IPv4 only")
-            return str(ip)
-        except ValueError:
-            raise ValueError("nas_ip must be a valid IPv4 address")
-
-class CIRResolutionTraceItem(BaseModel):
-    step: str
-    matched: bool
-    detail: Optional[str] = None
-
-class CIRPreviewResponse(BaseModel):
-    resolution_path: str
-    mapping: Optional[UserNasPrivilegeMapOut] = None
-    profile: Optional[CIRProfileOut] = None
-    trace: List[CIRResolutionTraceItem]
-
 
 # Keep this whitelist in sync with radius/policy.d/nas_based_authorization
 CIR_ATTRIBUTE_MAP: dict[str, str] = {
@@ -107,7 +26,7 @@ def is_cir_group(groupname: str) -> bool:
 async def get_profile(db: AsyncSession, groupname: str) -> CIRProfileOut | None:
     if not is_cir_group(groupname):
         return None
-        
+
     result = await db.execute(
         select(RadGroupReply).where(RadGroupReply.groupname == groupname)
     )
@@ -175,7 +94,3 @@ async def delete_profile(db: AsyncSession, profile_name: str) -> bool:
     await db.execute(delete(RadGroupReply).where(RadGroupReply.groupname == groupname))
     await db.commit()
     return True
-
-# Rebuild models to handle ForwardRefs
-CIRPreviewResponse.model_rebuild()
-CIRAssignmentPayload.model_rebuild()
