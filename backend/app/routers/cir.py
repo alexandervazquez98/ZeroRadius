@@ -20,14 +20,14 @@ from app.routers.privilege_map import (
     validate_segment_exception,
 )
 from app.schemas.schemas import (
+    UserNasPrivilegeMapOut,
+)
+from app.services.cir_profiles import (
     CIRAssignmentPayload,
     CIRPreviewRequest,
     CIRPreviewResponse,
     CIRProfileOut,
     CIRProfilePayload,
-    UserNasPrivilegeMapOut,
-)
-from app.services.cir_profiles import (
     delete_profile,
     is_cir_group,
     list_profiles,
@@ -51,7 +51,7 @@ def _segment_target_key(payload: CIRAssignmentPayload) -> str:
 async def get_cir_profiles(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = require_roles(Role.AUDITOR, Role.ADMIN, Role.SUPERADMIN),
+    current_user: AdminUser = require_roles(Role.AUDITOR, Role.ADMIN, Role.SUPERADMIN),       
 ):
     return await list_profiles(db)
 
@@ -138,7 +138,7 @@ async def _find_existing_assignment(
         filters.extend(
             [
                 UserNasPrivilegeMap.segment_id == payload.segment_id,
-                UserNasPrivilegeMap.segment_target_key == _segment_target_key(payload),
+                UserNasPrivilegeMap.segment_target_key == _segment_target_key(payload),       
             ]
         )
 
@@ -155,7 +155,7 @@ async def list_cir_assignments(
     request: Request,
     username: str | None = None,
     db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = require_roles(Role.AUDITOR, Role.ADMIN, Role.SUPERADMIN),
+    current_user: AdminUser = require_roles(Role.AUDITOR, Role.ADMIN, Role.SUPERADMIN),       
 ):
     stmt = select(UserNasPrivilegeMap).options(
         selectinload(UserNasPrivilegeMap.category),
@@ -326,13 +326,13 @@ async def preview_cir_resolution(
     request: Request,
     payload: CIRPreviewRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = require_roles(Role.AUDITOR, Role.ADMIN, Role.SUPERADMIN),
+    current_user: AdminUser = require_roles(Role.AUDITOR, Role.ADMIN, Role.SUPERADMIN),       
 ):
     # keep explicit conversion for predictable ValueError path in service
     try:
         ipaddress.ip_address(payload.nas_ip)
     except ValueError:
-        raise HTTPException(status_code=422, detail="nas_ip must be a valid IPv4 address")
+        raise HTTPException(status_code=422, detail="nas_ip must be a valid IPv4 address")    
     return await resolve_preview(
-        db, payload.username, payload.nas_ip, calling_station_id=payload.calling_station_id
+        db, payload.username, payload.nas_ip, calling_station_id=payload.calling_station_id   
     )
