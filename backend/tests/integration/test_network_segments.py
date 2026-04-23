@@ -15,7 +15,7 @@ async def test_regression_delete_segment_blocked_when_exception_ranges_exist(
     segment_id = segment_resp.json()["id"]
 
     exception_resp = await async_client.post(
-        "/privilege-map/category",
+        "/access-policies/assignments",
         json={
             "username": "deleteguarduser",
             "segment_id": segment_id,
@@ -51,7 +51,7 @@ async def test_regression_delete_segment_blocked_when_base_policy_exists(
     segment_id = segment_resp.json()["id"]
 
     mapping_resp = await async_client.post(
-        "/privilege-map/category",
+        "/access-policies/assignments",
         json={
             "username": "deletebaseguarduser",
             "segment_id": segment_id,
@@ -85,7 +85,7 @@ async def test_regression_update_segment_rejected_when_exception_would_be_out_of
     segment_id = segment_resp.json()["id"]
 
     exception_resp = await async_client.post(
-        "/privilege-map/category",
+        "/access-policies/assignments",
         json={
             "username": "updateguarduser",
             "segment_id": segment_id,
@@ -180,7 +180,7 @@ async def test_regression_cross_area_like_segment_isolation_by_distinct_cidrs(
     area_b_id = area_b_segment.json()["id"]
 
     map_a = await async_client.post(
-        "/privilege-map/category",
+        "/access-policies/assignments",
         json={
             "username": "segment_admin_a",
             "segment_id": area_a_id,
@@ -189,7 +189,7 @@ async def test_regression_cross_area_like_segment_isolation_by_distinct_cidrs(
         headers=headers,
     )
     map_b = await async_client.post(
-        "/privilege-map/category",
+        "/access-policies/assignments",
         json={
             "username": "segment_reader_b",
             "segment_id": area_b_id,
@@ -200,13 +200,21 @@ async def test_regression_cross_area_like_segment_isolation_by_distinct_cidrs(
     assert map_a.status_code == 201
     assert map_b.status_code == 201
 
-    list_a = await async_client.get("/privilege-map?username=segment_admin_a", headers=headers)
-    list_b = await async_client.get("/privilege-map?username=segment_reader_b", headers=headers)
+    list_a = await async_client.get(
+        "/access-policies/assignments?username=segment_admin_a", headers=headers
+    )
+    list_b = await async_client.get(
+        "/access-policies/assignments?username=segment_reader_b", headers=headers
+    )
     assert list_a.status_code == 200
     assert list_b.status_code == 200
 
-    segment_names_a = {item["segment_name"] for item in list_a.json() if item["segment_name"]}
-    segment_names_b = {item["segment_name"] for item in list_b.json() if item["segment_name"]}
+    segment_names_a = {
+        item["segment_name"] for item in list_a.json() if item["segment_name"]
+    }
+    segment_names_b = {
+        item["segment_name"] for item in list_b.json() if item["segment_name"]
+    }
     assert "Area-A Shared Name" in segment_names_a
     assert "Area-A Shared Name" not in segment_names_b
     assert "Area-B Shared Name" in segment_names_b
@@ -227,7 +235,7 @@ async def test_regression_deterministic_user_segment_match_and_no_match_paths(
     segment_id = segment.json()["id"]
 
     mapping = await async_client.post(
-        "/privilege-map/category",
+        "/access-policies/assignments",
         json={
             "username": "matchpathuser",
             "segment_id": segment_id,
@@ -238,10 +246,10 @@ async def test_regression_deterministic_user_segment_match_and_no_match_paths(
     assert mapping.status_code == 201
 
     list_match = await async_client.get(
-        "/privilege-map?username=matchpathuser", headers=headers
+        "/access-policies/assignments?username=matchpathuser", headers=headers
     )
     list_no_match = await async_client.get(
-        "/privilege-map?username=nomatchuser", headers=headers
+        "/access-policies/assignments?username=nomatchuser", headers=headers
     )
     assert list_match.status_code == 200
     assert list_no_match.status_code == 200
