@@ -38,10 +38,20 @@ export default function CIRPreviewPanel({ onPreview, isPending }) {
             placeholder="0A-00-3E-..."
             className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2"
             value={mac}
-            onChange={(e) => setMac(e.target.value)}
+            onChange={(e) => {
+              e.target.style.borderColor = '';
+              setMac(e.target.value);
+            }}
             onBlur={(e) => {
               const clean = e.target.value.replace(/[:.-]/g, '').toLowerCase();
-              if (clean.length === 12) setMac(clean);
+              if (clean.length === 12) {
+                e.target.style.borderColor = '';
+                setMac(clean);
+              } else if (clean.length > 0) {
+                e.target.style.borderColor = 'red';
+              } else {
+                e.target.style.borderColor = '';
+              }
             }}
           />
         </label>
