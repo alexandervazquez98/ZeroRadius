@@ -159,17 +159,7 @@ RUN sed -i 's/#\s*read_groups = yes/read_groups = yes/g' /etc/raddb/mods-availab
 # Enable EAP-TTLS configuration (but default to MD5)
 # ...
 
-# ENABLE GROUP QUERIES (Critical for inheritance)
-# Robust approach: Delete potential existing/commented blocks first to avoid syntax errors
-RUN sed -i '/group_membership_query/,/ORDER BY/d' /etc/raddb/mods-config/sql/main/mysql/queries.conf && \
-    sed -i '/group_reply_query/,/ORDER BY/d' /etc/raddb/mods-config/sql/main/mysql/queries.conf
 
-# ENABLE GROUP QUERIES (Critical for inheritance)
-# Attempt 3-Column Schema (Attribute, Value, Op) - Omitting ID to avoid parsing errors
-# CAST value to integer for proper type handling
-RUN echo 'group_membership_query = "SELECT \047%{control:SQL-Group}\047 FROM DUAL WHERE \047%{control:SQL-Group}\047 != \047\047 UNION SELECT groupname FROM ${usergroup_table} WHERE username = \047%{SQL-User-Name}\047 ORDER BY priority"' >> /etc/raddb/mods-config/sql/main/mysql/queries.conf && \
-    echo 'group_reply_query = "SELECT attribute, CAST(value AS CHAR), op FROM ${groupreply_table} WHERE groupname = \047%{SQL-Group}\047 ORDER BY id"' >> /etc/raddb/mods-config/sql/main/mysql/queries.conf && \
-    echo 'group_check_query = "SELECT attribute, CAST(value AS CHAR), op FROM ${groupcheck_table} WHERE groupname = \047%{SQL-Group}\047 ORDER BY id"' >> /etc/raddb/mods-config/sql/main/mysql/queries.conf
 
 # Copy custom policies (nas_based_authorization for ISO 27001 A.8.3)
 COPY policy.d/nas_based_authorization /etc/raddb/policy.d/nas_based_authorization
