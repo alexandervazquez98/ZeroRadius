@@ -37,20 +37,20 @@ ZeroRadius is fully containerized and consists of four main pillars:
 
 ### Advanced: Anti-Proxy Strategy for Major NAS
 
-**El Problema:**
-Cuando un NAS Mayor (por ejemplo, un Access Point o un Switch) hace de proxy RADIUS para los dispositivos conectados detrás de él (como SMs o Modems), envía las peticiones de autenticación utilizando su propia IP (`NAS-IP-Address`). Si otorgamos permisos genéricos de `Admin` basados únicamente en esa IP, involuntariamente estaríamos dándole permisos de `Admin` a todos los dispositivos detrás de él, ya que heredarían la regla genérica.
+**The Challenge with RADIUS Proxies:**
+When a Major NAS (e.g., an Access Point, an Aggregation Switch, or a VPN Concentrator) acts as a RADIUS proxy for downstream devices (like SMs, CPEs, or Modems), it sends authentication requests using its own IP (`NAS-IP-Address`). If generic `Admin` privileges are granted based solely on this IP, those privileges are inadvertently inherited by all downstream devices authenticating through it.
 
-**La Solución: Priority Engine de ZeroRadius**
-Para aislar el acceso al NAS Mayor del acceso a los dispositivos proxificados sin tener que cargar la MAC de miles de equipos en la base de datos, utilizamos el sistema de prioridades de ZeroRadius:
+**The Solution: ZeroRadius Priority Engine**
+To isolate administrative access to the Major NAS from the proxied downstream devices—without the administrative burden of registering thousands of individual MAC addresses—ZeroRadius leverages its built-in Priority Engine:
 
-- Al loguearse directamente al NAS Mayor, este generalmente no envía su MAC (`Calling-Station-Id`). En FreeRADIUS, podemos inyectar una MAC ficticia (ej. `00:00:00:00:00:00`) para estas peticiones directas.
-- Al loguearse a un dispositivo proxificado (ej. SM), el NAS sí reenvía la MAC real del dispositivo.
+- **Direct NAS Login:** When an administrator logs directly into the Major NAS, the device typically does not send a MAC address (`Calling-Station-Id`). In FreeRADIUS, we can inject a dummy MAC (e.g., `00:00:00:00:00:00`) for these direct requests.
+- **Proxied Device Login:** When authenticating a downstream device (e.g., a customer's SM or Modem), the Major NAS forwards the real MAC address of that downstream device.
 
-Aprovechando este comportamiento, creamos el siguiente flujo:
-- **Regla 1 (Direct NAS Access - Prioridad 0):** Se crea una política muy específica (Target: `mac_plus_ip`) que asocia la IP del NAS Mayor + la MAC ficticia (`00:00:00:00:00:00`). A esta regla le otorgamos el perfil de `Admin`.
-- **Regla 2 (Proxied Devices - Prioridad 2):** Se crea una política genérica o de fallback (Target: `nas_ip`) asociando solo la IP del NAS Mayor (dejando la MAC vacía). A esta regla le otorgamos un perfil restrictivo como `ReadOnly` o derechamente acceso denegado.
+Leveraging this behavior, we establish a secure isolation flow:
+1. **Rule 1 (Direct NAS Access - Priority 0):** Create a highly specific policy (Target: `mac_plus_ip`) matching the Major NAS IP + the dummy MAC (`00:00:00:00:00:00`). Assign the `Admin` profile to this rule.
+2. **Rule 2 (Proxied Devices - Priority 2):** Create a generic fallback policy (Target: `nas_ip`) matching only the Major NAS IP (leaving the MAC field empty). Assign a restrictive profile like `ReadOnly` or explicitly deny access.
 
-De esta manera, logramos aislamiento seguro y genérico sin esfuerzo administrativo adicional.
+This architecture guarantees secure, granular isolation for management interfaces without the overhead of micro-managing downstream device MACs.
 
 ## 📚 Official Documentation & User Manuals
 The project relies on localized, flowchart-driven Markdown manuals to ensure network administrators can confidently provision networks.
