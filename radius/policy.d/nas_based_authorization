@@ -35,8 +35,8 @@ nas_based_authorization {
                 AND unpm.is_active=1 \
                 AND ( \
                     (unpm.calling_station_id IS NOT NULL AND unpm.calling_station_id=LOWER(REPLACE(REPLACE(REPLACE('%{Calling-Station-Id}', '-', ''), ':', ''), '.', ''))) \
-                    OR unpm.nas_ip='%{NAS-IP-Address}' \
-                    OR (unpm.segment_id IS NOT NULL \
+                    OR (unpm.nas_ip='%{NAS-IP-Address}' AND unpm.calling_station_id IS NULL) \
+                    OR (unpm.segment_id IS NOT NULL AND unpm.calling_station_id IS NULL \
                         AND unpm.target_start_ip IS NOT NULL AND unpm.target_end_ip IS NOT NULL \
                         AND ns.id IS NOT NULL \
                         AND INET_ATON(unpm.target_start_ip) BETWEEN \
@@ -84,6 +84,7 @@ nas_based_authorization {
                     JOIN network_segments ns ON unpm.segment_id = ns.id \
                      WHERE unpm.username='%{User-Name}' \
                      AND unpm.is_active=1 \
+                     AND unpm.calling_station_id IS NULL \
                      AND unpm.target_start_ip IS NULL AND unpm.target_end_ip IS NULL \
                      AND INET_ATON('%{NAS-IP-Address}') BETWEEN \
                          INET_ATON(SUBSTRING_INDEX(ns.cidr, '/', 1)) AND \
