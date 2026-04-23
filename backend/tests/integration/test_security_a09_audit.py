@@ -72,7 +72,7 @@ class TestAuditCompleteness:
         """Approve JIT con username inexistente → 200, JIT_APPROVED se registra.
         JIT puede crear acceso a cualquier username (no requiere existencia previa en radcheck)."""
         resp = await async_client.post(
-            "/iam-nac/jit-requests/totally_nonexistent_xyz/approve?ttl_hours=24",
+            "/users/jit-requests/totally_nonexistent_xyz/approve?ttl_hours=24",
             headers={"Authorization": f"Bearer {superadmin_token}"},
         )
         assert resp.status_code == 200
@@ -80,7 +80,7 @@ class TestAuditCompleteness:
     async def test_jit_ttl_zero_rejected(self, async_client, superadmin_token):
         """ttl_hours=0 → 422 (validación Query ge=1)."""
         resp = await async_client.post(
-            "/iam-nac/jit-requests/anyuser/approve?ttl_hours=0",
+            "/users/jit-requests/anyuser/approve?ttl_hours=0",
             headers={"Authorization": f"Bearer {superadmin_token}"},
         )
         assert resp.status_code == 422

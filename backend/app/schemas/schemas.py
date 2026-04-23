@@ -25,6 +25,7 @@ def _normalize_mac(value: str) -> str:
 
 # --- CIR Base Schemas ---
 
+
 class CIRProfilePayload(BaseModel):
     name: str
     downlink_high: str
@@ -40,7 +41,9 @@ class CIRProfilePayload(BaseModel):
             raise ValueError("name is required")
         return value
 
-    @field_validator("downlink_high", "uplink_high", "downlink_low", "uplink_low", mode="before")
+    @field_validator(
+        "downlink_high", "uplink_high", "downlink_low", "uplink_low", mode="before"
+    )
     @classmethod
     def validate_rate(cls, v: str) -> str:
         value = str(v or "").strip()
@@ -63,6 +66,7 @@ class CIRResolutionTraceItem(BaseModel):
 
 
 # --- Radius Core Schemas ---
+
 
 class RadCheckBase(BaseModel):
     username: str
@@ -147,6 +151,7 @@ class RadUserGroupCreate(RadUserGroupBase):
 
 # --- NAS & Category Schemas ---
 
+
 class NasCategoryBase(BaseModel):
     name: str
     description: Optional[str] = None
@@ -222,14 +227,15 @@ class NasCreate(BaseModel):
     ports: Optional[int] = None
     secret: str = "secret"
     description: Optional[str] = None
-    zone_id: Optional[int] = None
     category_id: Optional[int] = None
 
     @field_validator("secret")
     @classmethod
     def secret_min_length(cls, v: str) -> str:
         if len(v) < 32:
-            raise ValueError(f"NAS secret must be at least 32 characters (got {len(v)})")
+            raise ValueError(
+                f"NAS secret must be at least 32 characters (got {len(v)})"
+            )
         return v
 
     @field_validator("nasname")
@@ -245,7 +251,9 @@ class NasCreate(BaseModel):
             return v
         except ValueError:
             pass
-        hostname_re = re.compile(r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$")
+        hostname_re = re.compile(
+            r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$"
+        )
         if hostname_re.match(v):
             return v
         raise ValueError("nasname must be a valid IP, CIDR, or hostname")
@@ -259,13 +267,13 @@ class NasOut(BaseModel):
     ports: Optional[int] = None
     secret: str
     description: Optional[str] = None
-    zone_id: Optional[int] = None
     category_id: Optional[int] = None
     category_name: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
 
 # --- Privilege Map Schemas ---
+
 
 class AccessPolicyAssignmentCreate(BaseModel):
     username: str
@@ -323,9 +331,7 @@ class AccessPolicyAssignmentCreate(BaseModel):
     @model_validator(mode="after")
     def require_nas_target(self):
         has_ip = bool(self.nas_ip and self.nas_ip.strip())
-        has_mac = bool(
-            self.calling_station_id and self.calling_station_id.strip()
-        )
+        has_mac = bool(self.calling_station_id and self.calling_station_id.strip())
         has_cat = self.nas_category_id is not None
         has_seg = self.segment_id is not None
 
@@ -421,6 +427,7 @@ class AccessPolicyAssignmentBulkCreate(BaseModel):
 
 # --- CIR Advanced Schemas ---
 
+
 class CIRAssignmentPayload(AccessPolicyAssignmentCreate):
     @field_validator("radius_group")
     @classmethod
@@ -476,6 +483,7 @@ class CIRPreviewResponse(BaseModel):
 
 # --- Session & Audit Schemas ---
 
+
 class SessionOut(BaseModel):
     radacctid: int
     username: str
@@ -502,6 +510,7 @@ class AuditLogOut(BaseModel):
 
 
 # --- Auth & Admin Schemas ---
+
 
 class Token(BaseModel):
     access_token: str
@@ -552,6 +561,7 @@ class AdminUserOut(BaseModel):
 
 
 # --- Utility & System Schemas ---
+
 
 class SIEMEvent(BaseModel):
     event_id: int
@@ -605,68 +615,8 @@ class SystemResourcesResponse(BaseModel):
     network_interfaces: list[str]
 
 
-# --- IAM & NAC RBAC Schemas ---
-
-
-class HardwareZoneBase(BaseModel):
-    name: str
-    description: Optional[str] = None
-
-
-class HardwareZoneCreate(HardwareZoneBase):
-    pass
-
-
-class HardwareZoneOut(HardwareZoneBase):
-    id: int
-    model_config = ConfigDict(from_attributes=True)
-
-
-class IAMRoleBase(BaseModel):
-    name: str
-    description: Optional[str] = None
-
-
-class IAMRoleCreate(IAMRoleBase):
-    pass
-
-
-class IAMRoleOut(IAMRoleBase):
-    id: int
-    model_config = ConfigDict(from_attributes=True)
-
-
-class PolicyMacroBase(BaseModel):
-    name: str
-    description: Optional[str] = None
-    attributes_json: dict = {}
-
-
-class PolicyMacroCreate(PolicyMacroBase):
-    pass
-
-
-class PolicyMacroOut(PolicyMacroBase):
-    id: int
-    model_config = ConfigDict(from_attributes=True)
-
-
-class RoleZonePolicyBase(BaseModel):
-    role_id: int
-    zone_id: int
-    policy_id: int
-
-
-class RoleZonePolicyCreate(RoleZonePolicyBase):
-    pass
-
-
-class RoleZonePolicyOut(RoleZonePolicyBase):
-    id: int
-    model_config = ConfigDict(from_attributes=True)
-
-
 # --- Syslog Schemas ---
+
 
 class SyslogEventOut(BaseModel):
     id: int

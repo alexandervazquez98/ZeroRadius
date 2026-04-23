@@ -17,7 +17,6 @@ import Dictionaries from './pages/Dictionaries';
 import AdminUsers from './pages/AdminUsers';
 import AccessPolicies from './pages/AccessPolicies';
 import NetworkSegments from './pages/NetworkSegments';
-import IAM from './pages/IAM';
 import SyslogDashboard from './pages/SyslogDashboard';
 
 /** Simple page shown when a user lacks permissions to access a route */
@@ -58,7 +57,6 @@ function App() {
                         <Route path="groups" element={<ErrorBoundary><Groups /></ErrorBoundary>} />
                         <Route path="audit" element={<ErrorBoundary><Audit /></ErrorBoundary>} />
                         <Route path="dictionaries" element={<ErrorBoundary><Dictionaries /></ErrorBoundary>} />
-                        <Route path="iam" element={<ErrorBoundary><IAM /></ErrorBoundary>} />
                         <Route path="syslog" element={<ErrorBoundary><SyslogDashboard /></ErrorBoundary>} />
 
                         {/* Superadmin-only: System Users */}
