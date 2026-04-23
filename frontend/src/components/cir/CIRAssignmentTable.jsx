@@ -157,10 +157,20 @@ export default function CIRAssignmentTable({
                 placeholder="0A:00:3E... or 0011.22..."
                 className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2"
                 value={form.calling_station_id}
-                onChange={(e) => setForm((prev) => ({ ...prev, calling_station_id: e.target.value }))}
+                onChange={(e) => {
+                  e.target.style.borderColor = '';
+                  setForm((prev) => ({ ...prev, calling_station_id: e.target.value }));
+                }}
                 onBlur={(e) => {
                   const clean = e.target.value.replace(/[:.-]/g, '').toLowerCase();
-                  if (clean.length === 12) setForm((prev) => ({ ...prev, calling_station_id: clean }));
+                  if (clean.length === 12) {
+                    e.target.style.borderColor = '';
+                    setForm((prev) => ({ ...prev, calling_station_id: clean }));
+                  } else if (clean.length > 0) {
+                    e.target.style.borderColor = 'red';
+                  } else {
+                    e.target.style.borderColor = '';
+                  }
                 }}
                 required
               />
@@ -172,6 +182,7 @@ export default function CIRAssignmentTable({
               Target NAS IP
               <input
                 aria-label="Target NAS IP"
+                pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
                 className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2"
                 value={form.nas_ip}
                 onChange={(e) => setForm((prev) => ({ ...prev, nas_ip: e.target.value }))}
@@ -237,6 +248,7 @@ export default function CIRAssignmentTable({
                 Start IP
                 <input
                   aria-label="Range Start IP"
+                  pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
                   className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2"
                   value={form.target_start_ip}
                   onChange={(e) => setForm((prev) => ({ ...prev, target_start_ip: e.target.value }))}
@@ -247,6 +259,7 @@ export default function CIRAssignmentTable({
                 End IP
                 <input
                   aria-label="Range End IP"
+                  pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
                   className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2"
                   value={form.target_end_ip}
                   onChange={(e) => setForm((prev) => ({ ...prev, target_end_ip: e.target.value }))}

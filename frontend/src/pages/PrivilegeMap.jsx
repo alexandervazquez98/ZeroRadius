@@ -7,6 +7,7 @@ import {
 import dayjs from 'dayjs';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import PrivilegeMapService from '../services/privilegeMapService';
 import GroupsService from '../services/groups';
 import NasCategoriesService from '../services/nasCategoriesService';
@@ -68,6 +69,8 @@ const PrivilegeMapPage = () => {
     const canWrite  = hasRole(['superadmin', 'admin']);
     const canDelete = hasRole(['superadmin']);
     const queryClient = useQueryClient();
+    const { showToast } = useToast();
+    const toast = { error: (msg) => showToast(msg, 'error') };
 
     // UI state
     const [selectedUser,  setSelectedUser]  = useState(null);
@@ -153,16 +156,31 @@ const PrivilegeMapPage = () => {
     const createMutation = useMutation({
         mutationFn: PrivilegeMapService.create,
         onSuccess: () => { invalidate(); closeModal(); },
+        onError: (error) => {
+            if (error.response?.status === 422 || error.response?.status === 409) {
+                toast.error(error.response?.data?.detail || "The IP range or MAC is already in use");
+            }
+        },
     });
 
     const createSingleMutation = useMutation({
         mutationFn: PrivilegeMapService.createCategory, // This endpoint handles all single creations
         onSuccess: () => { invalidate(); closeModal(); },
+        onError: (error) => {
+            if (error.response?.status === 422 || error.response?.status === 409) {
+                toast.error(error.response?.data?.detail || "The IP range or MAC is already in use");
+            }
+        },
     });
 
     const updateMutation = useMutation({
         mutationFn: ({ id, data }) => PrivilegeMapService.update(id, data),
         onSuccess: () => { invalidate(); closeModal(); },
+        onError: (error) => {
+            if (error.response?.status === 422 || error.response?.status === 409) {
+                toast.error(error.response?.data?.detail || "The IP range or MAC is already in use");
+            }
+        },
     });
 
     const deleteMutation = useMutation({
@@ -762,22 +780,24 @@ const PrivilegeMapPage = () => {
                                                     <div className="grid grid-cols-2 gap-2">
                                                         <div>
                                                             <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Start IP / Single IP</label>
-                                                            <input
-                                                                required
-                                                                placeholder="e.g. 10.0.1.50"
-                                                                className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono"
-                                                                value={form.target_start_ip}
-                                                                onChange={e => setForm(f => ({ ...f, target_start_ip: e.target.value }))}
-                                                            />
+                                                                <input
+                                                                    required
+                                                                    pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
+                                                                    placeholder="e.g. 10.0.1.50"
+                                                                    className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono"
+                                                                    value={form.target_start_ip}
+                                                                    onChange={e => setForm(f => ({ ...f, target_start_ip: e.target.value }))}
+                                                                />
                                                         </div>
                                                         <div>
                                                             <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">End IP (optional)</label>
-                                                            <input
-                                                                placeholder="e.g. 10.0.1.60"
-                                                                className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono"
-                                                                value={form.target_end_ip}
-                                                                onChange={e => setForm(f => ({ ...f, target_end_ip: e.target.value }))}
-                                                            />
+                                                                <input
+                                                                    pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
+                                                                    placeholder="e.g. 10.0.1.60"
+                                                                    className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono"
+                                                                    value={form.target_end_ip}
+                                                                    onChange={e => setForm(f => ({ ...f, target_end_ip: e.target.value }))}
+                                                                />
                                                         </div>
                                                     </div>
                                                 )}
@@ -842,10 +862,20 @@ const PrivilegeMapPage = () => {
                                                             placeholder="e.g. 0A:00:3E:45:76:4A"
                                                             className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono"
                                                             value={form.calling_station_id}
-                                                            onChange={e => setForm(f => ({ ...f, calling_station_id: e.target.value }))}
+                                                            onChange={e => {
+                                                                e.target.style.borderColor = '';
+                                                                setForm(f => ({ ...f, calling_station_id: e.target.value }));
+                                                            }}
                                                             onBlur={e => {
                                                                 const clean = e.target.value.replace(/[:.-]/g, '').toLowerCase();
-                                                                if (clean.length === 12) setForm(f => ({ ...f, calling_station_id: clean }));
+                                                                if (clean.length === 12) {
+                                                                    e.target.style.borderColor = '';
+                                                                    setForm(f => ({ ...f, calling_station_id: clean }));
+                                                                } else if (clean.length > 0) {
+                                                                    e.target.style.borderColor = 'red';
+                                                                } else {
+                                                                    e.target.style.borderColor = '';
+                                                                }
                                                             }}
                                                         />
                                                     </div>
@@ -854,13 +884,14 @@ const PrivilegeMapPage = () => {
                                                 {form.mapping_mode === 'mac_plus_ip' && (
                                                     <div>
                                                         <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Specific NAS IP</label>
-                                                        <input
-                                                            required
-                                                            placeholder="e.g. 192.168.1.11"
-                                                            className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono"
-                                                            value={form.nas_ip}
-                                                            onChange={e => setForm(f => ({ ...f, nas_ip: e.target.value }))}
-                                                        />
+                                                            <input
+                                                                required
+                                                                pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
+                                                                placeholder="e.g. 192.168.1.11"
+                                                                className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono"
+                                                                value={form.nas_ip}
+                                                                onChange={e => setForm(f => ({ ...f, nas_ip: e.target.value }))}
+                                                            />
                                                     </div>
                                                 )}
                                             </div>
