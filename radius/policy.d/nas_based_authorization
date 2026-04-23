@@ -69,13 +69,7 @@ nas_based_authorization {
                 LIMIT 1}"
         }
 
-        if (&control:Tmp-String-0 && "%{control:Tmp-String-0}" != "") {
-            # IP or Range Exception match found — use this group
-            update control {
-                SQL-Group := "%{control:Tmp-String-0}"
-            }
-        }
-        else {
+        if ("%{control:Tmp-String-0}" == "") {
             # ── STEP 2: Segment Base match ──────────────────────────────────
             # Look for a mapping to a network segment where the NAS IP is inside the segment's CIDR
             update control {
@@ -96,46 +90,40 @@ nas_based_authorization {
                      AS UNSIGNED) DESC, ns.id ASC, unpm.id ASC \
                      LIMIT 1}"
             }
+        }
 
-            if (&control:Tmp-String-0 && "%{control:Tmp-String-0}" != "") {
-                # Segment match found
-                update control {
-                    SQL-Group := "%{control:Tmp-String-0}"
-                }
+        if ("%{control:Tmp-String-0}" == "") {
+            # ── STEP 3: Category fallback ───────────────────────────────
+            # Resolve the category of the NAS device from the nas_cidr_ranges
+            # view, then match the user's category-level privilege mapping.
+            update control {
+                Tmp-String-0 := "%{sql:SELECT unpm.radius_group \
+                    FROM access_policy_assignments unpm \
+                    WHERE unpm.username='%{User-Name}' \
+                    AND unpm.nas_ip IS NULL \
+                    AND unpm.segment_id IS NULL \
+                    AND unpm.is_active=1 \
+                    AND unpm.nas_category_id = ( \
+                        SELECT category_id FROM nas_cidr_ranges \
+                        WHERE INET_ATON('%{NAS-IP-Address}') BETWEEN net_start AND net_end \
+                        ORDER BY prefix_len DESC LIMIT 1 \
+                    ) \
+                    LIMIT 1}"
             }
-            else {
-                # ── STEP 3: Category fallback ───────────────────────────────
-                # Resolve the category of the NAS device from the nas_cidr_ranges
-                # view, then match the user's category-level privilege mapping.
-                update control {
-                    Tmp-String-0 := "%{sql:SELECT unpm.radius_group \
-                        FROM access_policy_assignments unpm \
-                        WHERE unpm.username='%{User-Name}' \
-                        AND unpm.nas_ip IS NULL \
-                        AND unpm.segment_id IS NULL \
-                        AND unpm.is_active=1 \
-                        AND unpm.nas_category_id = ( \
-                            SELECT category_id FROM nas_cidr_ranges \
-                            WHERE INET_ATON('%{NAS-IP-Address}') BETWEEN net_start AND net_end \
-                            ORDER BY prefix_len DESC LIMIT 1 \
-                        ) \
-                        LIMIT 1}"
-                }
+        }
 
-                if (&control:Tmp-String-0 && "%{control:Tmp-String-0}" != "") {
-                    # Category match found — apply category-level group
-                    update control {
-                        SQL-Group := "%{control:Tmp-String-0}"
-                    }
-                }
-                else {
-                    # No match in any step — Zero Trust reject
-                    update reply {
-                        Reply-Message := "Access denied: NAS not authorized for this user"
-                    }
-                    reject
-                }
+        if ("%{control:Tmp-String-0}" != "") {
+            # Match found in one of the steps — apply group
+            update control {
+                SQL-Group := "%{control:Tmp-String-0}"
             }
+        }
+        else {
+            # No match in any step — Zero Trust reject
+            update reply {
+                Reply-Message := "Access denied: NAS not authorized for this user"
+            }
+            reject
         }
 
     }
