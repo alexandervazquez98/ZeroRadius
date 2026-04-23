@@ -35,6 +35,23 @@ ZeroRadius is fully containerized and consists of four main pillars:
 4. **Database (MariaDB)**:
    - Stores the standard FreeRADIUS schemas extended with ZeroRadius custom identity management tables.
 
+### Advanced: Anti-Proxy Strategy for Major NAS
+
+**El Problema:**
+Cuando un NAS Mayor (por ejemplo, un Access Point o un Switch) hace de proxy RADIUS para los dispositivos conectados detrás de él (como SMs o Modems), envía las peticiones de autenticación utilizando su propia IP (`NAS-IP-Address`). Si otorgamos permisos genéricos de `Admin` basados únicamente en esa IP, involuntariamente estaríamos dándole permisos de `Admin` a todos los dispositivos detrás de él, ya que heredarían la regla genérica.
+
+**La Solución: Priority Engine de ZeroRadius**
+Para aislar el acceso al NAS Mayor del acceso a los dispositivos proxificados sin tener que cargar la MAC de miles de equipos en la base de datos, utilizamos el sistema de prioridades de ZeroRadius:
+
+- Al loguearse directamente al NAS Mayor, este generalmente no envía su MAC (`Calling-Station-Id`). En FreeRADIUS, podemos inyectar una MAC ficticia (ej. `00:00:00:00:00:00`) para estas peticiones directas.
+- Al loguearse a un dispositivo proxificado (ej. SM), el NAS sí reenvía la MAC real del dispositivo.
+
+Aprovechando este comportamiento, creamos el siguiente flujo:
+- **Regla 1 (Direct NAS Access - Prioridad 0):** Se crea una política muy específica (Target: `mac_plus_ip`) que asocia la IP del NAS Mayor + la MAC ficticia (`00:00:00:00:00:00`). A esta regla le otorgamos el perfil de `Admin`.
+- **Regla 2 (Proxied Devices - Prioridad 2):** Se crea una política genérica o de fallback (Target: `nas_ip`) asociando solo la IP del NAS Mayor (dejando la MAC vacía). A esta regla le otorgamos un perfil restrictivo como `ReadOnly` o derechamente acceso denegado.
+
+De esta manera, logramos aislamiento seguro y genérico sin esfuerzo administrativo adicional.
+
 ## 📚 Official Documentation & User Manuals
 The project relies on localized, flowchart-driven Markdown manuals to ensure network administrators can confidently provision networks.
 
