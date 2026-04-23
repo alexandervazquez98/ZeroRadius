@@ -15,9 +15,8 @@ import Groups from './pages/Groups';
 import Audit from './pages/Audit';
 import Dictionaries from './pages/Dictionaries';
 import AdminUsers from './pages/AdminUsers';
-import PrivilegeMap from './pages/PrivilegeMap';
+import AccessPolicies from './pages/AccessPolicies';
 import NetworkSegments from './pages/NetworkSegments';
-import CIRManager from './pages/CIRManager';
 import IAM from './pages/IAM';
 import SyslogDashboard from './pages/SyslogDashboard';
 
@@ -74,24 +73,13 @@ function App() {
                             }
                         />
 
-                        {/* Privilege Map: superadmin, admin, auditor */}
+                        {/* Access Policies: superadmin, admin, auditor */}
                         <Route
-                            path="privilege-map"
+                            path="access-policies"
                             element={
                                 <ErrorBoundary>
                                     <RoleGuard allowedRoles={['superadmin', 'admin', 'auditor']} fallback={<Unauthorized />}>
-                                        <PrivilegeMap />
-                                    </RoleGuard>
-                                </ErrorBoundary>
-                            }
-                        />
-
-                        <Route
-                            path="cir"
-                            element={
-                                <ErrorBoundary>
-                                    <RoleGuard allowedRoles={['superadmin', 'admin', 'auditor']} fallback={<Unauthorized />}>
-                                        <CIRManager />
+                                        <AccessPolicies />
                                     </RoleGuard>
                                 </ErrorBoundary>
                             }

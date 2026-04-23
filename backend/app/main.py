@@ -1,9 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import users, nas, auth, groups, audit, dictionary, admin_users, cir
+from app.routers import users, nas, auth, groups, audit, dictionary, admin_users, access_policies
 from app.routers import (
     system,
-    privilege_map,
     sessions,
     iam_nac,
     nas_categories,
@@ -367,12 +366,11 @@ app.include_router(audit.router)
 app.include_router(dictionary.router)
 app.include_router(admin_users.router)
 app.include_router(system.router)
-app.include_router(privilege_map.router)
 app.include_router(sessions.router)
 app.include_router(iam_nac.router)
 app.include_router(nas_categories.router)
 app.include_router(network_segments.router)
-app.include_router(cir.router)
+app.include_router(access_policies.router)
 
 
 # ---------------------------------------------------------------------------

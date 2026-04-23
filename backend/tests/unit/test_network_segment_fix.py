@@ -8,8 +8,8 @@ from app.schemas.schemas import (
     CIRPreviewRequest,
     NetworkSegmentCreate,
     NetworkSegmentUpdate,
-    UserNasPrivilegeMapCreate,
-    UserNasPrivilegeMapBulkCreate,
+    AccessPolicyAssignmentCreate,
+    AccessPolicyAssignmentBulkCreate,
 )
 
 
@@ -68,7 +68,7 @@ class TestPrivilegeMapExceptionIPv4Only:
 
     def test_exception_ipv4_accepted(self):
         """IPv4 exception range should be accepted."""
-        priv = UserNasPrivilegeMapCreate(
+        priv = AccessPolicyAssignmentCreate(
             username="testuser",
             segment_id=1,
             target_start_ip="10.0.0.10",
@@ -81,7 +81,7 @@ class TestPrivilegeMapExceptionIPv4Only:
     def test_exception_ipv6_rejected(self):
         """IPv6 exception should be rejected."""
         with pytest.raises(ValidationError) as exc_info:
-            UserNasPrivilegeMapCreate(
+            AccessPolicyAssignmentCreate(
                 username="testuser",
                 segment_id=1,
                 target_start_ip="fe80::1",
@@ -93,7 +93,7 @@ class TestPrivilegeMapExceptionIPv4Only:
     def test_exception_mixed_rejected(self):
         """Mixed IPv4/IPv6 should be rejected."""
         with pytest.raises(ValidationError) as exc_info:
-            UserNasPrivilegeMapCreate(
+            AccessPolicyAssignmentCreate(
                 username="testuser",
                 segment_id=1,
                 target_start_ip="10.0.0.10",
@@ -108,7 +108,7 @@ class TestPrivilegeMapNasIpIPv4Only:
 
     def test_nas_ip_ipv4_accepted(self):
         """IPv4 nas_ip should be accepted."""
-        priv = UserNasPrivilegeMapCreate(
+        priv = AccessPolicyAssignmentCreate(
             username="testuser",
             nas_ip="10.0.0.5",
             radius_group="group1",
@@ -118,7 +118,7 @@ class TestPrivilegeMapNasIpIPv4Only:
     def test_nas_ip_ipv6_rejected(self):
         """IPv6 nas_ip should be rejected."""
         with pytest.raises(ValidationError) as exc_info:
-            UserNasPrivilegeMapCreate(
+            AccessPolicyAssignmentCreate(
                 username="testuser",
                 nas_ip="fe80::1",
                 radius_group="group1",
@@ -131,7 +131,7 @@ class TestBulkCreationIPv4Only:
 
     def test_bulk_ipv4_accepted(self):
         """IPv4 bulk IPs should be accepted."""
-        bulk = UserNasPrivilegeMapBulkCreate(
+        bulk = AccessPolicyAssignmentBulkCreate(
             username="testuser",
             nas_ips=["10.0.0.1", "10.0.0.2", "10.0.0.3"],
             radius_group="group1",
@@ -140,7 +140,7 @@ class TestBulkCreationIPv4Only:
 
     def test_bulk_ipv4_with_whitespace_accepted_and_normalized(self):
         """IPv4 bulk IPs with surrounding whitespace should be trimmed."""
-        bulk = UserNasPrivilegeMapBulkCreate(
+        bulk = AccessPolicyAssignmentBulkCreate(
             username="testuser",
             nas_ips=[" 10.0.0.1 ", "\t10.0.0.2", "10.0.0.3\n"],
             radius_group="group1",
@@ -150,7 +150,7 @@ class TestBulkCreationIPv4Only:
     def test_bulk_ipv6_rejected(self):
         """IPv6 in bulk should be rejected."""
         with pytest.raises(ValidationError) as exc_info:
-            UserNasPrivilegeMapBulkCreate(
+            AccessPolicyAssignmentBulkCreate(
                 username="testuser",
                 nas_ips=["10.0.0.1", "2001:db8::1"],
                 radius_group="group1",
@@ -160,7 +160,7 @@ class TestBulkCreationIPv4Only:
     def test_bulk_invalid_rejected(self):
         """Invalid IP in bulk should be rejected."""
         with pytest.raises(ValidationError) as exc_info:
-            UserNasPrivilegeMapBulkCreate(
+            AccessPolicyAssignmentBulkCreate(
                 username="testuser",
                 nas_ips=["not-an-ip"],
                 radius_group="group1",
@@ -170,7 +170,7 @@ class TestBulkCreationIPv4Only:
     def test_bulk_empty_list_rejected(self):
         """Empty bulk list should be rejected (no-op protection)."""
         with pytest.raises(ValidationError) as exc_info:
-            UserNasPrivilegeMapBulkCreate(
+            AccessPolicyAssignmentBulkCreate(
                 username="testuser",
                 nas_ips=[],
                 radius_group="group1",
@@ -180,7 +180,7 @@ class TestBulkCreationIPv4Only:
     def test_bulk_whitespace_only_entry_rejected_after_trim(self):
         """Whitespace-only entries must fail after normalization trim."""
         with pytest.raises(ValidationError) as exc_info:
-            UserNasPrivilegeMapBulkCreate(
+            AccessPolicyAssignmentBulkCreate(
                 username="testuser",
                 nas_ips=["   "],
                 radius_group="group1",
@@ -201,7 +201,7 @@ class TestSchemaMacValidationRegression:
         ],
     )
     def test_user_privilege_map_accepts_supported_formats_and_normalizes(self, raw_mac):
-        payload = UserNasPrivilegeMapCreate(
+        payload = AccessPolicyAssignmentCreate(
             username="testuser",
             radius_group="group1",
             calling_station_id=raw_mac,
@@ -236,7 +236,7 @@ class TestSchemaMacValidationRegression:
     )
     def test_user_privilege_map_rejects_malformed_delimiters(self, raw_mac):
         with pytest.raises(ValidationError, match="12 hex chars"):
-            UserNasPrivilegeMapCreate(
+            AccessPolicyAssignmentCreate(
                 username="testuser",
                 radius_group="group1",
                 calling_station_id=raw_mac,
@@ -262,7 +262,7 @@ class TestSchemaMacValidationRegression:
     @pytest.mark.parametrize("raw_mac", ["zzzzzzzzzzzz", "GG:11:22:33:44:55"])
     def test_user_privilege_map_rejects_non_hex(self, raw_mac):
         with pytest.raises(ValidationError, match="12 hex chars"):
-            UserNasPrivilegeMapCreate(
+            AccessPolicyAssignmentCreate(
                 username="testuser",
                 radius_group="group1",
                 calling_station_id=raw_mac,

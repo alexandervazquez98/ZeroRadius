@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from app.models.models import NetworkSegment, UserNasPrivilegeMap
+from app.models.models import NetworkSegment, AccessPolicyAssignment
 
 
 @pytest.mark.asyncio
@@ -11,7 +11,7 @@ async def test_regression_sqlite_foreign_keys_are_enforced(test_db):
         await test_db.execute(
             text(
                 """
-                INSERT INTO user_nas_privilege_map (
+                INSERT INTO access_policy_assignments (
                     username,
                     segment_id,
                     radius_group,
@@ -37,13 +37,13 @@ async def test_regression_duplicate_base_segment_mapping_rejected_at_db_layer(te
     await test_db.commit()
     await test_db.refresh(segment)
 
-    first = UserNasPrivilegeMap(
+    first = AccessPolicyAssignment(
         username="sqlite-dup-base",
         segment_id=segment.id,
         radius_group="group1",
         is_active=1,
     )
-    second = UserNasPrivilegeMap(
+    second = AccessPolicyAssignment(
         username="sqlite-dup-base",
         segment_id=segment.id,
         radius_group="group2",

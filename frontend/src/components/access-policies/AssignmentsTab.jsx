@@ -5,13 +5,13 @@ import {
     Server, User, CheckCircle, ChevronRight, Search, Tag, Map, HelpCircle
 } from 'lucide-react';
 import dayjs from 'dayjs';
-import api from '../api';
-import { useAuth } from '../context/AuthContext';
-import { useToast } from '../context/ToastContext';
-import PrivilegeMapService from '../services/privilegeMapService';
-import GroupsService from '../services/groups';
-import NasCategoriesService from '../services/nasCategoriesService';
-import NetworkSegmentsService from '../services/networkSegments';
+import api from '../../api';
+import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import AccessPoliciesService from '../../services/accessPolicies';
+import GroupsService from '../../services/groups';
+import NasCategoriesService from '../../services/nasCategoriesService';
+import NetworkSegmentsService from '../../services/networkSegments';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -64,7 +64,7 @@ const EMPTY_FORM = {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-const PrivilegeMapPage = () => {
+const AssignmentsTab = () => {
     const { user, hasRole } = useAuth();
     const canWrite  = hasRole(['superadmin', 'admin']);
     const canDelete = hasRole(['superadmin']);
@@ -85,8 +85,8 @@ const PrivilegeMapPage = () => {
     // ── Data ──────────────────────────────────────────────────────────────────
 
     const { data: allMappings = [], isLoading } = useQuery({
-        queryKey: ['privilege-map'],
-        queryFn: () => PrivilegeMapService.getAll({}),
+        queryKey: ['access-policies', 'assignments'],
+        queryFn: () => AccessPoliciesService.listAssignments({}),
     });
 
     const { data: usersList = [] } = useQuery({
@@ -151,10 +151,10 @@ const PrivilegeMapPage = () => {
 
     // ── Mutations ─────────────────────────────────────────────────────────────
 
-    const invalidate = () => queryClient.invalidateQueries({ queryKey: ['privilege-map'] });
+    const invalidate = () => queryClient.invalidateQueries({ queryKey: ['access-policies', 'assignments'] });
 
     const createMutation = useMutation({
-        mutationFn: PrivilegeMapService.create,
+        mutationFn: AccessPoliciesService.createAssignmentBulk,
         onSuccess: () => { invalidate(); closeModal(); },
         onError: (error) => {
             if (error.response?.status === 422 || error.response?.status === 409) {
@@ -164,7 +164,7 @@ const PrivilegeMapPage = () => {
     });
 
     const createSingleMutation = useMutation({
-        mutationFn: PrivilegeMapService.createCategory, // This endpoint handles all single creations
+        mutationFn: AccessPoliciesService.createAssignment, // This endpoint handles all single creations
         onSuccess: () => { invalidate(); closeModal(); },
         onError: (error) => {
             if (error.response?.status === 422 || error.response?.status === 409) {
@@ -174,7 +174,7 @@ const PrivilegeMapPage = () => {
     });
 
     const updateMutation = useMutation({
-        mutationFn: ({ id, data }) => PrivilegeMapService.update(id, data),
+        mutationFn: ({ id, data }) => AccessPoliciesService.updateAssignment(id, data),
         onSuccess: () => { invalidate(); closeModal(); },
         onError: (error) => {
             if (error.response?.status === 422 || error.response?.status === 409) {
@@ -184,7 +184,7 @@ const PrivilegeMapPage = () => {
     });
 
     const deleteMutation = useMutation({
-        mutationFn: PrivilegeMapService.remove,
+        mutationFn: AccessPoliciesService.deleteAssignment,
         onSuccess: () => { invalidate(); setDeleteTarget(null); },
     });
 
@@ -301,17 +301,13 @@ const PrivilegeMapPage = () => {
     // ── Render ────────────────────────────────────────────────────────────────
 
     return (
-        <div className="space-y-6 pb-10 px-4">
+        <div className="space-y-6">
 
             {/* Header */}
-            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 py-4">
+            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
                 <div>
-                    <h2 className="text-3xl font-extrabold text-slate-800 tracking-tight flex items-center gap-3">
-                        <Shield className="text-indigo-600" size={32} />
-                        Access Policies
-                    </h2>
                     <p className="text-slate-500 mt-1 uppercase text-[10px] font-black tracking-widest opacity-60">
-                        Manage User Authorization per Segment and Device
+                        Manage user policies and privileges per segment and device
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -1023,4 +1019,4 @@ const PrivilegeMapPage = () => {
     );
 };
 
-export default PrivilegeMapPage;
+export default AssignmentsTab;

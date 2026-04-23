@@ -12,7 +12,7 @@ function isDirty(form, source) {
   return JSON.stringify(form) !== JSON.stringify(source)
 }
 
-export default function CIRProfileForm({
+export default function BandwidthProfilesTab({
   profiles,
   selectedProfile,
   onSelectProfile,
@@ -73,7 +73,7 @@ export default function CIRProfileForm({
   return (
     <section className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-lg font-black text-slate-800">CIR Profiles</h3>
+        <h3 className="text-lg font-black text-slate-800">Bandwidth Profiles</h3>
         <div>
           <label className="text-xs font-bold text-slate-500 mr-2">Existing profiles</label>
           <select

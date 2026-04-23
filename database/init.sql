@@ -183,10 +183,10 @@ CREATE TABLE IF NOT EXISTS radius_reply_audit (
     INDEX idx_rra_created_at (created_at)
 ) ENGINE=InnoDB;
 
--- T06: user_nas_privilege_map — NAS-based access control (ISO 27001 A.5.15, A.8.2)
+-- T06: access_policy_assignments — NAS-based access control (ISO 27001 A.5.15, A.8.2)
 -- nas-categories: nas_ip extended to VARCHAR(50) and made nullable;
 --   nas_category_id added for category-based entries (either nas_ip OR nas_category_id required).
-CREATE TABLE IF NOT EXISTS user_nas_privilege_map (
+CREATE TABLE IF NOT EXISTS access_policy_assignments (
     id              INT AUTO_INCREMENT PRIMARY KEY,
     username        VARCHAR(64)  NOT NULL,
     target_key      VARCHAR(128) NOT NULL,
@@ -316,16 +316,15 @@ ALTER TABLE nas ADD CONSTRAINT fk_nas_zone FOREIGN KEY (zone_id) REFERENCES hard
 -- Add FK for nas.category_id to nas_categories
 ALTER TABLE nas ADD CONSTRAINT fk_nas_category FOREIGN KEY (category_id) REFERENCES nas_categories(id) ON DELETE SET NULL;
 
--- Add FK for user_nas_privilege_map.nas_category_id to nas_categories
-ALTER TABLE user_nas_privilege_map ADD CONSTRAINT fk_unpm_category FOREIGN KEY (nas_category_id) REFERENCES nas_categories(id) ON DELETE SET NULL;
+-- Add FK for access_policy_assignments.nas_category_id to nas_categories
+ALTER TABLE access_policy_assignments ADD CONSTRAINT fk_unpm_category FOREIGN KEY (nas_category_id) REFERENCES nas_categories(id) ON DELETE SET NULL;
 
--- Add FK for user_nas_privilege_map.segment_id to network_segments
--- Add FK for user_nas_privilege_map.segment_id to network_segments
+-- Add FK for access_policy_assignments.segment_id to network_segments
 -- FIX #55: Changed from ON DELETE SET NULL to ON DELETE RESTRICT to enforce:
 -- 1. DB-level protection against orphaned privilege-map rows
 -- 2. Matches API-level protection (router checks before delete)
 -- 3. Consistent behavior regardless of delete path (API vs direct SQL)
-ALTER TABLE user_nas_privilege_map ADD CONSTRAINT fk_unpm_segment FOREIGN KEY (segment_id) REFERENCES network_segments(id) ON DELETE RESTRICT;
+ALTER TABLE access_policy_assignments ADD CONSTRAINT fk_unpm_segment FOREIGN KEY (segment_id) REFERENCES network_segments(id) ON DELETE RESTRICT;
 
 -- nas_cidr_ranges VIEW: pre-computes network range boundaries for CIDR-aware policy lookup.
 -- Used by the FreeRADIUS nas_based_authorization policy (Step 2: category fallback).

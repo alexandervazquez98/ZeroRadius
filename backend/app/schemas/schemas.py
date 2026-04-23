@@ -267,7 +267,7 @@ class NasOut(BaseModel):
 
 # --- Privilege Map Schemas ---
 
-class UserNasPrivilegeMapCreate(BaseModel):
+class AccessPolicyAssignmentCreate(BaseModel):
     username: str
     nas_ip: Optional[str] = None
 
@@ -360,7 +360,7 @@ class UserNasPrivilegeMapCreate(BaseModel):
         return self
 
 
-class UserNasPrivilegeMapOut(BaseModel):
+class AccessPolicyAssignmentOut(BaseModel):
     id: int
     username: str
     nas_ip: Optional[str] = None
@@ -385,7 +385,7 @@ class UserNasPrivilegeMapOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class UserNasPrivilegeMapBulkCreate(BaseModel):
+class AccessPolicyAssignmentBulkCreate(BaseModel):
     username: str
     nas_ips: List[str]
     radius_group: str
@@ -421,7 +421,7 @@ class UserNasPrivilegeMapBulkCreate(BaseModel):
 
 # --- CIR Advanced Schemas ---
 
-class CIRAssignmentPayload(UserNasPrivilegeMapCreate):
+class CIRAssignmentPayload(AccessPolicyAssignmentCreate):
     @field_validator("radius_group")
     @classmethod
     def validate_radius_group(cls, v: str) -> str:
@@ -469,7 +469,7 @@ class CIRPreviewRequest(BaseModel):
 
 class CIRPreviewResponse(BaseModel):
     resolution_path: str
-    mapping: Optional[UserNasPrivilegeMapOut] = None
+    mapping: Optional[AccessPolicyAssignmentOut] = None
     profile: Optional[CIRProfileOut] = None
     trace: List[CIRResolutionTraceItem]
 
