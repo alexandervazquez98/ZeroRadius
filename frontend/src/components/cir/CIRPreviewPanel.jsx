@@ -39,6 +39,10 @@ export default function CIRPreviewPanel({ onPreview, isPending }) {
             className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2"
             value={mac}
             onChange={(e) => setMac(e.target.value)}
+            onBlur={(e) => {
+              const clean = e.target.value.replace(/[:.-]/g, '').toLowerCase();
+              if (clean.length === 12) setMac(clean);
+            }}
           />
         </label>
         <label className="text-sm font-bold text-slate-700">

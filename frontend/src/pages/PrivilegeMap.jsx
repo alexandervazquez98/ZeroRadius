@@ -843,6 +843,10 @@ const PrivilegeMapPage = () => {
                                                             className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono"
                                                             value={form.calling_station_id}
                                                             onChange={e => setForm(f => ({ ...f, calling_station_id: e.target.value }))}
+                                                            onBlur={e => {
+                                                                const clean = e.target.value.replace(/[:.-]/g, '').toLowerCase();
+                                                                if (clean.length === 12) setForm(f => ({ ...f, calling_station_id: clean }));
+                                                            }}
                                                         />
                                                     </div>
                                                 )}
