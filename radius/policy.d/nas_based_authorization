@@ -4,7 +4,7 @@
 # Two-step authorization:
 #
 #   Step 1 (IP-specific, unchanged):
-#     Query user_nas_privilege_map by exact NAS-IP-Address.
+#     Query access_policy_assignments by exact NAS-IP-Address.
 #     Most specific — always wins over category.
 #
 #   Step 2 (Category fallback, NEW):
@@ -29,7 +29,7 @@ nas_based_authorization {
         # Priority: MAC+IP > MAC > IP > Range Exception
         # MACs are normalized to lowercase without separators in DB.
         update control {
-            Tmp-String-0 := "%{sql:SELECT unpm.radius_group FROM user_nas_privilege_map unpm \
+            Tmp-String-0 := "%{sql:SELECT unpm.radius_group FROM access_policy_assignments unpm \
                 LEFT JOIN network_segments ns ON unpm.segment_id = ns.id \
                 WHERE unpm.username='%{User-Name}' \
                 AND unpm.is_active=1 \
@@ -80,7 +80,7 @@ nas_based_authorization {
             # Look for a mapping to a network segment where the NAS IP is inside the segment's CIDR
             update control {
                 Tmp-String-0 := "%{sql:SELECT unpm.radius_group \
-                    FROM user_nas_privilege_map unpm \
+                    FROM access_policy_assignments unpm \
                     JOIN network_segments ns ON unpm.segment_id = ns.id \
                      WHERE unpm.username='%{User-Name}' \
                      AND unpm.is_active=1 \
@@ -108,7 +108,7 @@ nas_based_authorization {
                 # view, then match the user's category-level privilege mapping.
                 update control {
                     Tmp-String-0 := "%{sql:SELECT unpm.radius_group \
-                        FROM user_nas_privilege_map unpm \
+                        FROM access_policy_assignments unpm \
                         WHERE unpm.username='%{User-Name}' \
                         AND unpm.nas_ip IS NULL \
                         AND unpm.segment_id IS NULL \
