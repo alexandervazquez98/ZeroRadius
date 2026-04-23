@@ -7,7 +7,7 @@ from starlette.requests import Request
 from typing import List
 
 from app.db.session import get_db
-from app.models.models import NetworkSegment, AdminUser, UserNasPrivilegeMap
+from app.models.models import NetworkSegment, AdminUser, AccessPolicyAssignment
 from app.schemas.schemas import (
     NetworkSegmentCreate,
     NetworkSegmentUpdate,
@@ -41,19 +41,19 @@ async def _get_overlapping_segment(
 
 async def _get_invalid_segment_exceptions(
     db: AsyncSession, segment_id: int, candidate_cidr: str
-) -> list[UserNasPrivilegeMap]:
+) -> list[AccessPolicyAssignment]:
     segment_net = ipaddress.ip_network(candidate_cidr, strict=False)
     result = await db.execute(
-        select(UserNasPrivilegeMap).where(
+        select(AccessPolicyAssignment).where(
             and_(
-                UserNasPrivilegeMap.segment_id == segment_id,
-                UserNasPrivilegeMap.target_start_ip.is_not(None),
-                UserNasPrivilegeMap.target_end_ip.is_not(None),
+                AccessPolicyAssignment.segment_id == segment_id,
+                AccessPolicyAssignment.target_start_ip.is_not(None),
+                AccessPolicyAssignment.target_end_ip.is_not(None),
             )
         )
     )
 
-    invalid: list[UserNasPrivilegeMap] = []
+    invalid: list[AccessPolicyAssignment] = []
     for mapping in result.scalars().all():
         start_ip = ipaddress.ip_address(mapping.target_start_ip)
         end_ip = ipaddress.ip_address(mapping.target_end_ip)
@@ -221,8 +221,8 @@ async def delete_network_segment(
     }
 
     dependent_privilege_maps = await db.execute(
-        select(UserNasPrivilegeMap.id).where(
-            UserNasPrivilegeMap.segment_id == record.id
+        select(AccessPolicyAssignment.id).where(
+            AccessPolicyAssignment.segment_id == record.id
         )
     )
     if dependent_privilege_maps.first() is not None:

@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 
-export default function CIRPreviewPanel({ onPreview, isPending }) {
+export default function PreviewTab({ onPreview, isPending }) {
   const [username, setUsername] = useState('')
   const [nasIp, setNasIp] = useState('')
   const [mac, setMac] = useState('')
@@ -76,11 +76,13 @@ export default function CIRPreviewPanel({ onPreview, isPending }) {
 
       {result && result.resolution_path !== 'none' && (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
-          <p className="font-bold text-emerald-700">Winning profile: {result.profile?.name}</p>
+          {result.profile && <p className="font-bold text-emerald-700">Winning bandwidth profile: {result.profile.name}</p>}
           {result.mapping && (
-            <p className="text-emerald-800">
-              Winner target: {result.mapping.calling_station_id || result.mapping.nas_ip || result.mapping.segment_name || result.mapping.nas_category_name || 'resolved'}
-            </p>
+            <div className="text-emerald-800">
+              <p>Target matched: {result.mapping.calling_station_id || result.mapping.nas_ip || result.mapping.segment_name || result.mapping.nas_category_name || 'resolved'}</p>
+              <p>RADIUS Group: <span className="font-mono">{result.mapping.radius_group}</span></p>
+              {result.mapping.privilege_level && <p>Privilege Level: <span className="font-mono">{result.mapping.privilege_level}</span></p>}
+            </div>
           )}
           <ul className="mt-2 text-emerald-800 list-disc list-inside">
             {result.trace?.map((item, index) => (
@@ -94,8 +96,8 @@ export default function CIRPreviewPanel({ onPreview, isPending }) {
 
       {result && result.resolution_path === 'none' && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          <p className="font-bold">No CIR match for this request.</p>
-          <p>Runtime policy will fall back to non-CIR behavior.</p>
+          <p className="font-bold">No access policy match for this request.</p>
+          <p>Runtime will fall back to default behavior.</p>
         </div>
       )}
     </section>

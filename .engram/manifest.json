@@ -80,6 +80,14 @@
       "sessions": 8,
       "memories": 42,
       "prompts": 18
+    },
+    {
+      "id": "f35677c0",
+      "created_by": "Alex",
+      "created_at": "2026-04-23T02:08:28Z",
+      "sessions": 2,
+      "memories": 27,
+      "prompts": 38
     }
   ]
 }

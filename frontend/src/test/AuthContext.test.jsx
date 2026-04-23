@@ -18,7 +18,7 @@ import React from 'react'
 import { renderHook, render, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { AuthProvider, useAuth } from '../context/AuthContext'
-import { ReviewBadge } from '../pages/PrivilegeMap'
+import { ReviewBadge } from '../components/access-policies/AssignmentsTab'
 
 // ---------------------------------------------------------------------------
 // JWT helpers — build mock tokens that jwtDecode can parse

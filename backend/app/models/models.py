@@ -293,8 +293,8 @@ class RadiusReplyAudit(Base):
 
 
 # T06 — UserNasPrivilegeMap model (ISO 27001 A.5.15, A.8.2)
-class UserNasPrivilegeMap(Base):
-    __tablename__ = "user_nas_privilege_map"
+class AccessPolicyAssignment(Base):
+    __tablename__ = "access_policy_assignments"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(64), nullable=False)
     # T26 — target_key for absolute uniqueness (sha256 hash)
@@ -395,13 +395,13 @@ class UserNasPrivilegeMap(Base):
         return hashlib.sha256(raw.encode()).hexdigest()
 
 
-@event.listens_for(UserNasPrivilegeMap, "before_insert")
-def set_target_key_on_insert(mapper, connection, target: UserNasPrivilegeMap):
+@event.listens_for(AccessPolicyAssignment, "before_insert")
+def set_target_key_on_insert(mapper, connection, target: AccessPolicyAssignment):
     target.target_key = target.compute_target_key()
 
 
-@event.listens_for(UserNasPrivilegeMap, "before_update")
-def set_target_key_on_update(mapper, connection, target: UserNasPrivilegeMap):
+@event.listens_for(AccessPolicyAssignment, "before_update")
+def set_target_key_on_update(mapper, connection, target: AccessPolicyAssignment):
     target.target_key = target.compute_target_key()
 
 
@@ -426,8 +426,8 @@ def _build_segment_target_key(
     return f"{safe(target_start_ip)}|{safe(target_end_ip)}"
 
 
-@event.listens_for(UserNasPrivilegeMap, "before_insert")
-@event.listens_for(UserNasPrivilegeMap, "before_update")
+@event.listens_for(AccessPolicyAssignment, "before_insert")
+@event.listens_for(AccessPolicyAssignment, "before_update")
 def _sync_segment_target_key(mapper, connection, target):
     target.segment_target_key = _build_segment_target_key(
         target.segment_id,
