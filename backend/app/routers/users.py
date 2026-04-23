@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from starlette.requests import Request
+from datetime import datetime, timedelta
 from app.db.session import get_db
 from app.models.models import RadCheck, RadReply, AdminUser
 from app.schemas.schemas import (
@@ -199,3 +200,49 @@ async def delete_user_reply(
         old_value=old_data,
     )
     return {"ok": True}
+
+
+# --- JIT Break-Glass Access ---
+@router.post("/jit-requests/{username}/approve")
+@limiter.limit("5/minute")
+async def approve_jit_access(
+    username: str,
+    request: Request,
+    ttl_hours: int = Query(default=24, ge=1, le=168),
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.SUPERADMIN, Role.ADMIN),
+):
+    """
+    Authorizes temporary elevation of a user by injecting the Expiration attribute
+    into their radcheck table.
+    """
+    expiration_date = datetime.now() + timedelta(hours=ttl_hours)
+    expiration_str = expiration_date.strftime("%d %b %Y %H:%M")
+
+    # Check if Expiration attribute already exists for this user
+    stmt = select(RadCheck).where(
+        RadCheck.username == username, RadCheck.attribute == "Expiration"
+    )
+    existing_attr = (await db.execute(stmt)).scalars().first()
+
+    if existing_attr:
+        existing_attr.value = expiration_str
+        existing_attr.op = ":="
+    else:
+        new_attr = RadCheck(
+            username=username, attribute="Expiration", op=":=", value=expiration_str
+        )
+        db.add(new_attr)
+
+    await db.commit()
+
+    await log_audit(
+        db,
+        current_user.username,
+        "JIT_APPROVED",
+        "radcheck",
+        username,
+        new_value={"ttl_hours": ttl_hours, "expiration": expiration_str},
+    )
+
+    return {"message": f"JIT Access approved. Calculated expiration: {expiration_str}"}

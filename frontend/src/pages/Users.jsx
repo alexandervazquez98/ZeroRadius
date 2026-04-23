@@ -43,7 +43,7 @@ const UsersPage = () => {
     });
 
     const jitMutation = useMutation({
-        mutationFn: ({ username, hours }) => api.post(`/iam-nac/jit-requests/${username}/approve?ttl_hours=${hours}`),
+        mutationFn: ({ username, hours }) => api.post(`/users/jit-requests/${username}/approve?ttl_hours=${hours}`),
         onSuccess: (data) => {
             showToast(data.data.message, 'success');
             setJitUser(null);

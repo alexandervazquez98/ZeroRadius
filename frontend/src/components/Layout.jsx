@@ -25,7 +25,6 @@ const Layout = () => {
         { name: 'RADIUS Policies (Macros)', path: '/groups', icon: Layers },
         { name: 'Access Policies', path: '/access-policies', icon: Map, allowedRoles: ['superadmin', 'admin', 'auditor'] },
         { name: 'Network Segments', path: '/network-segments', icon: Server, allowedRoles: ['superadmin', 'admin'] },
-        { name: 'IAM & Zonas', path: '/iam', icon: Shield, allowedRoles: ['superadmin', 'admin'] },
         { name: 'Dictionaries', path: '/dictionaries', icon: BookOpen },
         { name: 'Audit Logs', path: '/audit', icon: Shield },
         { name: 'Syslog', path: '/syslog', icon: FileText },

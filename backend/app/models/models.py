@@ -118,12 +118,6 @@ class Nas(Base):
     description: Mapped[Optional[str]] = mapped_column(
         String(200), default="RADIUS Client", nullable=True
     )
-    zone_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("hardware_zones.id", ondelete="SET NULL"), nullable=True
-    )
-    zone: Mapped[Optional["HardwareZone"]] = relationship(
-        "HardwareZone", back_populates="nases"
-    )
     # nas-categories feature: structured device classification
     category_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("nas_categories.id", ondelete="SET NULL"), nullable=True
@@ -372,11 +366,12 @@ class AccessPolicyAssignment(Base):
         return _normalize_mac(value)
 
     def compute_target_key(self) -> str:
-        """Deterministic sha256 hash for absolute uniqueness. 
+        """Deterministic sha256 hash for absolute uniqueness.
         Uses length-prefixed components to prevent delimiter injection attacks.
         Distinguishes None from empty values.
         """
-        def safe(val): 
+
+        def safe(val):
             if val is None:
                 return "4:None"
             s = str(val)
@@ -411,7 +406,8 @@ def _build_segment_target_key(
     target_end_ip: Optional[str],
 ) -> str:
     """Build logical key for segment rules. Matches compute_target_key logic."""
-    def safe(val): 
+
+    def safe(val):
         if val is None:
             return "4:None"
         s = str(val)
@@ -436,7 +432,7 @@ def _sync_segment_target_key(mapper, connection, target):
     )
 
 
-# --- IAM & NAC RBAC Models ---
+# --- Access Policies Domain Models ---
 
 
 class NetworkSegment(Base):
@@ -457,58 +453,6 @@ class NetworkSegment(Base):
         server_default=text("CURRENT_TIMESTAMP(6)"),
         server_onupdate=FetchedValue(),
         nullable=True,
-    )
-
-
-class HardwareZone(Base):
-    __tablename__ = "hardware_zones"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(
-        String(100), unique=True, nullable=False, index=True
-    )
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
-    nases: Mapped[list["Nas"]] = relationship("Nas", back_populates="zone")
-
-
-class IAM_Role(Base):
-    __tablename__ = "iam_roles"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(
-        String(50), unique=True, nullable=False, index=True
-    )
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
-
-class PolicyMacro(Base):
-    __tablename__ = "policy_macros"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(
-        String(100), unique=True, nullable=False, index=True
-    )
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    attributes_json: Mapped[dict] = mapped_column(JSON, default={})
-
-
-class RoleZonePolicy(Base):
-    __tablename__ = "role_zone_policies"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    role_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("iam_roles.id", ondelete="CASCADE"), nullable=False
-    )
-    zone_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("hardware_zones.id", ondelete="CASCADE"), nullable=False
-    )
-    policy_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("policy_macros.id", ondelete="CASCADE"), nullable=False
-    )
-
-    role: Mapped["IAM_Role"] = relationship("IAM_Role")
-    zone: Mapped["HardwareZone"] = relationship("HardwareZone")
-    policy: Mapped["PolicyMacro"] = relationship("PolicyMacro")
-
-    __table_args__ = (
-        UniqueConstraint("role_id", "zone_id", name="uq_role_zone_policy"),
     )
 
 

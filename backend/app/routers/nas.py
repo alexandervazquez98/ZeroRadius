@@ -51,7 +51,6 @@ def _nas_to_out(nas: Nas) -> NasOut:
         server=nas.server,
         community=nas.community,
         description=nas.description,
-        zone_id=nas.zone_id,
         category_id=nas.category_id,
         category_name=nas.category.name if nas.category else None,
     )
