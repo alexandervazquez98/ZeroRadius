@@ -76,7 +76,7 @@ async def list_privilege_maps(
 
 
 @router.post("", response_model=list[UserNasPrivilegeMapOut], status_code=201)
-@limiter.limit("30/minute")
+@limiter.limit("120/minute")
 async def create_privilege_map_bulk(
     request: Request,
     payload: UserNasPrivilegeMapBulkCreate,
@@ -143,7 +143,7 @@ async def create_privilege_map_bulk(
 
 
 @router.post("/category", response_model=UserNasPrivilegeMapOut, status_code=201)
-@limiter.limit("30/minute")
+@limiter.limit("120/minute")
 async def create_privilege_map_category(
     request: Request,
     payload: UserNasPrivilegeMapCreate,
@@ -222,7 +222,7 @@ async def create_privilege_map_category(
 
 
 @router.put("/{id}", response_model=UserNasPrivilegeMapOut)
-@limiter.limit("30/minute")
+@limiter.limit("120/minute")
 async def update_privilege_map(
     request: Request,
     id: int,
@@ -310,7 +310,7 @@ _validate_segment_exception = validate_segment_exception
 
 
 @router.delete("/{id}")
-@limiter.limit("30/minute")
+@limiter.limit("120/minute")
 async def delete_privilege_map(
     request: Request,
     id: int,
