@@ -153,18 +153,6 @@ nas_based_authorization {
                 }
             }
 
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPMaxDLCIR' ORDER BY id LIMIT 1}" != "") {
-                update reply {
-                    Cambium-Canopy-HPMaxDLCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPMaxDLCIR' ORDER BY id LIMIT 1}"
-                }
-            }
-
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPMaxULCIR' ORDER BY id LIMIT 1}" != "") {
-                update reply {
-                    Cambium-Canopy-HPMaxULCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPMaxULCIR' ORDER BY id LIMIT 1}"
-                }
-            }
-
             if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='WISPr-Bandwidth-Max-Up' ORDER BY id LIMIT 1}" != "") {
                 update reply {
                     WISPr-Bandwidth-Max-Up := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='WISPr-Bandwidth-Max-Up' ORDER BY id LIMIT 1}"
