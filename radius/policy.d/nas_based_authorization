@@ -138,39 +138,6 @@ nas_based_authorization {
             }
         }
 
-        # Apply reply attributes for the resolved dynamic group.
-        if (&control:SQL-Group && "%{control:SQL-Group}" != "") {
-            update reply {
-                Reply-Message := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply \
-                    WHERE groupname='%{control:SQL-Group}' \
-                    AND attribute='Reply-Message' \
-                    ORDER BY id LIMIT 1}"
-            }
-
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPDLCIR' ORDER BY id LIMIT 1}" != "") {
-                update reply {
-                    Cambium-Canopy-HPDLCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPDLCIR' ORDER BY id LIMIT 1}"
-                }
-            }
-
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPULCIR' ORDER BY id LIMIT 1}" != "") {
-                update reply {
-                    Cambium-Canopy-HPULCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPULCIR' ORDER BY id LIMIT 1}"
-                }
-            }
-
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-LPDLCIR' ORDER BY id LIMIT 1}" != "") {
-                update reply {
-                    Cambium-Canopy-LPDLCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-LPDLCIR' ORDER BY id LIMIT 1}"
-                }
-            }
-
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-LPULCIR' ORDER BY id LIMIT 1}" != "") {
-                update reply {
-                    Cambium-Canopy-LPULCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-LPULCIR' ORDER BY id LIMIT 1}"
-                }
-            }
-        }
     }
     # If NAS-IP-Address is missing, fall through silently (allow default processing)
 }
