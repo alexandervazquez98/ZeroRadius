@@ -22,7 +22,7 @@ const Layout = () => {
         { name: 'Users', path: '/users', icon: Users },
         { name: 'NAS Devices', path: '/nas', icon: Server },
         { name: 'Active Sessions', path: '/sessions', icon: Activity },
-        { name: 'Groups', path: '/groups', icon: Layers },
+        { name: 'RADIUS Policies (Macros)', path: '/groups', icon: Layers },
         { name: 'Access Policies', path: '/access-policies', icon: Map, allowedRoles: ['superadmin', 'admin', 'auditor'] },
         { name: 'Network Segments', path: '/network-segments', icon: Server, allowedRoles: ['superadmin', 'admin'] },
         { name: 'IAM & Zonas', path: '/iam', icon: Shield, allowedRoles: ['superadmin', 'admin'] },

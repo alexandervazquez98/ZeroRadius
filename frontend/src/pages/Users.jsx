@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
-import { Plus, Trash2, Edit, X, Users as UsersIcon, Clock, ShieldAlert } from 'lucide-react';
+import { Plus, Trash2, Edit, X, Clock, ShieldAlert } from 'lucide-react';
 import UserWizard from '../components/UserWizard';
-import UserGroupsModal from '../components/UserGroupsModal';
 import { useToast } from '../context/ToastContext';
 
 const UsersPage = () => {
@@ -13,7 +12,6 @@ const UsersPage = () => {
     const [newUser, setNewUser] = useState({ username: '', attribute: 'Cleartext-Password', op: ':=', value: '' });
 
     const [editingUser, setEditingUser] = useState(null);
-    const [selectedUserForGroups, setSelectedUserForGroups] = useState(null);
     const [jitUser, setJitUser] = useState(null);
     const [jitData, setJitData] = useState({ hours: 1, reason: '' });
 
@@ -116,13 +114,6 @@ const UsersPage = () => {
                                         <Clock size={18} />
                                     </button>
                                     <button
-                                        onClick={() => setSelectedUserForGroups(user)}
-                                        className="text-purple-600 hover:text-purple-900"
-                                        title="Manage Groups"
-                                    >
-                                        <UsersIcon size={18} />
-                                    </button>
-                                    <button
                                         onClick={() => setEditingUser(user)}
                                         className="text-blue-600 hover:text-blue-900"
                                     >
@@ -149,14 +140,6 @@ const UsersPage = () => {
                         onCancel={() => setIsOpen(false)}
                     />
                 </div>
-            )}
-
-            {/* Groups Management Modal */}
-            {selectedUserForGroups && (
-                <UserGroupsModal
-                    user={selectedUserForGroups}
-                    onClose={() => setSelectedUserForGroups(null)}
-                />
             )}
 
             {/* JIT Break-Glass Modal */}

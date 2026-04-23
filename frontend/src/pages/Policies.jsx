@@ -402,7 +402,7 @@ const PoliciesPage = () => {
         <div className="space-y-6 animate-fadeIn">
             <div className="flex justify-between items-center bg-white p-6 rounded-lg shadow-sm border border-slate-200">
                 <div>
-                    <h2 className="text-2xl font-black text-slate-800">Grupos RADIUS</h2>
+                    <h2 className="text-2xl font-black text-slate-800">RADIUS Policy Engine</h2>
                     <p className="text-sm text-slate-500">Gestión de grupos y atributos FreeRADIUS.</p>
                 </div>
                 <div className="flex gap-2">
@@ -410,7 +410,7 @@ const PoliciesPage = () => {
                         onClick={() => setIsCreateGroupModalOpen(true)}
                         className="bg-indigo-600 text-white px-5 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700 shadow font-bold"
                     >
-                        <Plus size={18} /> Nuevo Grupo
+                        <Plus size={18} /> Nueva Política
                     </button>
                     <button
                         onClick={() => { 
@@ -428,12 +428,12 @@ const PoliciesPage = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="bg-white rounded-xl shadow border p-4">
-                    <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-3">Grupos Existentes</h3>
+                    <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-3">Políticas Existentes</h3>
                     <div className="relative mb-3">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                         <input
                             className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                            placeholder="Buscar grupo..."
+                            placeholder="Buscar política..."
                             value={groupSearchQuery}
                             onChange={(e) => setGroupSearchQuery(e.target.value)}
                         />
@@ -442,7 +442,7 @@ const PoliciesPage = () => {
                         {isLoading ? (
                             <div className="text-center text-gray-400 py-4">Cargando...</div>
                         ) : filteredGroups.length === 0 ? (
-                            <div className="text-center text-gray-400 py-4">No hay grupos</div>
+                            <div className="text-center text-gray-400 py-4">No hay políticas</div>
                         ) : (
                             filteredGroups.map(g => (
                                 <div key={g.groupname} className={`p-3 rounded-lg cursor-pointer transition-colors flex items-center justify-between ${selectedGroup === g.groupname ? 'bg-indigo-50 border border-indigo-200' : 'hover:bg-slate-50 border border-transparent'}`}>
@@ -466,7 +466,7 @@ const PoliciesPage = () => {
                     {!selectedGroup ? (
                         <div className="text-center text-gray-400 py-12">
                             <Folder size={48} className="mx-auto text-gray-200 mb-3" />
-                            <p className="font-bold">Seleccioná un grupo</p>
+                            <p className="font-bold">Seleccioná una política</p>
                             <p className="text-sm">para ver y editar sus atributos</p>
                         </div>
                     ) : (
@@ -474,9 +474,9 @@ const PoliciesPage = () => {
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-lg font-black text-slate-800">{selectedGroup}</h3>
                                 <button
-                                    onClick={() => { if(window.confirm(`¿Eliminar grupo "${selectedGroup}"?`)) deleteEntireGroupMutation.mutate(selectedGroup); }}
+                                    onClick={() => { if(window.confirm(`¿Eliminar política "${selectedGroup}"?`)) deleteEntireGroupMutation.mutate(selectedGroup); }}
                                     className="text-rose-500 hover:bg-rose-50 p-2 rounded"
-                                    title="Eliminar Grupo"
+                                    title="Eliminar Política"
                                 >
                                     <Trash2 size={18} />
                                 </button>
@@ -545,7 +545,7 @@ const PoliciesPage = () => {
             {isEditGroupModalOpen && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
-                        <h3 className="text-xl font-black mb-4 text-slate-800 flex items-center gap-2"><Edit2 className="text-indigo-600"/> Renombrar Grupo</h3>
+                        <h3 className="text-xl font-black mb-4 text-slate-800 flex items-center gap-2"><Edit2 className="text-indigo-600"/> Renombrar Política</h3>
                         <div>
                             <label className="text-xs font-black text-slate-500 uppercase">Nombre Actual</label>
                             <input className="w-full mt-1 border rounded-lg p-3 bg-slate-100 font-mono" value={groupFormData.oldName} disabled />
@@ -569,14 +569,14 @@ const PoliciesPage = () => {
             {isCreateGroupModalOpen && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
-                        <h3 className="text-xl font-black mb-4 text-slate-800 flex items-center gap-2"><Plus className="text-indigo-600"/> Nuevo Grupo</h3>
+                        <h3 className="text-xl font-black mb-4 text-slate-800 flex items-center gap-2"><Plus className="text-indigo-600"/> Nueva Política</h3>
                         <div>
-                            <label className="text-xs font-black text-slate-500 uppercase">Nombre del Grupo</label>
+                            <label className="text-xs font-black text-slate-500 uppercase">Nombre de la Política</label>
                             <input
                                 className="w-full mt-1 border rounded-lg p-3 outline-none focus:ring-2 focus:ring-indigo-500"
                                 value={newGroupName}
                                 onChange={(e) => setNewGroupName(e.target.value.replace(/\s+/g, '_'))}
-                                placeholder="Ej: mi_nuevo_grupo"
+                                placeholder="Ej: mi_nueva_politica"
                                 autoFocus
                             />
                         </div>
