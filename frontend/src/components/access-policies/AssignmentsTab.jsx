@@ -924,7 +924,7 @@ const AssignmentsTab = () => {
                                 {/* Right: Policy Rules & Metadata */}
                                 <div className="space-y-4">
                                     <div>
-                                        <label htmlFor="pm-radius-group" className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">RADIUS Group (Policy) *</label>
+                                        <label htmlFor="pm-radius-group" className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">RADIUS Policy Mapping *</label>
                                         <select
                                             id="pm-radius-group"
                                             required
