@@ -129,6 +129,12 @@ nas_based_authorization {
                 }
             }
 
+            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-UserLevel' ORDER BY id LIMIT 1}" != "") {
+                update reply {
+                    Cambium-Canopy-UserLevel := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-UserLevel' ORDER BY id LIMIT 1}"
+                }
+            }
+
             if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPDLCIR' ORDER BY id LIMIT 1}" != "") {
                 update reply {
                     Cambium-Canopy-HPDLCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPDLCIR' ORDER BY id LIMIT 1}"
