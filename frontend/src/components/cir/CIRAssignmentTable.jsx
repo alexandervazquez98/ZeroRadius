@@ -158,6 +158,10 @@ export default function CIRAssignmentTable({
                 className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2"
                 value={form.calling_station_id}
                 onChange={(e) => setForm((prev) => ({ ...prev, calling_station_id: e.target.value }))}
+                onBlur={(e) => {
+                  const clean = e.target.value.replace(/[:.-]/g, '').toLowerCase();
+                  if (clean.length === 12) setForm((prev) => ({ ...prev, calling_station_id: clean }));
+                }}
                 required
               />
             </label>
