@@ -82,5 +82,16 @@ test.describe('Access Policies & Bandwidth Profiles', () => {
     await expect(page.getByText(uniqueSeg)).toBeVisible({ timeout: 8000 })
     await expect(page.getByText('10.250.0.10')).toBeVisible()
     await expect(page.getByText(profileName)).toBeVisible()
+
+    // 5. Test Preview Resolution Tab
+    await page.getByRole('button', { name: /preview resolution/i }).click()
+    
+    await page.getByLabel('Preview Username').fill('jperez')
+    await page.getByLabel('Preview NAS IP').fill('10.250.0.10')
+    await page.getByRole('button', { name: /run preview/i }).click()
+
+    await expect(page.getByText('Winning bandwidth profile:')).toBeVisible({ timeout: 8000 })
+    await expect(page.getByText(profileName)).toBeVisible()
+    await expect(page.getByText(/matched segment/i)).toBeVisible()
   })
 })

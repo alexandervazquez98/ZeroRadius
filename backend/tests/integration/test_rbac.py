@@ -166,14 +166,14 @@ class TestPrivilegeMapRBAC:
 
     async def test_auditor_can_read_privilege_map(self, async_client, auditor_token):
         resp = await async_client.get(
-            "/privilege-map",
+            "/access-policies/assignments",
             headers={"Authorization": f"Bearer {auditor_token}"},
         )
         assert resp.status_code == 200
 
     async def test_admin_can_read_privilege_map(self, async_client, admin_token):
         resp = await async_client.get(
-            "/privilege-map",
+            "/access-policies/assignments",
             headers={"Authorization": f"Bearer {admin_token}"},
         )
         assert resp.status_code == 200
@@ -190,7 +190,7 @@ class TestPrivilegeMapRBAC:
             "review_date": "2027-01-01",
         }
         resp = await async_client.post(
-            "/privilege-map",
+            "/access-policies/assignments/bulk",
             json=payload,
             headers={"Authorization": f"Bearer {auditor_token}"},
         )
@@ -208,7 +208,7 @@ class TestPrivilegeMapRBAC:
             "review_date": "2027-01-01",
         }
         resp = await async_client.post(
-            "/privilege-map",
+            "/access-policies/assignments/bulk",
             json=payload,
             headers={"Authorization": f"Bearer {helpdesk_token}"},
         )
@@ -218,7 +218,7 @@ class TestPrivilegeMapRBAC:
         self, async_client, readonly_token
     ):
         resp = await async_client.delete(
-            "/privilege-map/999999",
+            "/access-policies/assignments/999999",
             headers={"Authorization": f"Bearer {readonly_token}"},
         )
         assert resp.status_code == 403
