@@ -153,45 +153,9 @@ nas_based_authorization {
                 }
             }
 
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='WISPr-Bandwidth-Max-Up' ORDER BY id LIMIT 1}" != "") {
-                update reply {
-                    WISPr-Bandwidth-Max-Up := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='WISPr-Bandwidth-Max-Up' ORDER BY id LIMIT 1}"
-                }
-            }
-
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='WISPr-Bandwidth-Max-Down' ORDER BY id LIMIT 1}" != "") {
-                update reply {
-                    WISPr-Bandwidth-Max-Down := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='WISPr-Bandwidth-Max-Down' ORDER BY id LIMIT 1}"
-                }
-            }
-
             if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Filter-Id' ORDER BY id LIMIT 1}" != "") {
                 update reply {
                     Filter-Id := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Filter-Id' ORDER BY id LIMIT 1}"
-                }
-            }
-
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Mikrotik-Rate-Limit' ORDER BY id LIMIT 1}" != "") {
-                update reply {
-                    Mikrotik-Rate-Limit := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Mikrotik-Rate-Limit' ORDER BY id LIMIT 1}"
-                }
-            }
-
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Ascend-Data-Rate' ORDER BY id LIMIT 1}" != "") {
-                update reply {
-                    Ascend-Data-Rate := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Ascend-Data-Rate' ORDER BY id LIMIT 1}"
-                }
-            }
-
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Ascend-Xmit-Rate' ORDER BY id LIMIT 1}" != "") {
-                update reply {
-                    Ascend-Xmit-Rate := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Ascend-Xmit-Rate' ORDER BY id LIMIT 1}"
-                }
-            }
-
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cisco-AVPair' ORDER BY id LIMIT 1}" != "") {
-                update reply {
-                    Cisco-AVPair := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cisco-AVPair' ORDER BY id LIMIT 1}"
                 }
             }
         }
