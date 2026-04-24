@@ -83,11 +83,11 @@ def test_baseline_sm_lector_single_reply_attribute(
     assert "1" in _userlevel_values(attrs)
 
 
-def test_baseline_sm_lector_dual_reply_exposes_current_hydration_gap(
+def test_baseline_sm_lector_dual_reply_hydrates_both_reply_attributes(
     radius_client,
     radius_cambium_baseline_precondition,
 ):
-    """Gap documentado: cuando el grupo tiene 2 reply attrs, hoy UserMode NO sale."""
+    """Caso real validado: grupo dual hidrata UserLevel + UserMode por vía nativa."""
     del radius_cambium_baseline_precondition
 
     reply = send_access_request(
@@ -102,11 +102,9 @@ def test_baseline_sm_lector_dual_reply_exposes_current_hydration_gap(
     assert reply_contains_marker(reply, "BASELINE-SM-LECTOR-DUAL")
 
     attrs = parse_reply_attributes(reply)
-    # Baseline esperado actual (NO cambiar hasta el refactor):
-    # - UserLevel sí aparece
-    # - UserMode todavía no se hidrata automáticamente
+    # Path oficial nativo: ambos atributos del grupo deben llegar en Access-Accept.
     assert "1" in _userlevel_values(attrs)
-    assert _usermode_values(attrs) == []
+    assert "1" in _usermode_values(attrs)
 
 
 def test_baseline_group_with_check_and_reply(

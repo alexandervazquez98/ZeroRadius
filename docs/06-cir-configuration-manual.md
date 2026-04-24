@@ -89,10 +89,7 @@ Current precedence is implemented in `radius/policy.d/nas_based_authorization`:
 
 After a winning group is selected, group attributes are hydrated from `radgroupcheck`/`radgroupreply` through the SQL module.
 
-> Transitional safety toggle (Phase 2 prep): `ZR_RADIUS_NATIVE_GROUP_HYDRATION`
->
-> - `yes`: uses native hydration path (recommended target state).
-> - empty/`no`: preserves legacy manual hydration fallback in policy while keeping SQL-Group wiring ready.
+Native hydration is the official/default path. `nas_based_authorization` resolves `control:SQL-Group`, and the SQL module hydrates `radgroupcheck`/`radgroupreply` attributes in the authorize flow.
 
 ---
 
@@ -100,7 +97,7 @@ After a winning group is selected, group attributes are hydrated from `radgroupc
 
 - **Deterministic authorization path**: predictable winner between exact IP, exception, segment base, and category fallback.
 - **Centralized CIR control**: operators edit CIR values once at group level, then reuse via policy mappings.
-- **Safer fallback behavior**: if no valid mapping exists, access is rejected (Zero Trust posture).
+- **Safer authorization behavior**: if no valid mapping exists, access is rejected (Zero Trust posture).
 - **Scalable targeting**: supports granular exceptions plus broader segment/category patterns.
 
 ---

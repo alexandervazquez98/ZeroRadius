@@ -29,7 +29,7 @@ WHERE username IN (
   'baseline_zero_trust'
 );
 
-DELETE FROM user_nas_privilege_map
+DELETE FROM access_policy_assignments
 WHERE username IN (
   'baseline_ap_operator',
   'baseline_sm_lector_single',
@@ -66,23 +66,85 @@ INSERT INTO radgroupcheck (groupname, attribute, op, value) VALUES
 ('grp_baseline_sm_check_reply', 'NAS-Port', '==', '0');
 
 -- Access-policy assignments used by nas_based_authorization
+-- target_key MUST follow backend AccessPolicyAssignment.compute_target_key()
+-- safe(val) => "<len>:<value>" and NULL => "4:None"
 -- AP direct baseline
-INSERT INTO user_nas_privilege_map
-  (username, nas_ip, calling_station_id, radius_group, privilege_level, is_active)
+INSERT INTO access_policy_assignments
+  (username, target_key, nas_ip, calling_station_id, radius_group, privilege_level, is_active)
 VALUES
-  ('baseline_ap_operator', '192.168.88.1', NULL, 'grp_baseline_ap_direct', '15', 1);
+  (
+    'baseline_ap_operator',
+    SHA2(CONCAT(
+      '20:baseline_ap_operator|12:192.168.88.1|4:None|4:None|4:None|4:None|4:None'
+    ), 256),
+    '192.168.88.1',
+    NULL,
+    'grp_baseline_ap_direct',
+    '15',
+    1
+  );
 
 -- Same AP as proxy: direct AP mapping + SM-specific mapping by Calling-Station-Id
-INSERT INTO user_nas_privilege_map
-  (username, nas_ip, calling_station_id, radius_group, privilege_level, is_active)
+INSERT INTO access_policy_assignments
+  (username, target_key, nas_ip, calling_station_id, radius_group, privilege_level, is_active)
 VALUES
-  ('baseline_sm_lector_single', '192.168.88.1', NULL, 'grp_baseline_ap_direct', '15', 1),
-  ('baseline_sm_lector_single', NULL, 'aabbccddeeff', 'grp_baseline_sm_lector_single', '1', 1),
+  (
+    'baseline_sm_lector_single',
+    SHA2(CONCAT(
+      '25:baseline_sm_lector_single|12:192.168.88.1|4:None|4:None|4:None|4:None|4:None'
+    ), 256),
+    '192.168.88.1',
+    NULL,
+    'grp_baseline_ap_direct',
+    '15',
+    1
+  ),
+  (
+    'baseline_sm_lector_single',
+    SHA2(CONCAT(
+      '25:baseline_sm_lector_single|4:None|12:aabbccddeeff|4:None|4:None|4:None|4:None'
+    ), 256),
+    NULL,
+    'aabbccddeeff',
+    'grp_baseline_sm_lector_single',
+    '1',
+    1
+  ),
 
-  ('baseline_sm_lector_dual', '192.168.88.1', NULL, 'grp_baseline_ap_direct', '15', 1),
-  ('baseline_sm_lector_dual', NULL, '001122334455', 'grp_baseline_sm_lector_dual', '1', 1),
+  (
+    'baseline_sm_lector_dual',
+    SHA2(CONCAT(
+      '23:baseline_sm_lector_dual|12:192.168.88.1|4:None|4:None|4:None|4:None|4:None'
+    ), 256),
+    '192.168.88.1',
+    NULL,
+    'grp_baseline_ap_direct',
+    '15',
+    1
+  ),
+  (
+    'baseline_sm_lector_dual',
+    SHA2(CONCAT(
+      '23:baseline_sm_lector_dual|4:None|12:001122334455|4:None|4:None|4:None|4:None'
+    ), 256),
+    NULL,
+    '001122334455',
+    'grp_baseline_sm_lector_dual',
+    '1',
+    1
+  ),
 
-  ('baseline_sm_check_reply', NULL, 'deaddeadbeef', 'grp_baseline_sm_check_reply', '1', 1);
+  (
+    'baseline_sm_check_reply',
+    SHA2(CONCAT(
+      '23:baseline_sm_check_reply|4:None|12:deaddeadbeef|4:None|4:None|4:None|4:None'
+    ), 256),
+    NULL,
+    'deaddeadbeef',
+    'grp_baseline_sm_check_reply',
+    '1',
+    1
+  );
 
 -- baseline_zero_trust intentionally has credentials but no policy mapping.
 
