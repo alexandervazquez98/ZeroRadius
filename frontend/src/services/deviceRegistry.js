@@ -41,6 +41,11 @@ const DeviceRegistryService = {
     });
     return r.data;
   },
+
+  downloadBulkTemplate: async () => {
+    const r = await api.get('/device-registry/bulk/template', { responseType: 'blob' });
+    return r.data;
+  },
 };
 
 export default DeviceRegistryService;

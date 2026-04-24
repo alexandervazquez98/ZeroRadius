@@ -7,6 +7,7 @@ Supports CSV bulk upload and JSON bulk create.
 import csv
 import io
 import logging
+import ipaddress
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
@@ -14,6 +15,7 @@ from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
+from starlette.responses import Response
 
 from app.core.limiter import limiter
 from app.core.rbac import require_roles, Role
@@ -33,6 +35,25 @@ from app.services.audit import log_audit, EventCode
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/device-registry", tags=["device-registry"])
+
+
+def _validate_required_bulk_fields(*, mac: str, nas_ip: Optional[str], name: Optional[str], description: Optional[str], context: str):
+    if not mac:
+        raise ValueError(f"{context}: missing mac")
+    if nas_ip is None or not nas_ip.strip():
+        raise ValueError(f"{context}: missing nas_ip")
+    if name is None or not name.strip():
+        raise ValueError(f"{context}: missing name")
+    if description is None or not description.strip():
+        raise ValueError(f"{context}: missing description")
+
+    cleaned_ip = nas_ip.strip()
+    try:
+        ipaddress.ip_address(cleaned_ip)
+    except ValueError as exc:
+        raise ValueError(f"{context}: invalid nas_ip '{cleaned_ip}'") from exc
+
+    return cleaned_ip, name.strip(), description.strip()
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -198,21 +219,30 @@ async def bulk_create(
     for item in payload.devices:
         cat_id = item.category_id if item.category_id is not None else payload.category_id
         try:
+            nas_ip, name, description = _validate_required_bulk_fields(
+                mac=item.mac,
+                nas_ip=item.nas_ip,
+                name=item.name,
+                description=item.description,
+                context=f"mac {item.mac}",
+            )
             existing = await db.scalar(
                 select(DeviceRegistry).where(DeviceRegistry.mac == item.mac)
             )
             if existing:
                 existing.category_id = cat_id
-                existing.nas_ip = item.nas_ip
-                existing.description = item.description
+                existing.nas_ip = nas_ip
+                existing.name = name
+                existing.description = description
                 existing.is_active = item.is_active
                 updated += 1
             else:
                 db.add(DeviceRegistry(
                     mac=item.mac,
                     category_id=cat_id,
-                    nas_ip=item.nas_ip,
-                    description=item.description,
+                    nas_ip=nas_ip,
+                    name=name,
+                    description=description,
                     is_active=item.is_active,
                 ))
                 created += 1
@@ -235,12 +265,21 @@ async def bulk_create_csv(
     current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
 ):
     """
-    Upload CSV with columns: mac, category_id (optional), nas_ip (optional), description (optional).
+    Upload CSV with columns: mac, nas_ip, name, description, category_id (optional).
     Upserts all rows. Existing MACs are updated.
     """
     content = await file.read()
     text = content.decode("utf-8-sig")  # handle BOM
     reader = csv.DictReader(io.StringIO(text))
+
+    required_headers = {"mac", "nas_ip", "name", "description"}
+    csv_headers = set(reader.fieldnames or [])
+    missing_headers = sorted(required_headers - csv_headers)
+    if missing_headers:
+        raise HTTPException(
+            status_code=400,
+            detail=f"CSV missing required header(s): {', '.join(missing_headers)}",
+        )
 
     created = updated = 0
     errors: list[str] = []
@@ -259,19 +298,33 @@ async def bulk_create_csv(
 
         raw_cat = (row.get("category_id") or "").strip()
         cat_id = int(raw_cat) if raw_cat.isdigit() else default_category_id
-        nas_ip = (row.get("nas_ip") or "").strip() or None
-        description = (row.get("description") or "").strip() or None
+        nas_ip_raw = (row.get("nas_ip") or "").strip() or None
+        name_raw = (row.get("name") or "").strip() or None
+        description_raw = (row.get("description") or "").strip() or None
+
+        try:
+            nas_ip, name, description = _validate_required_bulk_fields(
+                mac=mac,
+                nas_ip=nas_ip_raw,
+                name=name_raw,
+                description=description_raw,
+                context=f"row {i}",
+            )
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
 
         try:
             existing = await db.scalar(select(DeviceRegistry).where(DeviceRegistry.mac == mac))
             if existing:
                 existing.category_id = cat_id
                 existing.nas_ip = nas_ip
+                existing.name = name
                 existing.description = description
                 updated += 1
             else:
                 db.add(DeviceRegistry(mac=mac, category_id=cat_id, nas_ip=nas_ip,
-                                      description=description))
+                                      name=name, description=description))
                 created += 1
         except Exception as exc:
             errors.append(f"row {i} ({mac}): {exc}")
@@ -280,3 +333,41 @@ async def bulk_create_csv(
     await log_audit(db, current_user.username, "BULK_CSV", "device_registry", file.filename or "upload",
                     new_value={"created": created, "updated": updated, "errors": len(errors)})
     return DeviceRegistryBulkResult(created=created, updated=updated, errors=errors)
+
+
+@router.get("/bulk/template")
+@limiter.limit("30/minute")
+async def download_bulk_template(
+    request: Request,
+    current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
+):
+    output = io.StringIO()
+    writer = csv.DictWriter(
+        output,
+        fieldnames=["mac", "nas_ip", "name", "description", "category_id"],
+    )
+    writer.writeheader()
+    writer.writerow(
+        {
+            "mac": "0A:00:3E:45:76:4A",
+            "nas_ip": "192.168.1.11",
+            "name": "SM Torre Norte",
+            "description": "Cliente premium - sector norte",
+            "category_id": "2",
+        }
+    )
+    writer.writerow(
+        {
+            "mac": "0A:00:3E:45:76:4B",
+            "nas_ip": "192.168.1.12",
+            "name": "SM Torre Sur",
+            "description": "Backhaul secundario",
+            "category_id": "",
+        }
+    )
+
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=device_registry_bulk_template.csv"},
+    )

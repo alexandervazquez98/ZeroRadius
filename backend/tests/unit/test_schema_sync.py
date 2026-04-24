@@ -163,3 +163,10 @@ class TestSchemaSync:
         core_tables = {"radcheck", "radreply", "radusergroup", "nas", "radacct"}
         missing = core_tables - set(sql_tables.keys())
         assert not missing, f"Core RADIUS tables missing from init.sql parse: {missing}"
+
+    def test_regression_device_registry_name_column_synced(self, model_tables: dict, sql_tables: dict):
+        """Regression: device_registry.name must exist in both model and init.sql."""
+        assert "device_registry" in model_tables
+        assert "device_registry" in sql_tables
+        assert "name" in model_tables["device_registry"]
+        assert "name" in sql_tables["device_registry"]

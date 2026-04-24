@@ -486,6 +486,7 @@ class DeviceRegistry(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     mac: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     category_id: Mapped[Optional[int]] = mapped_column(
         Integer,
         ForeignKey("nas_categories.id", ondelete="SET NULL", name="fk_device_category"),
