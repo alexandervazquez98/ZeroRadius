@@ -350,23 +350,42 @@ async def download_bulk_template(
     """
     Generate a CSV template with columns: mac, name, description, category_id, nas_ip.
     Use this template to bulk-import devices via /bulk/csv.
+
+    The template includes example rows (imported as real devices unless deleted)
+    followed by a [REFERENCE] section with category IDs and MAC format examples.
     """
     headers = ["mac", "name", "description", "category_id", "nas_ip"]
-    rows = [
+    example_rows = [
         ["0A:00:3E:45:76:4A", "SM Torre Norte", "Cliente premium - sector norte", "2", "192.168.1.11"],
         ["0A:00:3E:45:76:4B", "SM Torre Sur", "Backhaul secundario", "", "192.168.1.12"],
     ]
 
-    # Fetch categories for reference
-    result = await db.execute(select(NasCategory).order_by(NasCategory.name))
+    # Fetch categories for reference section
+    result = await db.execute(select(NasCategory).order_by(NasCategory.id))
     categories = result.scalars().all()
 
     output = io.StringIO()
     writer = csv.writer(output)
 
+    # Write header and example rows (these ARE the import data)
     writer.writerow(headers)
-    for row in rows:
+    for row in example_rows:
         writer.writerow(row)
+
+    # Write reference section (metadata, NOT imported as data)
+    writer.writerow([])  # blank separator
+    writer.writerow(["[REFERENCE]"])
+    writer.writerow(["Categories (id:name):"])
+    for cat in categories:
+        writer.writerow([f"{cat.id}: {cat.name}"])
+    writer.writerow([])
+    writer.writerow(["Supported MAC formats:"])
+    writer.writerow(["AA:BB:CC:DD:EE:FF (colons)"])
+    writer.writerow(["AA-BB-CC-DD-EE-FF (dashes)"])
+    writer.writerow(["AABBCCDDEEFF (plain hex)"])
+    writer.writerow(["AA BB CC DD EE FF (spaces)"])
+    writer.writerow([])
+    writer.writerow(["Note: Example rows above WILL be imported as devices unless deleted."])
 
     csv_content = output.getvalue()
 
