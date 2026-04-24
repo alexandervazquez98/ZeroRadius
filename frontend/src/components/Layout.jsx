@@ -20,12 +20,11 @@ const Layout = () => {
     const navItems = [
         { name: 'Dashboard', path: '/', icon: LayoutDashboard },
         { name: 'Users', path: '/users', icon: Users },
-        { name: 'NAS Devices', path: '/nas', icon: Server },
+        { name: 'Network Devices', path: '/devices', icon: Server, allowedRoles: ['superadmin', 'admin'] },
         { name: 'Active Sessions', path: '/sessions', icon: Activity },
         { name: 'RADIUS Policies (Macros)', path: '/groups', icon: Layers },
         { name: 'Access Policies', path: '/access-policies', icon: Map, allowedRoles: ['superadmin', 'admin', 'auditor'] },
         { name: 'Network Segments', path: '/network-segments', icon: Server, allowedRoles: ['superadmin', 'admin'] },
-        { name: 'Device Registry', path: '/device-registry', icon: Cpu, allowedRoles: ['superadmin', 'admin'] },
         { name: 'Dictionaries', path: '/dictionaries', icon: BookOpen },
         { name: 'Audit Logs', path: '/audit', icon: Shield },
         { name: 'Syslog', path: '/syslog', icon: FileText },

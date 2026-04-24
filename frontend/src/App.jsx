@@ -10,6 +10,7 @@ import ChangePassword from './pages/ChangePassword';
 import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
 import NAS from './pages/NAS';
+import NetworkDevices from './pages/NetworkDevices';
 import Sessions from './pages/Sessions';
 import Groups from './pages/Groups';
 import Audit from './pages/Audit';
@@ -53,7 +54,9 @@ function App() {
                     }>
                         <Route index element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
                         <Route path="users" element={<ErrorBoundary><Users /></ErrorBoundary>} />
-                        <Route path="nas" element={<ErrorBoundary><NAS /></ErrorBoundary>} />
+                        <Route path="devices" element={<ErrorBoundary><NetworkDevices /></ErrorBoundary>} />
+                        <Route path="nas" element={<Navigate to="/devices" replace />} />
+                        <Route path="device-registry" element={<Navigate to="/devices" replace />} />
                         <Route path="sessions" element={<ErrorBoundary><Sessions /></ErrorBoundary>} />
                         <Route path="groups" element={<ErrorBoundary><Groups /></ErrorBoundary>} />
                         <Route path="audit" element={<ErrorBoundary><Audit /></ErrorBoundary>} />
@@ -97,15 +100,15 @@ function App() {
                         />
 
                         {/* Device Registry */}
+                        {/*
+                         * Legacy route preserved for backward compatibility.
+                         * Now handled by /devices redirect above.
+                         * The RoleGuard here was for the old standalone page.
+                         * NetworkDevices.jsx handles role-checking internally per tab.
+                         */}
                         <Route
                             path="device-registry"
-                            element={
-                                <ErrorBoundary>
-                                    <RoleGuard allowedRoles={['superadmin', 'admin']} fallback={<Unauthorized />}>
-                                        <DeviceRegistry />
-                                    </RoleGuard>
-                                </ErrorBoundary>
-                            }
+                            element={<Navigate to="/devices" replace />}
                         />
 
                         <Route path="unauthorized" element={<Unauthorized />} />
