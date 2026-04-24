@@ -263,9 +263,81 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 app.add_middleware(SecurityHeadersMiddleware)
 
 
+# ---------------------------------------------------------------------------
+# Schema Validation and Auto-Migration (Task: db-schema-validation)
+# ---------------------------------------------------------------------------
+
+
+async def run_pending_migrations() -> None:
+    """Run alembic.command.upgrade('head'), respecting DISABLE_AUTO_MIGRATE.
+
+    Skips migration if DISABLE_AUTO_MIGRATE=true but still runs validation.
+    """
+    if os.getenv("DISABLE_AUTO_MIGRATE", "").lower() == "true":
+        logger.info("Auto-migration disabled via DISABLE_AUTO_MIGRATE=true — skipping alembic upgrade")
+        return
+
+    import alembic.config
+    import alembic.command
+
+    cfg = alembic.config.Config("alembic.ini")
+    try:
+        alembic.command.upgrade(cfg, "head")
+        logger.info("Alembic migrations applied successfully")
+    except Exception as exc:
+        logger.error("Alembic migration failed: %s", exc)
+        raise
+
+
+async def validate_and_migrate() -> None:
+    """Run schema validation and auto-migration on startup.
+
+    This function is called during FastAPI startup to ensure the database
+    schema matches the SQLAlchemy models before accepting traffic.
+
+    Fail-fast behavior:
+    - If DISABLE_AUTO_MIGRATE=true: skip migration but still validate (fail on drift)
+    - If auto-migration fails: exit with error
+    - If schema drift detected after migration: exit with error
+    """
+    from app.db.schema_validator import validate_schema_drift
+    from app.db.exceptions import KNOWN_EXCEPTIONS
+
+    # Run pending migrations first (if not disabled)
+    await run_pending_migrations()
+
+    # Validate schema drift (always, even if migrations were skipped)
+    try:
+        drift_errors = await validate_schema_drift(engine, KNOWN_EXCEPTIONS)
+        if drift_errors:
+            error_msg = (
+                "Schema drift detected — database schema does not match SQLAlchemy models:\n"
+                + "\n".join(f"  - {err}" for err in drift_errors)
+                + "\n\nPlease run Alembic migrations or update the database schema."
+            )
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+        logger.info("Schema validation passed — no drift detected")
+    except RuntimeError:
+        # Re-raise RuntimeError for fail-fast behavior
+        raise
+    except Exception as exc:
+        logger.error("Schema validation failed: %s", exc)
+        raise RuntimeError(f"Schema validation failed: {exc}") from exc
+
+
 # Startup event to create tables if they don't exist (useful for dev)
 @app.on_event("startup")
 async def startup():
+    # Run schema validation and auto-migration (fail-fast on drift)
+    # This runs BEFORE create_all to ensure schema is up-to-date
+    try:
+        await validate_and_migrate()
+    except RuntimeError as exc:
+        logger.error("Startup failed: %s", exc)
+        import sys
+        sys.exit(1)
+
     async with engine.begin() as conn:
         # In production, use Alembic for migrations
         await conn.run_sync(Base.metadata.create_all)

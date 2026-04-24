@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from app.db.session import Base
+from app.db.exceptions import KNOWN_EXCEPTIONS
 
 # Force model registration — importing models triggers mapper config
 import app.models.models  # noqa: F401
@@ -29,14 +30,6 @@ import app.models.models  # noqa: F401
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-# Columns that only exist in models for ORM convenience (relationships, etc.)
-# and intentionally have no init.sql counterpart.  Add entries here ONLY with
-# a comment explaining why.
-KNOWN_EXCEPTIONS: dict[str, set[str]] = {
-    # Example:
-    # "some_table": {"virtual_column"},
-}
 
 
 def _parse_init_sql() -> dict[str, set[str]]:
