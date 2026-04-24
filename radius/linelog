@@ -27,7 +27,7 @@ linelog {
 	#  The string here is expanded.  If the result is empty,
 	#  then nothing is logged.
 	#
-	format = "LINELOG: User: %{User-Name} - Access: %{Packet-Type} - Reply: %{reply:Reply-Message} - IP: %{reply:Framed-IP-Address}"
+	format = "LINELOG: User=%{User-Name} Access=%{Packet-Type} Reply=%{reply:Reply-Message} ReplyIP=%{reply:Framed-IP-Address} SQLGroup=%{%{control:SQL-Group}:-none} Resolution=%{%{control:Tmp-String-1}:-none} Hydration=%{%{control:Tmp-String-2}:-unknown}"
 
 	#
 	#  If the reference is to a list of attributes (e.g. "reply:"),

@@ -1,13 +1,16 @@
 # NAS-Based Authorization Policy — nas-categories update
 # ISO 27001:2022 A.8.3 — Access control based on NAS identity
 #
-# Two-step authorization:
+# Three-step authorization:
 #
 #   Step 1 (IP-specific, unchanged):
 #     Query access_policy_assignments by exact NAS-IP-Address.
 #     Most specific — always wins over category.
 #
-#   Step 2 (Category fallback, NEW):
+#   Step 2 (Segment base):
+#     Match NAS-IP against segment CIDR without exception range.
+#
+#   Step 3 (Category fallback):
 #     If no IP match, resolve the NAS device's category via the
 #     nas_cidr_ranges VIEW (handles both /32 and CIDR ranges).
 #     Then look up the user's category-level privilege mapping.
@@ -24,6 +27,10 @@
 nas_based_authorization {
 
     if (&NAS-IP-Address) {
+        update control {
+            Tmp-String-1 := "unmatched"
+            Tmp-String-2 := "manual"
+        }
 
         # ── STEP 1: Exact MAC, Exact IP or IP Range Exception ───────────────
         # Priority: MAC+IP > MAC > IP > Range Exception
@@ -69,6 +76,12 @@ nas_based_authorization {
                 LIMIT 1}"
         }
 
+        if ("%{control:Tmp-String-0}" != "") {
+            update control {
+                Tmp-String-1 := "step1"
+            }
+        }
+
         if ("%{control:Tmp-String-0}" == "") {
             # ── STEP 2: Segment Base match ──────────────────────────────────
             # Look for a mapping to a network segment where the NAS IP is inside the segment's CIDR
@@ -88,7 +101,13 @@ nas_based_authorization {
                      ORDER BY CAST( \
                          CASE WHEN LOCATE('/', ns.cidr) > 0 THEN SUBSTRING_INDEX(ns.cidr, '/', -1) ELSE '32' END \
                      AS UNSIGNED) DESC, ns.id ASC, unpm.id ASC \
-                     LIMIT 1}"
+                      LIMIT 1}"
+            }
+
+            if ("%{control:Tmp-String-0}" != "") {
+                update control {
+                    Tmp-String-1 := "step2"
+                }
             }
         }
 
@@ -110,6 +129,12 @@ nas_based_authorization {
                     ) \
                     LIMIT 1}"
             }
+
+            if ("%{control:Tmp-String-0}" != "") {
+                update control {
+                    Tmp-String-1 := "step3"
+                }
+            }
         }
 
         if ("%{control:Tmp-String-0}" != "") {
@@ -118,50 +143,65 @@ nas_based_authorization {
                 SQL-Group := "%{control:Tmp-String-0}"
             }
 
-            # Extracción manual y robusta de atributos de radgroupreply
-            update reply {
-                Reply-Message := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Reply-Message' ORDER BY id LIMIT 1}"
-            }
-
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Motorola-Cambium-Canopy-UserLevel' ORDER BY id LIMIT 1}" != "") {
-                update reply {
-                    Motorola-Cambium-Canopy-UserLevel := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Motorola-Cambium-Canopy-UserLevel' ORDER BY id LIMIT 1}"
+            # Transitional toggle (Phase 2 prep)
+            # - no/empty (default): keep legacy manual hydration for baseline safety.
+            # - yes: skip manual hydration and rely on the following `-sql` in authorize{}
+            #        to hydrate radgroupcheck/radgroupreply natively using SQL-Group.
+            if ("%{tolower:%{ENV:ZR_RADIUS_NATIVE_GROUP_HYDRATION}}" == "yes") {
+                update control {
+                    Tmp-String-2 := "native"
                 }
             }
-
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-UserLevel' ORDER BY id LIMIT 1}" != "") {
-                update reply {
-                    Cambium-Canopy-UserLevel := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-UserLevel' ORDER BY id LIMIT 1}"
+            else {
+                update control {
+                    Tmp-String-2 := "manual"
                 }
-            }
 
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPDLCIR' ORDER BY id LIMIT 1}" != "") {
+                # Legacy manual hydration fallback (to preserve current baseline behavior)
                 update reply {
-                    Cambium-Canopy-HPDLCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPDLCIR' ORDER BY id LIMIT 1}"
+                    Reply-Message := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Reply-Message' ORDER BY id LIMIT 1}"
                 }
-            }
 
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPULCIR' ORDER BY id LIMIT 1}" != "") {
-                update reply {
-                    Cambium-Canopy-HPULCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPULCIR' ORDER BY id LIMIT 1}"
+                if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Motorola-Cambium-Canopy-UserLevel' ORDER BY id LIMIT 1}" != "") {
+                    update reply {
+                        Motorola-Cambium-Canopy-UserLevel := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Motorola-Cambium-Canopy-UserLevel' ORDER BY id LIMIT 1}"
+                    }
                 }
-            }
 
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-LPDLCIR' ORDER BY id LIMIT 1}" != "") {
-                update reply {
-                    Cambium-Canopy-LPDLCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-LPDLCIR' ORDER BY id LIMIT 1}"
+                if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-UserLevel' ORDER BY id LIMIT 1}" != "") {
+                    update reply {
+                        Cambium-Canopy-UserLevel := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-UserLevel' ORDER BY id LIMIT 1}"
+                    }
                 }
-            }
 
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-LPULCIR' ORDER BY id LIMIT 1}" != "") {
-                update reply {
-                    Cambium-Canopy-LPULCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-LPULCIR' ORDER BY id LIMIT 1}"
+                if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPDLCIR' ORDER BY id LIMIT 1}" != "") {
+                    update reply {
+                        Cambium-Canopy-HPDLCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPDLCIR' ORDER BY id LIMIT 1}"
+                    }
                 }
-            }
 
-            if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Filter-Id' ORDER BY id LIMIT 1}" != "") {
-                update reply {
-                    Filter-Id := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Filter-Id' ORDER BY id LIMIT 1}"
+                if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPULCIR' ORDER BY id LIMIT 1}" != "") {
+                    update reply {
+                        Cambium-Canopy-HPULCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-HPULCIR' ORDER BY id LIMIT 1}"
+                    }
+                }
+
+                if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-LPDLCIR' ORDER BY id LIMIT 1}" != "") {
+                    update reply {
+                        Cambium-Canopy-LPDLCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-LPDLCIR' ORDER BY id LIMIT 1}"
+                    }
+                }
+
+                if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-LPULCIR' ORDER BY id LIMIT 1}" != "") {
+                    update reply {
+                        Cambium-Canopy-LPULCIR := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Cambium-Canopy-LPULCIR' ORDER BY id LIMIT 1}"
+                    }
+                }
+
+                if ("%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Filter-Id' ORDER BY id LIMIT 1}" != "") {
+                    update reply {
+                        Filter-Id := "%{sql:SELECT CAST(value AS CHAR) FROM radgroupreply WHERE groupname='%{control:SQL-Group}' AND attribute='Filter-Id' ORDER BY id LIMIT 1}"
+                    }
                 }
             }
         }
