@@ -29,6 +29,7 @@ from app.schemas.device_registry import (
     DeviceRegistryBulkCreate,
     DeviceRegistryBulkResult,
     _normalize_mac,
+    EXAMPLE_TEMPLATE_MACS,
 )
 from app.services.audit import log_audit, EventCode
 
@@ -294,6 +295,11 @@ async def bulk_create_csv(
             mac = _normalize_mac(raw_mac)
         except ValueError as exc:
             errors.append(f"row {i} ({raw_mac}): {exc}")
+            continue
+
+        # Reject example/template rows that must be removed before import
+        if mac in EXAMPLE_TEMPLATE_MACS:
+            errors.append(f"row {i} ({raw_mac}): example/template rows must be removed before import")
             continue
 
         raw_cat = (row.get("category_id") or "").strip()

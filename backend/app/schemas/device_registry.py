@@ -10,6 +10,12 @@ _MAC_ACCEPTED_FORMATS = (
     re.compile(r"^(?:[0-9a-fA-F]{4}\.){2}[0-9a-fA-F]{4}$"),
 )
 
+# MACs used in the bulk CSV template as example rows — must be removed before import
+EXAMPLE_TEMPLATE_MACS = frozenset([
+    "0a003e45764a",  # SM Torre Norte
+    "0a003e45764b",  # SM Torre Sur
+])
+
 
 def _normalize_mac(value: str) -> str:
     if not any(p.fullmatch(value) for p in _MAC_ACCEPTED_FORMATS):
