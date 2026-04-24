@@ -16,6 +16,7 @@ from app.routers import (
     nas_categories,
     syslog,
     network_segments,
+    device_registry,
 )
 from app.db.session import engine, Base
 from app.core.limiter import limiter
@@ -306,6 +307,7 @@ app.include_router(sessions.router)
 app.include_router(nas_categories.router)
 app.include_router(network_segments.router)
 app.include_router(access_policies.router)
+app.include_router(device_registry.router)
 
 
 # ---------------------------------------------------------------------------
