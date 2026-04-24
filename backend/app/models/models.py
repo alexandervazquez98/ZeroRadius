@@ -1,4 +1,4 @@
-from sqlalchemy import (
+﻿from sqlalchemy import (
     Column,
     Integer,
     BigInteger,
@@ -14,18 +14,37 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.mysql import DATETIME as MySQLDATETIME
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.sql import func
 from sqlalchemy.schema import FetchedValue
 from typing import Optional
 from app.db.session import Base
 import datetime
+import hashlib
+import ipaddress
+import re
 import secrets
+from sqlalchemy import event
 
 
 def _generate_secret() -> str:
     """Generate a random 48-character secret for NAS devices."""
     return secrets.token_urlsafe(36)
+
+
+_MAC_ACCEPTED_FORMATS = (
+    re.compile(r"^[0-9a-fA-F]{12}$"),
+    re.compile(r"^(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$"),
+    re.compile(r"^(?:[0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}$"),
+    re.compile(r"^(?:[0-9a-fA-F]{4}\.){2}[0-9a-fA-F]{4}$"),
+)
+
+
+def _normalize_mac(value: str) -> str:
+    """Validate exact supported MAC formats, then normalize to 12 lowercase hex."""
+    if not any(pattern.fullmatch(value) for pattern in _MAC_ACCEPTED_FORMATS):
+        raise ValueError("invalid MAC address format (must be 12 hex chars)")
+    return re.sub(r"[:.\-]", "", value).lower()
 
 
 class RadCheck(Base):
@@ -156,6 +175,13 @@ class RadAcct(Base):
     callingstationid: Mapped[str] = mapped_column(
         String(50), nullable=False, default=""
     )
+
+    @validates("callingstationid")
+    def validate_callingstationid(self, key, value):
+        if value is None:
+            return value
+        return _normalize_mac(value)
+
     acctterminatecause: Mapped[str] = mapped_column(
         String(32), nullable=False, default=""
     )
@@ -164,7 +190,7 @@ class RadAcct(Base):
     framedipaddress: Mapped[str] = mapped_column(
         String(15), nullable=False, default="", index=True
     )
-    # T08 — extended accounting fields (ISO 27001 A.8.15)
+    # T08 ÔÇö extended accounting fields (ISO 27001 A.8.15)
     nasidentifier: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     privilege_level: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     vendor_reply_attrs: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
@@ -181,7 +207,7 @@ class RadPostAuth(Base):
     authdate: Mapped[datetime.datetime] = mapped_column(
         MySQLDATETIME(fsp=6), server_default=func.now(), nullable=False
     )
-    # T07 — enhanced traceability fields (ISO 27001 A.8.15, A.5.33)
+    # T07 ÔÇö enhanced traceability fields (ISO 27001 A.8.15, A.5.33)
     nas_ip_address: Mapped[str] = mapped_column(String(15), nullable=False, default="")
     nas_identifier: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     nas_port: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -220,11 +246,11 @@ class AdminUser(Base):
     force_password_change: Mapped[int] = mapped_column(
         Integer, default=1
     )  # 1=True, 0=False
-    # T03 — role column for RBAC (ISO 27001 A.5.15, A.5.18)
+    # T03 ÔÇö role column for RBAC (ISO 27001 A.5.15, A.5.18)
     role: Mapped[str] = mapped_column(String(32), nullable=False, default="admin")
 
 
-# T04 — LoginAttempt model for account lockout (ISO 27001 A.5.17)
+# T04 ÔÇö LoginAttempt model for account lockout (ISO 27001 A.5.17)
 class LoginAttempt(Base):
     __tablename__ = "login_attempts"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -238,7 +264,7 @@ class LoginAttempt(Base):
     __table_args__ = (Index("idx_username_time", "username", "attempted_at"),)
 
 
-# T05 — RadiusReplyAudit model (ISO 27001 A.5.15, A.8.2, A.5.18)
+# T05 ÔÇö RadiusReplyAudit model (ISO 27001 A.5.15, A.8.2, A.5.18)
 class RadiusReplyAudit(Base):
     __tablename__ = "radius_reply_audit"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -258,7 +284,7 @@ class RadiusReplyAudit(Base):
     record_hash: Mapped[Optional[str]] = mapped_column(String(71), nullable=True)
 
 
-# T06 — UserNasPrivilegeMap model (ISO 27001 A.5.15, A.8.2)
+# T06 ÔÇö UserNasPrivilegeMap model (ISO 27001 A.5.15, A.8.2)
 class UserNasPrivilegeMap(Base):
     __tablename__ = "user_nas_privilege_map"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -377,6 +403,7 @@ class NasCategory(Base):
     )
 
     nases: Mapped[list["Nas"]] = relationship("Nas", back_populates="category")
+    devices: Mapped[list["DeviceRegistry"]] = relationship("DeviceRegistry", back_populates="category")
 
 
 # syslog-compliance: Phase 2 - SyslogEvent model with hash chain for integrity
@@ -401,3 +428,43 @@ class SyslogEvent(Base):
         Index("idx_syslog_severity", "severity"),
         Index("idx_syslog_facility", "facility"),
     )
+
+
+# --- Device Registry Domain Models ---
+
+
+class DeviceRegistry(Base):
+    """Known endpoint devices (SMs, CPEs) identified by MAC address.
+    Assigned to a NAS category so RADIUS can resolve device-level policies
+    without registering individual MACs in access_policy_assignments.
+    """
+
+    __tablename__ = "device_registry"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    mac: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    category_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("nas_categories.id", ondelete="SET NULL", name="fk_device_category"),
+        nullable=True,
+    )
+    category: Mapped[Optional["NasCategory"]] = relationship("NasCategory", back_populates="devices")
+    nas_ip: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    is_active: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=True
+    )
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=False),
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=FetchedValue(),
+        nullable=True,
+    )
+
+    @validates("mac")
+    def normalize_mac(self, key, value):
+        if value is None:
+            return value
+        return _normalize_mac(value)
