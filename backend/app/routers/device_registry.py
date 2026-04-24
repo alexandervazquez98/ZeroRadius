@@ -364,13 +364,6 @@ async def download_bulk_template(
     output = io.StringIO()
     writer = csv.writer(output)
 
-    # Write data section with comment header
-    writer.writerow(["# Device Registry Bulk Import Template"])
-    writer.writerow(["# Columns: mac, name, description, category_id, nas_ip"])
-    writer.writerow(["# Supported MAC formats: 0A:00:3E:45:76:4A, 0A-00-3E-45-76-4A, 0A00.3E45.764A, 0A003E45764A (case-insensitive)"])
-    writer.writerow(["# MAC addresses will be normalized to lowercase 12-char hex (e.g. 0a003e45764a)"])
-    writer.writerow(["# Categories available:"] + [f"{c.id}={c.name}" for c in categories])
-    writer.writerow([])
     writer.writerow(headers)
     for row in rows:
         writer.writerow(row)

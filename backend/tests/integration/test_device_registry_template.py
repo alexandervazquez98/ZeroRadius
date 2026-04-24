@@ -1,5 +1,6 @@
 """Tests for device-registry bulk template CSV generation."""
 
+import csv
 import io
 
 import pytest
@@ -100,12 +101,14 @@ async def test_template_csv_contains_category_reference(
 
         text = resp.content.decode("utf-8-sig")
 
-        # Should contain category reference comment
-        assert "Categories available:" in text, (
-            "CSV template must contain category reference comment"
+        # Should NOT contain comment rows - CSV must be parseable directly
+        assert "Categories available:" not in text, (
+            "CSV template must not contain comment rows that break DictReader parsing"
         )
-        assert "Residential AP" in text, "Category reference should include category name"
-        assert "Enterprise AP" in text, "Category reference should include category name"
+
+        # Must be valid parseable CSV with correct headers
+        reader = csv.DictReader(io.StringIO(text))
+        assert set(reader.fieldnames) == {"mac", "name", "description", "category_id", "nas_ip"}
     finally:
         await test_db.execute(
             delete(NasCategory).where(NasCategory.name.in_(["Residential AP", "Enterprise AP"]))

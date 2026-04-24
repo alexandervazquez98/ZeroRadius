@@ -12,7 +12,7 @@ def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def test_bulk_template_returns_expected_xlsx(async_client: AsyncClient, admin_token: str):
+async def test_bulk_template_returns_expected_csv(async_client: AsyncClient, admin_token: str):
     resp = await async_client.get(
         "/device-registry/bulk/template",
         headers=_auth(admin_token),
@@ -20,21 +20,21 @@ async def test_bulk_template_returns_expected_xlsx(async_client: AsyncClient, ad
 
     assert resp.status_code == 200
     assert (
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        "text/csv"
         in resp.headers.get("content-type", "")
     )
     assert (
-        "device_registry_bulk_template.xlsx"
+        "device_registry_bulk_template.csv"
         in resp.headers.get("content-disposition", "")
     )
 
+    import csv
     import io as io_module
-    import openpyxl
-    wb = openpyxl.load_workbook(io_module.BytesIO(resp.content))
-    sheet_names = wb.sheetnames
-    assert len(sheet_names) == 2
-    assert "Template" in sheet_names
-    assert "Categories" in sheet_names
+    content = resp.content.decode("utf-8-sig")
+    reader = csv.DictReader(io_module.StringIO(content))
+    assert set(reader.fieldnames) == {"mac", "name", "description", "category_id", "nas_ip"}
+    rows = list(reader)
+    assert len(rows) == 2  # template has 2 example rows
 
 
 async def test_bulk_json_accepts_required_fields_with_optional_category(async_client: AsyncClient, admin_token: str):
