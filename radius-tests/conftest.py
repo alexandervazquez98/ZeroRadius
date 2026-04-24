@@ -19,6 +19,9 @@ RADIUS_HOST = os.getenv("RADIUS_HOST", "127.0.0.1")
 RADIUS_PORT = int(os.getenv("RADIUS_PORT", "1812"))
 RADIUS_SECRET = os.getenv("RADIUS_SECRET", "testing123").encode()
 SEED_SQL_PATH = Path(__file__).parent / "fixtures" / "seed_authorization_matrix.sql"
+CAMBIUM_BASELINE_SEED_SQL_PATH = (
+    Path(__file__).parent.parent / "seed_cambium_proxy_baseline.sql"
+)
 
 # Probe defaults (overrideables por env para entornos remotos)
 PROBE_USER = os.getenv("RADIUS_MATRIX_PROBE_USER", "segment_admin_a")
@@ -30,7 +33,26 @@ PROBE_CIR_ATTRS = {
     "Cambium-Canopy-HPULCIR": os.getenv("RADIUS_MATRIX_PROBE_HPULCIR", "2000"),
 }
 
+BASELINE_PROBE_USER = os.getenv(
+    "RADIUS_BASELINE_PROBE_USER", "baseline_sm_lector_single"
+)
+BASELINE_PROBE_PASS = os.getenv("RADIUS_BASELINE_PROBE_PASS", "testpassword")
+BASELINE_PROBE_NAS_IP = os.getenv("RADIUS_BASELINE_PROBE_NAS_IP", "192.168.88.1")
+BASELINE_PROBE_CALLING_STATION_ID = os.getenv(
+    "RADIUS_BASELINE_PROBE_CALLING_STATION_ID",
+    "AA-BB-CC-DD-EE-FF",
+)
+BASELINE_PROBE_MARKER = os.getenv(
+    "RADIUS_BASELINE_PROBE_MARKER",
+    "BASELINE-SM-LECTOR-SINGLE",
+)
+BASELINE_PROBE_USERLEVEL = os.getenv("RADIUS_BASELINE_PROBE_USERLEVEL", "1")
+
 CIR_VENDOR_KEY_ALIASES = {
+    (161, 50): "Motorola-Cambium-Canopy-UserLevel",
+    (161, 51): "Motorola-Cambium-Canopy-UserMode",
+    (161, 200): "Cambium-Canopy-UserLevel",
+    (161, 201): "Cambium-Canopy-UserMode",
     (161, 22): "Cambium-Canopy-HPDLCIR",
     (161, 23): "Cambium-Canopy-HPULCIR",
     (161, 220): "Cambium-Canopy-LPDLCIR",
@@ -53,11 +75,20 @@ class RadiusScenario:
     expected_cir_attrs: dict[str, str] | None = None
 
 
-def send_access_request(client: Client, username: str, password: str, nas_ip: str):
+def send_access_request(
+    client: Client,
+    username: str,
+    password: str,
+    nas_ip: str,
+    calling_station_id: str | None = None,
+    nas_port: int = 0,
+):
     req = client.CreateAuthPacket(code=packet.AccessRequest, User_Name=username)
     req["User-Password"] = req.PwCrypt(password)
     req["NAS-IP-Address"] = nas_ip
-    req["NAS-Port"] = 0
+    req["NAS-Port"] = nas_port
+    if calling_station_id:
+        req["Calling-Station-Id"] = calling_station_id
     return client.SendPacket(req)
 
 
@@ -74,14 +105,22 @@ def parse_reply_attributes(reply) -> dict[str, list[str]]:
         if isinstance(values, (list, tuple)):
             normalized_values: list[str] = []
             for value in values:
-                if normalized_key.startswith("Cambium-Canopy-") and isinstance(value, (bytes, bytearray)):
-                    normalized_values.append(str(int.from_bytes(value, byteorder="big", signed=False)))
+                if normalized_key.startswith("Cambium-Canopy-") and isinstance(
+                    value, (bytes, bytearray)
+                ):
+                    normalized_values.append(
+                        str(int.from_bytes(value, byteorder="big", signed=False))
+                    )
                 else:
                     normalized_values.append(str(value))
             parsed[normalized_key] = normalized_values
         else:
-            if normalized_key.startswith("Cambium-Canopy-") and isinstance(values, (bytes, bytearray)):
-                parsed[normalized_key] = [str(int.from_bytes(values, byteorder="big", signed=False))]
+            if normalized_key.startswith("Cambium-Canopy-") and isinstance(
+                values, (bytes, bytearray)
+            ):
+                parsed[normalized_key] = [
+                    str(int.from_bytes(values, byteorder="big", signed=False))
+                ]
             else:
                 parsed[normalized_key] = [str(values)]
     return parsed
@@ -141,6 +180,32 @@ def _assert_seed_contract(seed_sql: str) -> None:
     missing = [token for token in required_tokens if token not in seed_sql]
     assert not missing, (
         "seed_authorization_matrix.sql missing required objects: " + ", ".join(missing)
+    )
+
+
+def _assert_cambium_baseline_seed_contract(seed_sql: str) -> None:
+    required_tokens = [
+        "baseline_ap_operator",
+        "baseline_sm_lector_single",
+        "baseline_sm_lector_dual",
+        "baseline_sm_check_reply",
+        "baseline_zero_trust",
+        "grp_baseline_ap_direct",
+        "grp_baseline_sm_lector_single",
+        "grp_baseline_sm_lector_dual",
+        "grp_baseline_sm_check_reply",
+        "BASELINE-AP-DIRECT",
+        "BASELINE-SM-LECTOR-SINGLE",
+        "BASELINE-SM-LECTOR-DUAL",
+        "BASELINE-SM-CHECK-REPLY",
+        "Cambium-Canopy-UserLevel",
+        "Cambium-Canopy-UserMode",
+        "NAS-Port",
+    ]
+    missing = [token for token in required_tokens if token not in seed_sql]
+    assert not missing, (
+        "seed_cambium_proxy_baseline.sql missing required objects: "
+        + ", ".join(missing)
     )
 
 
@@ -230,6 +295,22 @@ def authorization_matrix_seed(authorization_matrix_seed_path: Path) -> str:
 
 
 @pytest.fixture(scope="session")
+def cambium_proxy_baseline_seed_path() -> Path:
+    if not CAMBIUM_BASELINE_SEED_SQL_PATH.exists():
+        pytest.fail(
+            f"Missing deterministic seed file: {CAMBIUM_BASELINE_SEED_SQL_PATH}"
+        )
+    return CAMBIUM_BASELINE_SEED_SQL_PATH
+
+
+@pytest.fixture(scope="session")
+def cambium_proxy_baseline_seed(cambium_proxy_baseline_seed_path: Path) -> str:
+    seed_sql = cambium_proxy_baseline_seed_path.read_text(encoding="utf-8")
+    _assert_cambium_baseline_seed_contract(seed_sql)
+    return seed_sql
+
+
+@pytest.fixture(scope="session")
 def radius_policy_precondition(
     radius_client: Client,
     skip_if_no_radius,
@@ -261,4 +342,53 @@ def radius_policy_precondition(
         "probe_nas_ip": PROBE_NAS_IP,
         "probe_marker": PROBE_MARKER,
         "probe_cir_attrs": PROBE_CIR_ATTRS,
+    }
+
+
+@pytest.fixture(scope="session")
+def radius_cambium_baseline_precondition(
+    radius_client: Client,
+    skip_if_no_radius,
+    cambium_proxy_baseline_seed: str,
+):
+    del cambium_proxy_baseline_seed  # contract validation side-effect
+
+    try:
+        probe_reply = send_access_request(
+            radius_client,
+            username=BASELINE_PROBE_USER,
+            password=BASELINE_PROBE_PASS,
+            nas_ip=BASELINE_PROBE_NAS_IP,
+            calling_station_id=BASELINE_PROBE_CALLING_STATION_ID,
+        )
+    except Timeout:
+        pytest.skip(
+            f"FreeRADIUS unreachable or timed out at {RADIUS_HOST}:{RADIUS_PORT}"
+        )
+
+    if probe_reply.code != packet.AccessAccept:
+        pytest.fail(
+            "cambium baseline seed missing or nas_based_authorization disabled "
+            f"(probe expected Access-Accept, got code={probe_reply.code})"
+        )
+
+    if not reply_contains_marker(probe_reply, BASELINE_PROBE_MARKER):
+        pytest.fail("cambium baseline seed missing or marker not hydrated")
+
+    attrs = parse_reply_attributes(probe_reply)
+    userlevel_values = attrs.get("Cambium-Canopy-UserLevel", []) + attrs.get(
+        "Motorola-Cambium-Canopy-UserLevel", []
+    )
+    if BASELINE_PROBE_USERLEVEL not in userlevel_values:
+        pytest.fail(
+            "cambium baseline probe expected userlevel not found "
+            f"(expected={BASELINE_PROBE_USERLEVEL}, got={userlevel_values})"
+        )
+
+    return {
+        "probe_user": BASELINE_PROBE_USER,
+        "probe_nas_ip": BASELINE_PROBE_NAS_IP,
+        "probe_calling_station_id": BASELINE_PROBE_CALLING_STATION_ID,
+        "probe_marker": BASELINE_PROBE_MARKER,
+        "probe_userlevel": BASELINE_PROBE_USERLEVEL,
     }

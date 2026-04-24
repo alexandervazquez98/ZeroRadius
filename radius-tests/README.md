@@ -104,6 +104,25 @@ Objetos esperados por el probe y la suite:
 La fixture `authorization_matrix_seed` valida que ese contrato exista antes de correr la matriz.
 Si falta algún objeto en el SQL, la suite falla en setup (fail fast).
 
+## Baseline real Cambium AP proxy (Fase 1)
+
+Para congelar el comportamiento real previo al refactor de hidratación se agregó un seed determinístico:
+
+`seed_cambium_proxy_baseline.sql` (raíz del repo)
+
+Casos cubiertos por la suite baseline (`radius-tests/test_radius_mac_priority.py`):
+
+- AP directo vs SM vía proxy (misma NAS-IP, prioridad por Calling-Station-Id)
+- Grupo lector con 1 reply attr (`Cambium-Canopy-UserLevel := 1`)
+- Grupo lector con 2 reply attrs (`UserLevel` + `UserMode`) mostrando el gap actual
+- Grupo con `radgroupcheck` + `radgroupreply`
+- Zero-trust sin match (Access-Reject)
+
+Nota importante del baseline actual:
+
+- `nas_based_authorization` sigue resolviendo `SQL-Group` correctamente.
+- En grupo dual, hoy se observa el gap esperado: `Cambium-Canopy-UserMode` todavía no se hidrata automáticamente en Access-Accept.
+
 ## Probe de precondición (wiring activo)
 
 La fixture `radius_policy_precondition` diferencia tres casos:
