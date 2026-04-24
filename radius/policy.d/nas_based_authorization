@@ -147,7 +147,7 @@ nas_based_authorization {
             # - no/empty (default): keep legacy manual hydration for baseline safety.
             # - yes: skip manual hydration and rely on the following `-sql` in authorize{}
             #        to hydrate radgroupcheck/radgroupreply natively using SQL-Group.
-            if ("%{tolower:%{ENV:ZR_RADIUS_NATIVE_GROUP_HYDRATION}}" == "yes") {
+            if ("%{tolower:%{env:ZR_RADIUS_NATIVE_GROUP_HYDRATION}}" == "yes") {
                 update control {
                     Tmp-String-2 := "native"
                 }
