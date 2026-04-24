@@ -10,7 +10,7 @@ What exists today is an indirect flow:
 
 - CIR values are stored as normal **RADIUS group reply attributes** (for example `Cambium-Canopy-HPDLCIR`, `Cambium-Canopy-HPULCIR`) in **Groups**.
 - A user/target is mapped to a **RADIUS group** in **Access Policies**.
-- During authentication, FreeRADIUS policy `nas_based_authorization` resolves the winning group and injects CIR reply attributes from `radgroupreply` into `Access-Accept`.
+- During authentication, FreeRADIUS policy `nas_based_authorization` resolves the winning group (`SQL-Group`) and the SQL module hydrates group attributes into `Access-Accept`.
 
 ---
 
@@ -68,7 +68,7 @@ Depending on how you want policy matching to work:
 4. Set **RADIUS Group (Policy)** to the group configured in Step A.
 5. Save policy.
 
-At authentication time, the winning policy decides the `SQL-Group`, and CIR attributes are then hydrated from that group’s reply attributes.
+At authentication time, the winning policy decides the `SQL-Group`, and CIR attributes are hydrated from that group’s reply attributes by `rlm_sql`.
 
 ---
 
@@ -87,7 +87,12 @@ Current precedence is implemented in `radius/policy.d/nas_based_authorization`:
 4. **No match => reject**
    - Request is rejected with `Reply-Message: Access denied: NAS not authorized for this user`.
 
-After a winning group is selected, reply attributes are explicitly loaded from `radgroupreply` (including CIR attributes such as `Cambium-Canopy-HPDLCIR` / `HPULCIR`, and LP variants).
+After a winning group is selected, group attributes are hydrated from `radgroupcheck`/`radgroupreply` through the SQL module.
+
+> Transitional safety toggle (Phase 2 prep): `ZR_RADIUS_NATIVE_GROUP_HYDRATION`
+>
+> - `yes`: uses native hydration path (recommended target state).
+> - empty/`no`: preserves legacy manual hydration fallback in policy while keeping SQL-Group wiring ready.
 
 ---
 
