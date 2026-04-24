@@ -8,103 +8,113 @@ See `_shared/skill-resolver.md` for the full resolution protocol.
 
 | Trigger | Skill | Path |
 |---------|-------|------|
-| When creating a pull request, opening a PR, or preparing changes for review | `branch-pr` | `C:\Users\Alex\.config\opencode\skills\branch-pr\SKILL.md` |
-| When writing Go tests, using teatest, or adding test coverage | `go-testing` | `C:\Users\Alex\.config\opencode\skills\go-testing\SKILL.md` |
-| When creating a GitHub issue, reporting a bug, or requesting a feature | `issue-creation` | `C:\Users\Alex\.config\opencode\skills\issue-creation\SKILL.md` |
-| When user says “judgment day” / adversarial dual review keywords | `judgment-day` | `C:\Users\Alex\.config\opencode\skills\judgment-day\SKILL.md` |
-| When user asks to create a new skill or agent instructions | `skill-creator` | `C:\Users\Alex\.config\opencode\skills\skill-creator\SKILL.md` |
-| When user mentions worktree / parallel folders / create-remove worktree | `git-worktree` | `C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\.agents\skills\git-worktree\SKILL.md` |
-| When user wants to start/continue implementing OpenSpec tasks | `openspec-apply-change` | `C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\.agents\skills\openspec-apply-change\SKILL.md` |
-| When user wants to finalize/archive an OpenSpec change | `openspec-archive-change` | `C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\.agents\skills\openspec-archive-change\SKILL.md` |
-| When user wants to think through ideas before/during change | `openspec-explore` | `C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\.agents\skills\openspec-explore\SKILL.md` |
-| When user wants one-step OpenSpec proposal generation | `openspec-propose` | `C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\.agents\skills\openspec-propose\SKILL.md` |
-| When writing/modifying/running tests in ZeroRadius (auto for feat/fix/refactor) | `zero-radius-testing` | `C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\.agents\skills\zero-radius-testing\SKILL.md` |
+| When writing Go tests, using teatest, or adding test coverage. | go-testing | C:\Users\Alex\.claude\skills\go-testing\SKILL.md |
+| When creating a GitHub issue, reporting a bug, or requesting a feature. | issue-creation | C:\Users\Alex\.claude\skills\issue-creation\SKILL.md |
+| When creating a pull request, opening a PR, or preparing changes for review. | branch-pr | C:\Users\Alex\.claude\skills\branch-pr\SKILL.md |
+| When user says "judgment day", "judgment-day", "review adversarial", "dual review", "doble review", "juzgar", "que lo juzguen". | judgment-day | C:\Users\Alex\.claude\skills\judgment-day\SKILL.md |
+| When user asks to create a new skill, add agent instructions, or document patterns for AI. | skill-creator | C:\Users\Alex\.claude\skills\skill-creator\SKILL.md |
+| When the user mentions "worktree", "git worktree", multiple working folders, or asks to create/remove/visualize parallel checkouts. | git-worktree | C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\.agents\skills\git-worktree\SKILL.md |
+| When writing, modifying, or executing tests in ZeroRadius — any layer. Also triggers automatically before any git commit on feat, fix, or refactor. | zero-radius-testing | C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\.agents\skills\zero-radius-testing\SKILL.md |
+| Cuando el usuario pide revisar el servidor, hacer pruebas remotas o diagnosticar ZeroRadius en el server. | remote-diag | C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\.agents\skills\remote-diag\SKILL.md |
+| Use when the user wants to quickly describe what they want to build and get a complete proposal with design, specs, and tasks ready for implementation. | openspec-propose | C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\.agents\skills\openspec-propose\SKILL.md |
+| Use when the user wants to start implementing, continue implementation, or work through tasks. | openspec-apply-change | C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\.agents\skills\openspec-apply-change\SKILL.md |
+| Use when the user wants to think through something before or during a change. | openspec-explore | C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\.agents\skills\openspec-explore\SKILL.md |
+| Use when the user wants to finalize and archive a change after implementation is complete. | openspec-archive-change | C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\.agents\skills\openspec-archive-change\SKILL.md |
 
 ## Compact Rules
 
-### branch-pr
-- Every PR MUST link an approved issue (`status:approved`) and include exactly one `type:*` label.
-- Branch names MUST match `type/description` (`feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert`).
-- Use conventional commits; no invalid types/scopes.
-- Run shellcheck on modified scripts before PR.
-- PR body must include issue linkage (`Closes/Fixes/Resolves #N`) and concise summary/test plan.
+Pre-digested rules per skill. Delegators copy matching blocks into sub-agent prompts as `## Project Standards (auto-resolved)`.
 
 ### go-testing
-- Use table-driven tests as default for Go logic.
-- Test Bubbletea state transitions via `Model.Update()` and message simulation.
-- For TUI integration, use `teatest.NewTestModel` and assert final model state.
-- Use golden files for stable `View()` output snapshots when UI text/layout matters.
-- Cover both success and error paths explicitly.
+- Prefer table-driven tests with `t.Run` subtests for multiple cases.
+- Test Bubbletea state transitions via `Model.Update()`; use teatest for full flows.
+- Use golden files only for stable rendered output; support explicit update flow.
+- Mock side effects behind interfaces; use `t.TempDir()` for filesystem work.
+- Standard commands: `go test ./...`, `go test -run Name`, `go test -cover`, `go test -short`.
 
 ### issue-creation
-- Use template-based issues only (bug_report.yml or feature_request.yml); blank issues are blocked.
-- New issues enter with `status:needs-review`; PRs wait until maintainer adds `status:approved`.
-- Ask contributors to check duplicates before opening.
-- Route Q&A to Discussions, not Issues.
-- Keep required fields complete (repro, expected/actual, env, affected area).
+- Always search for duplicates before creating a new issue.
+- Blank issues are disabled; MUST use the repo bug or feature template.
+- New issues get `status:needs-review`; no PR before maintainer adds `status:approved`.
+- Questions belong in Discussions, not Issues.
+- Use conventional-commit style titles like `fix(scope): ...` or `feat(scope): ...`.
+
+### branch-pr
+- Every PR MUST link an approved issue and include exactly one `type:*` label.
+- Branch names MUST match `type/description` with lowercase `a-z0-9._-` only.
+- Commit messages MUST follow conventional commits; never add AI attribution.
+- Run required checks before opening or merging; shell scripts need shellcheck.
+- PR body must include issue linkage, summary bullets, file table, and test plan.
 
 ### judgment-day
-- Run two blind parallel judges (same target, no cross-talk), then synthesize confirmed/suspect findings.
-- Resolve/inject project standards from skill registry before launching judges.
-- Classify warnings as **real** vs **theoretical**; theoretical issues are informational.
-- Ask user before fixing confirmed issues after Round 1.
-- Re-judge after critical fixes; escalate to user after 2 iterations if issues persist.
+- Resolve project standards from the skill registry BEFORE launching judges.
+- Launch two blind judges in parallel; never let them know about each other.
+- Treat findings as confirmed only when both judges agree.
+- Re-judge after confirmed critical fixes; theoretical warnings are info only.
+- After two fix rounds, stop and ask the user whether to continue iterating.
 
 ### skill-creator
-- Create skills only for reusable, recurring patterns; avoid one-off or duplicate documentation.
-- Follow strict SKILL.md frontmatter (`name`, `description+Trigger`, `license`, `metadata`).
-- Keep critical patterns actionable and concise; avoid fluff.
-- Prefer local references (`references/`) over external URLs.
-- Register new skills in project agent index (e.g., AGENTS.md).
+- Create a skill only for reusable, non-trivial patterns.
+- Use complete frontmatter with `name`, `description`, license, and metadata.
+- Put actionable rules first; keep examples minimal and focused.
+- Prefer local `references/` over duplicating docs or linking web URLs.
+- Register every new skill in `AGENTS.md` after creation.
 
 ### git-worktree
-- One branch per worktree; don’t checkout same branch in multiple worktrees.
-- Prefer `git worktree add -b <branch>` when creating new worktrees.
-- Verify path/branch before removal.
-- On Windows lock errors, close handles then retry; if needed, remove stale admin dir and `git worktree prune`.
-- Keep branch hygiene: short-lived feature/fix branches, local `wip/*` for unfinished work.
-
-### openspec-apply-change
-- Select change explicitly (infer only when unambiguous); announce selected change.
-- Read `openspec status --json` and `openspec instructions apply --json` before coding.
-- Read all `contextFiles` first; don’t assume fixed artifact names.
-- Implement tasks sequentially and update task checkboxes immediately.
-- Pause and ask on ambiguity/blockers instead of guessing.
-
-### openspec-archive-change
-- Never auto-guess change to archive; prompt user selection when not explicit.
-- Check incomplete artifacts/tasks and warn; proceed only with user confirmation.
-- Assess delta spec sync status before archive and present sync options.
-- Archive to date-prefixed folder under `openspec/changes/archive/`.
-- Preserve clear summary of schema, location, sync result, and warnings.
-
-### openspec-explore
-- Explore mode is thinking/investigation only: read/search freely, no implementation.
-- Use adaptive questioning and diagrams; don’t force rigid questionnaires.
-- Ground analysis in real code paths and existing artifacts.
-- Offer artifact capture (proposal/design/spec/tasks) when decisions crystallize.
-- If user asks implementation, request leaving explore mode first.
-
-### openspec-propose
-- Derive or confirm a clear change scope/name before creating artifacts.
-- Create change scaffold first, then follow CLI artifact dependency order.
-- Use `openspec instructions <artifact> --json`; treat context/rules as constraints, not output text.
-- Re-check status after each artifact until `applyRequires` are done.
-- Stop to ask user only when context is critically unclear.
+- One branch can exist in only one worktree at a time.
+- Prefer `git worktree add -b <branch>` when creating a new worktree.
+- Verify path and branch before removing a worktree.
+- On Windows/OneDrive lock failures, close editors, retry, then prune stale metadata.
+- Use directory junctions for local `.agents/` tooling instead of copying it into worktrees.
 
 ### zero-radius-testing
-- For `feat`/`fix`/`refactor`, run relevant tests before calling work done.
-- Never commit with failing tests; never skip tests silently.
-- Prefer wrappers: `./scripts/test-backend-fast.sh`, `./scripts/test-frontend-fast.sh`, `./scripts/test-all.sh`.
-- On Windows: use `python -m pytest` and `cmd /c "node_modules\.bin\vitest.cmd run"`.
-- Enforce backend coverage floor from `pytest.ini` (`--cov-fail-under=59`) unless explicitly changed with added tests.
+- After any feat/fix/refactor, run the full relevant ZeroRadius test layer before commit.
+- Never hide skipped tests; report exactly what ran, passed, failed, and coverage.
+- Backend default fast path: `./scripts/test-backend-fast.sh`; frontend: `./scripts/test-frontend-fast.sh`.
+- Schema or model changes REQUIRE `tests/unit/test_schema_sync.py`.
+- Frontend tests use Vitest + Testing Library + MSW v2; pages using toast state must render under `ToastProvider`.
+
+### remote-diag
+- Use the dedicated SSH identity `~/.ssh/id_zeroradius_diag` for remote access.
+- Work in `~/radius` on host `192.168.1.212` as user `alex`.
+- Check container and DB health before backend operations.
+- Prefer targeted `docker-compose restart <service>` and logs over destructive resets.
+- Never expose passwords in logs; use `sudo` only when strictly necessary and explain why.
+
+### openspec-propose
+- Do not proceed without a clear change description or change name.
+- Create the change, then generate artifacts in dependency order until apply-ready.
+- Read dependency artifacts before writing the next artifact.
+- Use templates and instruction payloads as constraints, not literal output.
+- If the change already exists, ask whether to continue it or create a new one.
+
+### openspec-apply-change
+- Select the correct active change before implementation; never guess when ambiguous.
+- Read all context files returned by OpenSpec instructions before editing code.
+- Implement tasks minimally and mark each task complete immediately.
+- Pause on ambiguity, blockers, or design mismatches instead of improvising.
+- On completion, report session progress and whether the change is archive-ready.
+
+### openspec-explore
+- Explore mode is for thinking, not implementation.
+- Read code and artifacts freely, but do not write production code.
+- Use diagrams, comparisons, and tradeoff framing to clarify options.
+- If a decision crystallizes, offer to capture it in proposal/spec/design/tasks.
+- If the user wants implementation, tell them to exit explore mode first.
+
+### openspec-archive-change
+- Never guess the target change when multiple active changes exist.
+- Warn about incomplete artifacts or tasks, but allow archive after explicit confirmation.
+- Assess delta spec sync before archiving and show the combined impact summary.
+- Archive into `openspec/changes/archive/YYYY-MM-DD-<change>/` preserving metadata.
+- Report whether specs were synced, skipped, or not applicable.
 
 ## Project Conventions
 
 | File | Path | Notes |
 |------|------|-------|
-| `AGENTS.md` | `C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\AGENTS.md` | Index — references files below |
-| `SKILL.md` | `C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\.agents\zero-radius-diagnose\SKILL.md` | Referenced by `AGENTS.md` (path not found in current workspace) |
-| `SKILL.md` | `C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\.agents\skills\zero-radius-testing\SKILL.md` | Referenced by `AGENTS.md` |
+| AGENTS.md | C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\AGENTS.md | Index — references files below |
+| zero-radius-diagnose | C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\.agents\zero-radius-diagnose\SKILL.md | Referenced by AGENTS.md; path currently missing |
+| zero-radius-testing | C:\Users\Alex\OneDrive\PROGRAMMING\zeroradius\.agents\skills\zero-radius-testing\SKILL.md | Referenced by AGENTS.md |
 
 Read the convention files listed above for project-specific patterns and rules. All referenced paths have been extracted — no need to read index files to discover more.

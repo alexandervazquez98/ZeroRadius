@@ -155,10 +155,10 @@ export default function DeviceRegistry() {
     const handleDownloadTemplate = async () => {
         try {
             const blob = await DeviceRegistryService.downloadBulkTemplate()
-            const url = window.URL.createObjectURL(new Blob([blob], { type: 'text/csv;charset=utf-8;' }))
+            const url = window.URL.createObjectURL(new Blob([blob], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
             const link = document.createElement('a')
             link.href = url
-            link.setAttribute('download', 'device_registry_bulk_template.csv')
+            link.setAttribute('download', 'device_registry_bulk_template.xlsx')
             document.body.appendChild(link)
             link.click()
             document.body.removeChild(link)

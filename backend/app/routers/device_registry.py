@@ -10,6 +10,7 @@ import logging
 import ipaddress
 from typing import Optional
 
+import openpyxl
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
@@ -298,6 +299,11 @@ async def bulk_create_csv(
 
         raw_cat = (row.get("category_id") or "").strip()
         cat_id = int(raw_cat) if raw_cat.isdigit() else default_category_id
+        if cat_id is not None:
+            cat = await db.scalar(select(NasCategory).where(NasCategory.id == cat_id))
+            if not cat:
+                errors.append(f"row {i} ({mac}): category_id {cat_id} not found")
+                continue
         nas_ip_raw = (row.get("nas_ip") or "").strip() or None
         name_raw = (row.get("name") or "").strip() or None
         description_raw = (row.get("description") or "").strip() or None
@@ -339,35 +345,47 @@ async def bulk_create_csv(
 @limiter.limit("30/minute")
 async def download_bulk_template(
     request: Request,
+    db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
 ):
-    output = io.StringIO()
-    writer = csv.DictWriter(
-        output,
-        fieldnames=["mac", "nas_ip", "name", "description", "category_id"],
-    )
-    writer.writeheader()
-    writer.writerow(
-        {
-            "mac": "0A:00:3E:45:76:4A",
-            "nas_ip": "192.168.1.11",
-            "name": "SM Torre Norte",
-            "description": "Cliente premium - sector norte",
-            "category_id": "2",
-        }
-    )
-    writer.writerow(
-        {
-            "mac": "0A:00:3E:45:76:4B",
-            "nas_ip": "192.168.1.12",
-            "name": "SM Torre Sur",
-            "description": "Backhaul secundario",
-            "category_id": "",
-        }
-    )
+    """Generate an XLSX workbook with two sheets: Template (import guide) and Categories (reference)."""
+    wb = openpyxl.Workbook()
+
+    # ── Sheet 1: Template ───────────────────────────────────────────────────
+    template_ws = wb.active
+    template_ws.title = "Template"
+    template_headers = ["serial_number", "name", "description", "category_id", "ip_address", "mac_address"]
+    template_ws.append(template_headers)
+    template_ws.append([
+        "0A:00:3E:45:76:4A",
+        "SM Torre Norte",
+        "Cliente premium - sector norte",
+        "2",
+        "192.168.1.11",
+        "0A:00:3E:45:76:4A",
+    ])
+    template_ws.append([
+        "0A:00:3E:45:76:4B",
+        "SM Torre Sur",
+        "Backhaul secundario",
+        "",
+        "192.168.1.12",
+        "0A:00:3E:45:76:4B",
+    ])
+
+    # ── Sheet 2: Categories ─────────────────────────────────────────────────
+    categories_ws = wb.create_sheet("Categories")
+    categories_ws.append(["id", "name", "description"])
+    result = await db.execute(select(NasCategory).order_by(NasCategory.name))
+    for cat in result.scalars().all():
+        categories_ws.append([cat.id, cat.name, cat.description or ""])
+
+    bytes_io = io.BytesIO()
+    wb.save(bytes_io)
+    bytes_io.seek(0)
 
     return Response(
-        content=output.getvalue(),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": "attachment; filename=device_registry_bulk_template.csv"},
+        content=bytes_io.read(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=device_registry_bulk_template.xlsx"},
     )
