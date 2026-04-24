@@ -34,20 +34,31 @@ case "$ACTION" in
     history)
         $PYTHON -m alembic history --verbose
         ;;
+    pre-flight)
+        echo "Running schema pre-flight check..."
+        $PYTHON -m alembic upgrade head
+        if [ $? -eq 0 ]; then
+            echo "✅ Pre-flight check passed — schema is up to date"
+        else
+            echo "❌ Pre-flight check failed — schema drift detected"
+            exit 1
+        fi
+        ;;
     stamp)
         TARGET="${2:-head}"
         $PYTHON -m alembic stamp "$TARGET"
         echo "✅ Database stamped at $TARGET"
         ;;
     *)
-        echo "Usage: $0 {upgrade|downgrade|current|history|stamp}"
+        echo "Usage: $0 {upgrade|downgrade|current|history|pre-flight|stamp}"
         echo ""
         echo "Commands:"
         echo "  upgrade [target]   - Upgrade database (default: head)"
         echo "  downgrade [target] - Downgrade database (default: base)"
         echo "  current            - Show current revision"
-        echo "  history            - Show migration history"
-        echo "  stamp [target]     - Stamp database at revision without running migrations"
+echo "  history            - Show migration history"
+        echo "  pre-flight        - Run pre-flight schema check (for deployment)"
+        echo "  stamp [target]    - Stamp database at revision without running migrations"
         exit 1
         ;;
 esac
