@@ -1,12 +1,12 @@
 import React, { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Cpu, Plus, Trash2, Edit2, X, Upload, CheckCircle, AlertTriangle, Search } from 'lucide-react'
+import { Cpu, Plus, Trash2, Edit2, X, Upload, CheckCircle, AlertTriangle, Search, Download } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import DeviceRegistryService from '../services/deviceRegistry'
 import NasCategoriesService from '../services/nasCategoriesService'
 
-const EMPTY_FORM = { mac: '', category_id: '', nas_ip: '', description: '', is_active: 1 }
+const EMPTY_FORM = { mac: '', name: '', category_id: '', nas_ip: '', description: '', is_active: 1 }
 
 export default function DeviceRegistry() {
     const { hasRole } = useAuth()
@@ -87,6 +87,7 @@ export default function DeviceRegistry() {
         setEditItem(item)
         setForm({
             mac: item.mac,
+            name: item.name ?? '',
             category_id: item.category_id ?? '',
             nas_ip: item.nas_ip ?? '',
             description: item.description ?? '',
@@ -100,6 +101,7 @@ export default function DeviceRegistry() {
         e.preventDefault()
         const payload = {
             mac: form.mac,
+            name: form.name || null,
             category_id: form.category_id ? parseInt(form.category_id, 10) : null,
             nas_ip: form.nas_ip || null,
             description: form.description || null,
@@ -114,20 +116,56 @@ export default function DeviceRegistry() {
 
     const handleBulkText = () => {
         const lines = bulkText.split('\n').map(l => l.trim()).filter(Boolean)
+        const rowErrors = []
         const devices = lines.map(line => {
             const parts = line.split(',')
+            const mac = parts[0]?.trim()
+            const nasIp = parts[1]?.trim() || null
+            const name = parts[2]?.trim() || null
+            const description = parts[3]?.trim() || null
+            const rowCategory = parts[4]?.trim()
+            const parsedRowCategory = rowCategory ? parseInt(rowCategory, 10) : null
+
+            if (!mac || !nasIp || !name || !description) {
+                rowErrors.push(`Row "${line}": required format is mac,nas_ip,name,description[,category_id]`)
+                return null
+            }
+
             return {
-                mac: parts[0]?.trim(),
-                category_id: parts[1]?.trim() ? parseInt(parts[1].trim(), 10) : (bulkCategoryId ? parseInt(bulkCategoryId, 10) : null),
-                nas_ip: parts[2]?.trim() || null,
-                description: parts[3]?.trim() || null,
+                mac,
+                nas_ip: nasIp,
+                name,
+                description,
+                category_id: Number.isInteger(parsedRowCategory) ? parsedRowCategory : (bulkCategoryId ? parseInt(bulkCategoryId, 10) : null),
                 is_active: 1,
             }
-        }).filter(d => d.mac)
+        }).filter(Boolean)
+
+        if (rowErrors.length > 0) {
+            showToast(rowErrors[0], 'error')
+            return
+        }
+
         bulkMutation.mutate({
             devices,
             category_id: bulkCategoryId ? parseInt(bulkCategoryId, 10) : null,
         })
+    }
+
+    const handleDownloadTemplate = async () => {
+        try {
+            const blob = await DeviceRegistryService.downloadBulkTemplate()
+            const url = window.URL.createObjectURL(new Blob([blob], { type: 'text/csv;charset=utf-8;' }))
+            const link = document.createElement('a')
+            link.href = url
+            link.setAttribute('download', 'device_registry_bulk_template.csv')
+            document.body.appendChild(link)
+            link.click()
+            document.body.removeChild(link)
+            window.URL.revokeObjectURL(url)
+        } catch (e) {
+            showToast(e.response?.data?.detail || 'Template download failed', 'error')
+        }
     }
 
     const handleCsvUpload = (e) => {
@@ -140,6 +178,7 @@ export default function DeviceRegistry() {
     const filtered = devices.filter(d => {
         const term = search.toLowerCase()
         const matchSearch = !term || d.mac.includes(term) ||
+            (d.name || '').toLowerCase().includes(term) ||
             (d.description || '').toLowerCase().includes(term) ||
             (d.nas_ip || '').includes(term)
         const matchCat = !filterCategory || String(d.category_id) === filterCategory
@@ -194,7 +233,7 @@ export default function DeviceRegistry() {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                     <input
                         className="pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                        placeholder="Search MAC, description, IP…"
+                        placeholder="Search MAC, name, description, IP…"
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                     />
@@ -226,6 +265,7 @@ export default function DeviceRegistry() {
                         <thead>
                             <tr className="border-b border-slate-100 bg-slate-50">
                                 <th className="text-left px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">MAC</th>
+                                <th className="text-left px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Name</th>
                                 <th className="text-left px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Category</th>
                                 <th className="text-left px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">AP IP</th>
                                 <th className="text-left px-5 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Description</th>
@@ -239,6 +279,7 @@ export default function DeviceRegistry() {
                                     <td className="px-5 py-3 font-mono text-xs font-bold text-slate-700">
                                         {d.mac.match(/.{1,2}/g).join(':')}
                                     </td>
+                                    <td className="px-5 py-3 text-xs font-semibold text-slate-700">{d.name || '—'}</td>
                                     <td className="px-5 py-3">
                                         {d.category_name
                                             ? <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-[10px] font-black uppercase">{d.category_name}</span>
@@ -294,6 +335,15 @@ export default function DeviceRegistry() {
                                     value={form.mac}
                                     onChange={e => setForm(f => ({ ...f, mac: e.target.value }))}
                                     disabled={!!editItem}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Name</label>
+                                <input
+                                    placeholder="e.g. SM Torre Norte"
+                                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                    value={form.name}
+                                    onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                                 />
                             </div>
                             <div>
@@ -373,26 +423,35 @@ export default function DeviceRegistry() {
                             <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center">
                                 <Upload size={24} className="mx-auto mb-2 text-slate-400" />
                                 <p className="text-xs font-bold text-slate-600 mb-1">Upload CSV file</p>
-                                <p className="text-[10px] text-slate-400 mb-3">Columns: mac, category_id (optional), nas_ip (optional), description (optional)</p>
-                                <button
-                                    type="button"
-                                    onClick={() => fileInputRef.current?.click()}
-                                    disabled={csvMutation.isPending}
-                                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors disabled:opacity-50"
-                                >
-                                    {csvMutation.isPending ? 'Importing…' : 'Choose CSV'}
-                                </button>
+                                <p className="text-[10px] text-slate-400 mb-3">Required columns: mac, nas_ip, name, description · Optional: category_id</p>
+                                <div className="flex justify-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => fileInputRef.current?.click()}
+                                        disabled={csvMutation.isPending}
+                                        className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors disabled:opacity-50"
+                                    >
+                                        {csvMutation.isPending ? 'Importing…' : 'Choose CSV'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleDownloadTemplate}
+                                        className="px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors"
+                                    >
+                                        <span className="inline-flex items-center gap-1.5"><Download size={12} /> Descargar template</span>
+                                    </button>
+                                </div>
                                 <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvUpload} />
                             </div>
 
-                            <div className="text-center text-xs text-slate-400 font-bold">— or paste MAC list —</div>
+                            <div className="text-center text-xs text-slate-400 font-bold">— or paste device list —</div>
 
                             {/* Text Paste */}
                             <div>
-                                <p className="text-[10px] text-slate-400 mb-1.5">One per line: mac, category_id, nas_ip, description (all optional except mac)</p>
+                                <p className="text-[10px] text-slate-400 mb-1.5">One per line: mac,nas_ip,name,description[,category_id]</p>
                                 <textarea
                                     className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-mono h-32 resize-none"
-                                    placeholder={"0a003e45764a\n0a003e45764b,2,192.168.1.11,SM Tower North\n0A:00:3E:45:76:4C"}
+                                    placeholder={"0a003e45764a,192.168.1.10,SM Torre Norte,Cliente premium\n0a003e45764b,192.168.1.11,SM Torre Sur,Backhaul secundario,2"}
                                     value={bulkText}
                                     onChange={e => setBulkText(e.target.value)}
                                 />

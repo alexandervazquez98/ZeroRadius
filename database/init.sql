@@ -230,6 +230,7 @@ CREATE TABLE IF NOT EXISTS nas_categories (
 CREATE TABLE IF NOT EXISTS device_registry (
     id              INT AUTO_INCREMENT PRIMARY KEY,
     mac             VARCHAR(50)  NOT NULL,
+    name            VARCHAR(120) NULL DEFAULT NULL,
     category_id     INT          NULL DEFAULT NULL,
     nas_ip          VARCHAR(50)  NULL DEFAULT NULL,
     description     VARCHAR(200) NULL DEFAULT NULL,

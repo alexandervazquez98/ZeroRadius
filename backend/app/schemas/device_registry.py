@@ -1,4 +1,5 @@
 import re
+import ipaddress
 from typing import Optional
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -18,6 +19,7 @@ def _normalize_mac(value: str) -> str:
 
 class DeviceRegistryBase(BaseModel):
     mac: str
+    name: Optional[str] = None
     category_id: Optional[int] = None
     nas_ip: Optional[str] = None
     description: Optional[str] = None
@@ -28,16 +30,61 @@ class DeviceRegistryBase(BaseModel):
     def validate_mac(cls, v: str) -> str:
         return _normalize_mac(v.strip())
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        cleaned = v.strip()
+        return cleaned or None
+
+    @field_validator("nas_ip")
+    @classmethod
+    def validate_nas_ip(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        cleaned = v.strip()
+        if not cleaned:
+            return None
+        try:
+            ipaddress.ip_address(cleaned)
+        except ValueError as exc:
+            raise ValueError(f"invalid IP address: '{cleaned}'") from exc
+        return cleaned
+
 
 class DeviceRegistryCreate(DeviceRegistryBase):
     pass
 
 
 class DeviceRegistryUpdate(BaseModel):
+    name: Optional[str] = None
     category_id: Optional[int] = None
     nas_ip: Optional[str] = None
     description: Optional[str] = None
     is_active: Optional[int] = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        cleaned = v.strip()
+        return cleaned or None
+
+    @field_validator("nas_ip")
+    @classmethod
+    def validate_nas_ip(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        cleaned = v.strip()
+        if not cleaned:
+            return None
+        try:
+            ipaddress.ip_address(cleaned)
+        except ValueError as exc:
+            raise ValueError(f"invalid IP address: '{cleaned}'") from exc
+        return cleaned
 
 
 class DeviceRegistryOut(DeviceRegistryBase):
