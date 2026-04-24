@@ -205,11 +205,7 @@ CREATE TABLE IF NOT EXISTS access_policy_assignments (
     is_active       TINYINT(1)   NOT NULL DEFAULT 1,
     created_at      DATETIME(6)  DEFAULT CURRENT_TIMESTAMP(6),
     updated_at      DATETIME(6)  DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-    -- Separate unique keys per targeting mode
     UNIQUE KEY uq_unpm_target_key (target_key),
-    UNIQUE KEY uq_user_nas_ip  (username, nas_ip),
-    UNIQUE KEY uq_user_nas_cat (username, nas_category_id),
-    UNIQUE KEY uq_user_segment_target (username, segment_id, segment_target_key),
     INDEX idx_unpm_nas_ip     (nas_ip),
     INDEX idx_unpm_calling_station_id (calling_station_id),
     INDEX idx_unpm_category   (nas_category_id),
@@ -228,6 +224,26 @@ CREATE TABLE IF NOT EXISTS nas_categories (
     INDEX idx_nc_name (name),
     INDEX idx_nc_criticality (criticality)
 ) ENGINE=InnoDB;
+
+-- T10: device_registry — known endpoint devices (SMs, CPEs) by MAC with category
+-- Enables RADIUS Step 1.5: MAC → device category → user category policy.
+CREATE TABLE IF NOT EXISTS device_registry (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    mac             VARCHAR(50)  NOT NULL,
+    category_id     INT          NULL DEFAULT NULL,
+    nas_ip          VARCHAR(50)  NULL DEFAULT NULL,
+    description     VARCHAR(200) NULL DEFAULT NULL,
+    is_active       TINYINT(1)   NOT NULL DEFAULT 1,
+    created_at      DATETIME(6)  DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at      DATETIME(6)  DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    UNIQUE KEY uq_device_mac (mac),
+    INDEX idx_device_category (category_id),
+    INDEX idx_device_nas_ip   (nas_ip),
+    INDEX idx_device_active   (is_active)
+) ENGINE=InnoDB;
+
+ALTER TABLE device_registry ADD CONSTRAINT fk_device_category
+    FOREIGN KEY (category_id) REFERENCES nas_categories(id) ON DELETE SET NULL;
 
 -- syslog-compliance: Phase 2 - syslog_events table with partitioning by month
 -- Partitioning strategy: PARTITION BY RANGE (YEAR(received_at) * 100 + MONTH(received_at))

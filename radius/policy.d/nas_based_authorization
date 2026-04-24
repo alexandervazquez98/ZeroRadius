@@ -83,6 +83,35 @@ nas_based_authorization {
         }
 
         if ("%{control:Tmp-String-0}" == "") {
+            # ── STEP 1.5: Device Registry — MAC → category → user category policy ──
+            # Resolves Calling-Station-Id against device_registry to find the device's
+            # assigned category, then looks up a category-level policy for the user.
+            # Avoids registering individual SM MACs in access_policy_assignments.
+            update control {
+                Tmp-String-0 := "%{sql:SELECT unpm.radius_group \
+                    FROM access_policy_assignments unpm \
+                    WHERE unpm.username='%{User-Name}' \
+                    AND unpm.is_active=1 \
+                    AND unpm.nas_ip IS NULL \
+                    AND unpm.calling_station_id IS NULL \
+                    AND unpm.segment_id IS NULL \
+                    AND unpm.nas_category_id = ( \
+                        SELECT dr.category_id FROM device_registry dr \
+                        WHERE dr.mac = LOWER(REPLACE(REPLACE(REPLACE('%{Calling-Station-Id}', '-', ''), ':', ''), '.', '')) \
+                        AND dr.is_active = 1 \
+                        LIMIT 1 \
+                    ) \
+                    LIMIT 1}"
+            }
+
+            if ("%{control:Tmp-String-0}" != "") {
+                update control {
+                    Tmp-String-1 := "step1_5"
+                }
+            }
+        }
+
+        if ("%{control:Tmp-String-0}" == "") {
             # ── STEP 2: Segment Base match ──────────────────────────────────
             # Look for a mapping to a network segment where the NAS IP is inside the segment's CIDR
             update control {

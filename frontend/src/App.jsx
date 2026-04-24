@@ -17,6 +17,7 @@ import Dictionaries from './pages/Dictionaries';
 import AdminUsers from './pages/AdminUsers';
 import AccessPolicies from './pages/AccessPolicies';
 import NetworkSegments from './pages/NetworkSegments';
+import DeviceRegistry from './pages/DeviceRegistry';
 import SyslogDashboard from './pages/SyslogDashboard';
 
 /** Simple page shown when a user lacks permissions to access a route */
@@ -90,6 +91,18 @@ function App() {
                                 <ErrorBoundary>
                                     <RoleGuard allowedRoles={['superadmin', 'admin']} fallback={<Unauthorized />}>
                                         <NetworkSegments />
+                                    </RoleGuard>
+                                </ErrorBoundary>
+                            }
+                        />
+
+                        {/* Device Registry */}
+                        <Route
+                            path="device-registry"
+                            element={
+                                <ErrorBoundary>
+                                    <RoleGuard allowedRoles={['superadmin', 'admin']} fallback={<Unauthorized />}>
+                                        <DeviceRegistry />
                                     </RoleGuard>
                                 </ErrorBoundary>
                             }

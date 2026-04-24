@@ -349,14 +349,6 @@ class AccessPolicyAssignment(Base):
 
     __table_args__ = (
         UniqueConstraint("target_key", name="uq_unpm_target_key"),
-        UniqueConstraint("username", "nas_ip", name="uq_user_nas_ip"),
-        UniqueConstraint("username", "nas_category_id", name="uq_user_nas_cat"),
-        UniqueConstraint(
-            "username",
-            "segment_id",
-            "segment_target_key",
-            name="uq_user_segment_target",
-        ),
     )
 
     @validates("calling_station_id")
@@ -481,6 +473,43 @@ class NasCategory(Base):
     )
 
     nases: Mapped[list["Nas"]] = relationship("Nas", back_populates="category")
+    devices: Mapped[list["DeviceRegistry"]] = relationship("DeviceRegistry", back_populates="category")
+
+
+class DeviceRegistry(Base):
+    """Known endpoint devices (SMs, CPEs) identified by MAC address.
+    Assigned to a NAS category so RADIUS can resolve device-level policies
+    without registering individual MACs in access_policy_assignments.
+    """
+
+    __tablename__ = "device_registry"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    mac: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    category_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("nas_categories.id", ondelete="SET NULL", name="fk_device_category"),
+        nullable=True,
+    )
+    category: Mapped[Optional["NasCategory"]] = relationship("NasCategory", back_populates="devices")
+    nas_ip: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    is_active: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=True
+    )
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=False),
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=FetchedValue(),
+        nullable=True,
+    )
+
+    @validates("mac")
+    def normalize_mac(self, key, value):
+        if value is None:
+            return value
+        return _normalize_mac(value)
 
 
 # syslog-compliance: Phase 2 - SyslogEvent model with hash chain for integrity
