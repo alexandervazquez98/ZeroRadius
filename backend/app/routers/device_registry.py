@@ -10,7 +10,6 @@ import logging
 import ipaddress
 from typing import Optional
 
-import openpyxl
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
@@ -348,44 +347,38 @@ async def download_bulk_template(
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
 ):
-    """Generate an XLSX workbook with two sheets: Template (import guide) and Categories (reference)."""
-    wb = openpyxl.Workbook()
+    """
+    Generate a CSV template with columns: mac, name, description, category_id, nas_ip.
+    Use this template to bulk-import devices via /bulk/csv.
+    """
+    headers = ["mac", "name", "description", "category_id", "nas_ip"]
+    rows = [
+        ["0A:00:3E:45:76:4A", "SM Torre Norte", "Cliente premium - sector norte", "2", "192.168.1.11"],
+        ["0A:00:3E:45:76:4B", "SM Torre Sur", "Backhaul secundario", "", "192.168.1.12"],
+    ]
 
-    # ── Sheet 1: Template ───────────────────────────────────────────────────
-    template_ws = wb.active
-    template_ws.title = "Template"
-    template_headers = ["serial_number", "name", "description", "category_id", "ip_address", "mac_address"]
-    template_ws.append(template_headers)
-    template_ws.append([
-        "0A:00:3E:45:76:4A",
-        "SM Torre Norte",
-        "Cliente premium - sector norte",
-        "2",
-        "192.168.1.11",
-        "0A:00:3E:45:76:4A",
-    ])
-    template_ws.append([
-        "0A:00:3E:45:76:4B",
-        "SM Torre Sur",
-        "Backhaul secundario",
-        "",
-        "192.168.1.12",
-        "0A:00:3E:45:76:4B",
-    ])
-
-    # ── Sheet 2: Categories ─────────────────────────────────────────────────
-    categories_ws = wb.create_sheet("Categories")
-    categories_ws.append(["id", "name", "description"])
+    # Fetch categories for reference
     result = await db.execute(select(NasCategory).order_by(NasCategory.name))
-    for cat in result.scalars().all():
-        categories_ws.append([cat.id, cat.name, cat.description or ""])
+    categories = result.scalars().all()
 
-    bytes_io = io.BytesIO()
-    wb.save(bytes_io)
-    bytes_io.seek(0)
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Write data section with comment header
+    writer.writerow(["# Device Registry Bulk Import Template"])
+    writer.writerow(["# Columns: mac, name, description, category_id, nas_ip"])
+    writer.writerow(["# Supported MAC formats: 0A:00:3E:45:76:4A, 0A-00-3E-45-76-4A, 0A00.3E45.764A, 0A003E45764A (case-insensitive)"])
+    writer.writerow(["# MAC addresses will be normalized to lowercase 12-char hex (e.g. 0a003e45764a)"])
+    writer.writerow(["# Categories available:"] + [f"{c.id}={c.name}" for c in categories])
+    writer.writerow([])
+    writer.writerow(headers)
+    for row in rows:
+        writer.writerow(row)
+
+    csv_content = output.getvalue()
 
     return Response(
-        content=bytes_io.read(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=device_registry_bulk_template.xlsx"},
+        content=csv_content.encode("utf-8-sig"),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=device_registry_bulk_template.csv"},
     )
