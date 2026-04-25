@@ -192,6 +192,7 @@ CREATE TABLE IF NOT EXISTS access_policy_assignments (
     calling_station_id VARCHAR(50) NULL,
     nas_category_id INT          NULL DEFAULT NULL,     -- NULL when using IP-based mapping
     segment_id      INT          NULL DEFAULT NULL,
+    cir_id          INT          NULL DEFAULT NULL,     -- CIR-based targeting
     segment_target_key VARCHAR(128) NOT NULL DEFAULT '',
     target_start_ip VARCHAR(50)  NULL,
     target_end_ip   VARCHAR(50)  NULL,
@@ -209,6 +210,7 @@ CREATE TABLE IF NOT EXISTS access_policy_assignments (
     INDEX idx_unpm_nas_ip     (nas_ip),
     INDEX idx_unpm_calling_station_id (calling_station_id),
     INDEX idx_unpm_category   (nas_category_id),
+    INDEX idx_unpm_cir       (cir_id),
     INDEX idx_unpm_is_active  (is_active),
     INDEX idx_unpm_review_date (review_date)
 ) ENGINE=InnoDB;
@@ -290,6 +292,22 @@ CREATE TABLE IF NOT EXISTS network_segments (
     created_at DATETIME(6) DEFAULT CURRENT_TIMESTAMP(6),
     updated_at DATETIME(6) DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     INDEX idx_ns_name (name)
+) ENGINE=InnoDB;
+
+-- CIR Model: Circuit Identifier Records for CIR-based access resolution
+CREATE TABLE IF NOT EXISTS circuits (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    circuit_id VARCHAR(64) NOT NULL,
+    carrier VARCHAR(64) NULL,
+    type VARCHAR(32) NOT NULL DEFAULT 'ethernet',
+    description TEXT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME(6) DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at DATETIME(6) DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    UNIQUE KEY uk_circuit_id (circuit_id),
+    INDEX idx_circuit_name (name),
+    INDEX idx_circuit_active (is_active)
 ) ENGINE=InnoDB;
 
 -- Add FK for nas.category_id to nas_categories

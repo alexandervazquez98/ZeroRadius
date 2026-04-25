@@ -18,6 +18,7 @@ import AdminUsers from './pages/AdminUsers';
 import AccessPolicies from './pages/AccessPolicies';
 import NetworkSegments from './pages/NetworkSegments';
 import DeviceRegistry from './pages/DeviceRegistry';
+import CircuitPage from './pages/CircuitPage';
 import SyslogDashboard from './pages/SyslogDashboard';
 
 /** Simple page shown when a user lacks permissions to access a route */
@@ -103,6 +104,18 @@ function App() {
                                 <ErrorBoundary>
                                     <RoleGuard allowedRoles={['superadmin', 'admin']} fallback={<Unauthorized />}>
                                         <DeviceRegistry />
+                                    </RoleGuard>
+                                </ErrorBoundary>
+                            }
+                        />
+
+                        {/* Circuit Identifier Records */}
+                        <Route
+                            path="circuits"
+                            element={
+                                <ErrorBoundary>
+                                    <RoleGuard allowedRoles={['superadmin', 'admin', 'auditor']} fallback={<Unauthorized />}>
+                                        <CircuitPage />
                                     </RoleGuard>
                                 </ErrorBoundary>
                             }

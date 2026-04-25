@@ -298,7 +298,7 @@ async def validate_segment_exception(
 def to_out_schema(record: AccessPolicyAssignment) -> AccessPolicyAssignmentOut:
     """Serialize AccessPolicyAssignment ORM → Out schema, resolving related names."""
     days = compute_days_until_review(record.review_date)
-    
+
     # Resolve category and segment names from relationships if available
     category_name = None
     if record.nas_category_id is not None:
@@ -306,13 +306,20 @@ def to_out_schema(record: AccessPolicyAssignment) -> AccessPolicyAssignmentOut:
             category_name = record.category.name if record.category else None
         except Exception:
             category_name = None
-            
+
     segment_name = None
     if record.segment_id is not None:
         try:
             segment_name = record.segment.name if record.segment else None
         except Exception:
             segment_name = None
+
+    cir_name = None
+    if record.cir_id is not None:
+        try:
+            cir_name = record.cir.name if record.cir else None
+        except Exception:
+            cir_name = None
 
     return AccessPolicyAssignmentOut(
         id=record.id,
@@ -334,6 +341,8 @@ def to_out_schema(record: AccessPolicyAssignment) -> AccessPolicyAssignmentOut:
         days_until_review=days,
         segment_id=record.segment_id,
         segment_name=segment_name,
+        cir_id=record.cir_id,
+        cir_name=cir_name,
         target_start_ip=record.target_start_ip,
         target_end_ip=record.target_end_ip,
     )

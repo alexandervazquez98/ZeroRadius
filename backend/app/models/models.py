@@ -321,6 +321,15 @@ class AccessPolicyAssignment(Base):
     segment: Mapped[Optional["NetworkSegment"]] = relationship(
         "NetworkSegment", foreign_keys=[segment_id]
     )
+    # CIR-based targeting: circuit_id assignment for CIR resolution flow
+    cir_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("circuits.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    cir: Mapped[Optional["Circuit"]] = relationship(
+        "Circuit", foreign_keys=[cir_id]
+    )
     segment_target_key: Mapped[str] = mapped_column(
         String(128), nullable=False, default=""
     )
@@ -375,6 +384,7 @@ class AccessPolicyAssignment(Base):
             safe(self.calling_station_id),
             safe(self.nas_category_id),
             safe(self.segment_id),
+            safe(self.cir_id),
             safe(self.target_start_ip),
             safe(self.target_end_ip),
         ]
@@ -474,6 +484,36 @@ class NasCategory(Base):
 
     nases: Mapped[list["Nas"]] = relationship("Nas", back_populates="category")
     devices: Mapped[list["DeviceRegistry"]] = relationship("DeviceRegistry", back_populates="category")
+
+
+class Circuit(Base):
+    """Circuit Identifier Records for CIR-based access resolution."""
+
+    __tablename__ = "circuits"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(
+        String(100), unique=True, nullable=False, index=True
+    )
+    circuit_id: Mapped[str] = mapped_column(
+        String(64), unique=True, nullable=False, index=True
+    )
+    carrier: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    type: Mapped[str] = mapped_column(String(32), nullable=False, default="ethernet")
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=True
+    )
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=False),
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=FetchedValue(),
+        nullable=True,
+    )
+
+    assignments: Mapped[list["AccessPolicyAssignment"]] = relationship(
+        "AccessPolicyAssignment", back_populates="cir"
+    )
 
 
 class DeviceRegistry(Base):

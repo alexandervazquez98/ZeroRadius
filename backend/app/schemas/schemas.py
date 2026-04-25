@@ -220,6 +220,71 @@ class NetworkSegmentOut(NetworkSegmentBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+# --- Circuit (CIR) Schemas ---
+
+
+class CircuitType(str):
+    ETHERNET = "ethernet"
+    MPLS = "mpls"
+    VPN = "vpn"
+    WIRELESS = "wireless"
+    OTHER = "other"
+
+
+_CIR_TYPES = {"ethernet", "mpls", "vpn", "wireless", "other"}
+
+
+class CircuitBase(BaseModel):
+    name: str
+    circuit_id: str
+    carrier: Optional[str] = None
+    type: str = "ethernet"
+    description: Optional[str] = None
+    is_active: int = 1
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, v: str) -> str:
+        if v not in _CIR_TYPES:
+            raise ValueError(f"type must be one of {_CIR_TYPES}")
+        return v
+
+
+class CircuitCreate(CircuitBase):
+    @field_validator("circuit_id")
+    @classmethod
+    def validate_circuit_id(cls, v: str) -> str:
+        value = (v or "").strip()
+        if not value:
+            raise ValueError("circuit_id is required")
+        return value
+
+
+class CircuitUpdate(BaseModel):
+    name: Optional[str] = None
+    circuit_id: Optional[str] = None
+    carrier: Optional[str] = None
+    type: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[int] = None
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if v not in _CIR_TYPES:
+            raise ValueError(f"type must be one of {_CIR_TYPES}")
+        return v
+
+
+class CircuitOut(CircuitBase):
+    id: int
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
 class NasCreate(BaseModel):
     nasname: str
     shortname: Optional[str] = None
@@ -303,6 +368,7 @@ class AccessPolicyAssignmentCreate(BaseModel):
 
     nas_category_id: Optional[int] = None
     segment_id: Optional[int] = None
+    cir_id: Optional[int] = None
     target_start_ip: Optional[str] = None
     target_end_ip: Optional[str] = None
 
@@ -334,6 +400,7 @@ class AccessPolicyAssignmentCreate(BaseModel):
         has_mac = bool(self.calling_station_id and self.calling_station_id.strip())
         has_cat = self.nas_category_id is not None
         has_seg = self.segment_id is not None
+        has_cir = self.cir_id is not None
 
         is_range_exception = has_seg and (
             bool(self.target_start_ip and self.target_start_ip.strip())
@@ -342,22 +409,22 @@ class AccessPolicyAssignmentCreate(BaseModel):
 
         # 1. IP + MAC is allowed (high specificity), but NOTHING ELSE
         if has_ip and has_mac:
-            if has_cat or has_seg:
+            if has_cat or has_seg or has_cir:
                 raise ValueError(
-                    "IP+MAC targeting cannot be combined with Category or Segment"
+                    "IP+MAC targeting cannot be combined with Category, Segment, or CIR"
                 )
             return self
 
         # 2. Range Exception (Segment + IPs) allowed, but NOTHING ELSE
         if is_range_exception:
-            if has_cat or has_ip or has_mac:
+            if has_cat or has_ip or has_mac or has_cir:
                 raise ValueError(
                     "Network Segment range exceptions cannot be combined with other methods"
                 )
             return self
 
-        # 3. Otherwise, strictly ONE method
-        provided = sum([has_ip, has_mac, has_cat, has_seg])
+        # 3. Otherwise, strictly ONE targeting method (IP, MAC, Category, Segment, or CIR)
+        provided = sum([has_ip, has_mac, has_cat, has_seg, has_cir])
         if provided == 0:
             raise ValueError("targeting method required")
         if provided > 1:
@@ -375,6 +442,8 @@ class AccessPolicyAssignmentOut(BaseModel):
     nas_category_name: Optional[str] = None
     segment_id: Optional[int] = None
     segment_name: Optional[str] = None
+    cir_id: Optional[int] = None
+    cir_name: Optional[str] = None
     target_start_ip: Optional[str] = None
     target_end_ip: Optional[str] = None
     nas_identifier: Optional[str] = None
