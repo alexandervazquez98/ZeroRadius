@@ -1,4 +1,5 @@
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
+import importlib
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -152,3 +153,181 @@ async def test_mysql_errno_from_args_duplicate_key_returns_http_409():
         access_policies_service.raise_assignment_integrity_error(payload, err)
 
     assert exc_info.value.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# Category Membership Guard — Unit Tests
+# ---------------------------------------------------------------------------
+
+def test_raise_category_membership_error_returns_409_with_username_and_category():
+    with pytest.raises(HTTPException) as exc_info:
+        access_policies_service.raise_category_membership_error("alice", "APDevices")
+
+    assert exc_info.value.status_code == 409
+    assert "alice" in exc_info.value.detail
+    assert "APDevices" in exc_info.value.detail
+    assert "not a member" in exc_info.value.detail
+
+
+def test_raise_category_membership_error_with_unknown_category():
+    with pytest.raises(HTTPException) as exc_info:
+        access_policies_service.raise_category_membership_error("bob", "ID 999")
+
+    assert exc_info.value.status_code == 409
+    assert "bob" in exc_info.value.detail
+
+
+class _FakeSession:
+    """Minimal fake AsyncSession that returns pre-configured results."""
+
+    def __init__(self, results: list):
+        self._results = results
+        self._index = 0
+
+    async def execute(self, stmt):
+        result = self._results[self._index] if self._index < len(self._results) else _ScalarResult(None)
+        self._index += 1
+        return result
+
+
+@pytest.mark.asyncio
+async def test_validate_category_membership_allows_when_guard_disabled(monkeypatch):
+    """When CATEGORY_MEMBERSHIP_GUARD_ENABLED=false, no DB queries are made."""
+    # Force the flag to false at module level
+    monkeypatch.setattr(access_policies_service, "_CATEGORY_MEMBERSHIP_GUARD_ENABLED", False)
+
+    # If we got here without raising, the guard allowed passage
+    # (The function would raise if flag is true but no membership found)
+    fake_session = _FakeSession([])
+    await access_policies_service.validate_category_membership(
+        fake_session, "alice", nas_category_id=1, calling_station_id="00:11:22:33:44:55"
+    )
+    # No exception means guard passed (or was bypassed)
+
+
+@pytest.mark.asyncio
+async def test_validate_category_membership_raises_409_when_no_membership_and_guard_enabled(
+    monkeypatch,
+):
+    """When flag=true and no DeviceRegistry or existing assignment, raise 409."""
+    monkeypatch.setattr(access_policies_service, "_CATEGORY_MEMBERSHIP_GUARD_ENABLED", True)
+
+    # Both queries return None (no membership)
+    fake_session = _FakeSession([
+        _ScalarResult(None),  # DeviceRegistry query
+        _ScalarResult(None),  # AccessPolicyAssignment query
+        _ScalarResult("APDevices"),  # NasCategory name lookup
+    ])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await access_policies_service.validate_category_membership(
+            fake_session, "alice", nas_category_id=1, calling_station_id="00:11:22:33:44:55"
+        )
+
+    assert exc_info.value.status_code == 409
+    assert "alice" in exc_info.value.detail
+    assert "APDevices" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_validate_category_membership_allows_via_device_registry(
+    monkeypatch,
+):
+    """When flag=true and DeviceRegistry has the MAC+category, allow."""
+    monkeypatch.setattr(access_policies_service, "_CATEGORY_MEMBERSHIP_GUARD_ENABLED", True)
+
+    # DeviceRegistry returns a device → membership confirmed
+    class _DeviceResult:
+        def __init__(self):
+            self._value = Mock()  # non-None means found
+
+        def scalars(self):
+            return self
+
+        def first(self):
+            return self._value
+
+    fake_session = _FakeSession([_DeviceResult()])
+
+    # Should not raise
+    await access_policies_service.validate_category_membership(
+        fake_session, "alice", nas_category_id=1, calling_station_id="001122334455"
+    )
+
+
+@pytest.mark.asyncio
+async def test_validate_category_membership_allows_via_existing_assignment(
+    monkeypatch,
+):
+    """When flag=true and user has existing assignment in category, allow."""
+    monkeypatch.setattr(access_policies_service, "_CATEGORY_MEMBERSHIP_GUARD_ENABLED", True)
+
+    # First query (DeviceRegistry with MAC) returns None
+    # Second query (existing assignment) returns a record
+    class _AssignResult:
+        def __init__(self):
+            self._value = Mock()
+
+        def scalars(self):
+            return self
+
+        def first(self):
+            return self._value
+
+    fake_session = _FakeSession([_ScalarResult(None), _AssignResult()])
+
+    # Should not raise
+    await access_policies_service.validate_category_membership(
+        fake_session, "alice", nas_category_id=1, calling_station_id="00:11:22:33:44:55"
+    )
+
+
+@pytest.mark.asyncio
+async def test_validate_category_membership_skips_device_registry_when_no_mac(
+    monkeypatch,
+):
+    """When calling_station_id is None, skip DeviceRegistry path and check assignments."""
+    monkeypatch.setattr(access_policies_service, "_CATEGORY_MEMBERSHIP_GUARD_ENABLED", True)
+
+    class _AssignResult:
+        def __init__(self):
+            self._value = Mock()
+
+        def scalars(self):
+            return self
+
+        def first(self):
+            return self._value
+
+    # Only one result needed — the AccessPolicyAssignment query
+    fake_session = _FakeSession([_AssignResult()])
+
+    # Should not raise (assignment found)
+    await access_policies_service.validate_category_membership(
+        fake_session, "alice", nas_category_id=1, calling_station_id=None
+    )
+
+
+@pytest.mark.asyncio
+async def test_validate_category_membership_falls_back_when_device_registry_fails(
+    monkeypatch,
+):
+    """When DeviceRegistry lookup returns no match but assignment exists, allow."""
+    monkeypatch.setattr(access_policies_service, "_CATEGORY_MEMBERSHIP_GUARD_ENABLED", True)
+
+    class _AssignResult:
+        def __init__(self):
+            self._value = Mock()
+
+        def scalars(self):
+            return self
+
+        def first(self):
+            return self._value
+
+    fake_session = _FakeSession([_ScalarResult(None), _AssignResult()])
+
+    # Should not raise — membership confirmed via existing assignment
+    await access_policies_service.validate_category_membership(
+        fake_session, "alice", nas_category_id=1, calling_station_id="00:11:22:33:44:55"
+    )

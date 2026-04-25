@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from typing import Optional
 import ipaddress
@@ -10,8 +11,11 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
-from app.models.models import AccessPolicyAssignment, NetworkSegment, _build_segment_target_key
+from app.models.models import AccessPolicyAssignment, NetworkSegment, DeviceRegistry, NasCategory, _build_segment_target_key
 from app.schemas.access_policies import AccessPolicyAssignmentOut, AccessPolicyAssignmentCreate
+
+# Feature flag for safe rollout — defaults to False
+_CATEGORY_MEMBERSHIP_GUARD_ENABLED = os.getenv("CATEGORY_MEMBERSHIP_GUARD_ENABLED", "false").lower() == "true"
 
 
 def compute_days_until_review(review_date: Optional[datetime]) -> Optional[int]:
@@ -92,6 +96,71 @@ def raise_assignment_integrity_error(
         status_code=422,
         detail="Access policy assignment violates data integrity constraints",
     ) from exc
+
+
+def raise_category_membership_error(username: str, category_name: str) -> None:
+    raise HTTPException(
+        status_code=409,
+        detail=f"User {username} is not a member of category '{category_name}'",
+    )
+
+
+async def validate_category_membership(
+    db: AsyncSession,
+    username: str,
+    nas_category_id: int,
+    calling_station_id: Optional[str] = None,
+) -> None:
+    """Validate that a user is a member of the given nas_category_id.
+
+    Membership is established through either:
+    1. DeviceRegistry: a device with matching MAC is registered in the category
+    2. Existing AccessPolicyAssignment: user already has an assignment in the category
+
+    Raises HTTPException 409 if no membership is found and the guard is enabled.
+    Does nothing if the feature flag is disabled.
+    """
+    if not _CATEGORY_MEMBERSHIP_GUARD_ENABLED:
+        return
+
+    has_membership = False
+
+    # Path 1: DeviceRegistry — MAC-based membership when calling_station_id provided
+    if calling_station_id:
+        mac_normalized = calling_station_id.replace(":", "").replace("-", "").replace(".", "").lower()
+        result = await db.execute(
+            select(DeviceRegistry).where(
+                and_(
+                    DeviceRegistry.mac == mac_normalized,
+                    DeviceRegistry.category_id == nas_category_id,
+                )
+            )
+        )
+        if result.scalars().first() is not None:
+            has_membership = True
+
+    # Path 2: Existing AccessPolicyAssignment for same username + nas_category_id
+    if not has_membership:
+        result = await db.execute(
+            select(AccessPolicyAssignment).where(
+                and_(
+                    AccessPolicyAssignment.username == username,
+                    AccessPolicyAssignment.nas_category_id == nas_category_id,
+                )
+            )
+        )
+        if result.scalars().first() is not None:
+            has_membership = True
+
+    if not has_membership:
+        # Lookup category name for the error message
+        cat_result = await db.execute(
+            select(NasCategory.name).where(NasCategory.id == nas_category_id)
+        )
+        category_name = cat_result.scalars().first()
+        if not category_name:
+            category_name = f"ID {nas_category_id}"
+        raise_category_membership_error(username, category_name)
 
 
 async def find_existing_assignment(
