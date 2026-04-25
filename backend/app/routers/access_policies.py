@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, and_, update
+from sqlalchemy import select, and_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -11,7 +11,7 @@ from starlette.requests import Request
 from app.core.limiter import limiter
 from app.core.rbac import Role, require_roles
 from app.db.session import get_db
-from app.models.models import AdminUser, AccessPolicyAssignment, NasCategory
+from app.models.models import AdminUser, AccessPolicyAssignment
 from app.schemas.access_policies import (
     AccessPolicyAssignmentOut,
     AccessPolicyAssignmentCreate,
@@ -20,14 +20,12 @@ from app.schemas.access_policies import (
     AccessPolicyPreviewResponse,
     BandwidthProfileOut,
     BandwidthProfilePayload,
-    CategoryReassignPayload,
 )
 from app.services.access_policies_service import (
     find_existing_assignment,
     raise_assignment_integrity_error,
     raise_nas_conflict,
     to_out_schema as _to_out,
-    validate_category_membership,
     validate_segment_exception,
 )
 from app.services.bandwidth_profiles import (
@@ -139,14 +137,6 @@ async def create_or_replace_assignment(
         db, payload, exclude_id=existing.id if existing else None
     )
 
-    if payload.nas_category_id is not None:
-        await validate_category_membership(
-            db,
-            payload.username,
-            payload.nas_category_id,
-            calling_station_id=payload.calling_station_id,
-        )
-
     review_dt = (
         datetime.combine(payload.review_date, datetime.min.time())
         if payload.review_date
@@ -169,6 +159,7 @@ async def create_or_replace_assignment(
         existing.approved_by = payload.approved_by
         existing.review_date = review_dt
         existing.is_active = payload.is_active
+        existing.cir_id = payload.cir_id
         existing.updated_at = datetime.utcnow()
         try:
             await db.commit()
@@ -202,6 +193,7 @@ async def create_or_replace_assignment(
         approved_by=payload.approved_by,
         review_date=review_dt,
         is_active=payload.is_active,
+        cir_id=payload.cir_id,
     )
     db.add(row)
     try:
@@ -304,14 +296,6 @@ async def update_assignment(
 ):
     await validate_segment_exception(db, payload, exclude_id=assignment_id)
 
-    if payload.nas_category_id is not None:
-        await validate_category_membership(
-            db,
-            payload.username,
-            payload.nas_category_id,
-            calling_station_id=payload.calling_station_id,
-        )
-
     result = await db.execute(
         select(AccessPolicyAssignment)
         .options(
@@ -411,27 +395,3 @@ async def preview_resolution(
     return await resolve_preview(
         db, payload.username, payload.nas_ip, calling_station_id=payload.calling_station_id
     )
-
-
-@router.patch("/categories/{category_id}/reassign")
-async def reassign_category(
-    category_id: int,
-    payload: CategoryReassignPayload,
-    db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
-):
-    # Validate target exists
-    result = await db.execute(select(NasCategory).where(NasCategory.id == payload.target_category_id))
-    if result.scalars().first() is None:
-        raise HTTPException(status_code=404, detail="Target category not found")
-
-    # Bulk update
-    stmt = (
-        update(AccessPolicyAssignment)
-        .where(AccessPolicyAssignment.nas_category_id == category_id)
-        .values(nas_category_id=payload.target_category_id)
-    )
-    result = await db.execute(stmt)
-    await db.commit()
-
-    return {"updated": result.rowcount}
