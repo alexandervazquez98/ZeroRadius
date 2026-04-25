@@ -170,7 +170,8 @@ async def test_resolve_category_fallback(async_client: AsyncClient, superadmin_t
         },
         headers=headers,
     )
-    assert nas_resp.status_code == 201
+    # 201 = created, 200 = updated (existing record)
+    assert nas_resp.status_code in (200, 201)
 
     # Create assignment with category (no CIR, no segment)
     assignment_resp = await async_client.post(

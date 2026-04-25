@@ -345,6 +345,7 @@ async def update_assignment(
         else None
     )
     row.is_active = payload.is_active
+    row.cir_id = payload.cir_id
     row.updated_at = datetime.utcnow()
 
     try:

@@ -29,6 +29,12 @@ from app.services.circuit_service import (
 router = APIRouter(prefix="/circuits", tags=["circuits"])
 
 
+def _normalize_mac(value: str) -> str:
+    """Normalize MAC address to 12 lowercase hex digits."""
+    import re
+    return re.sub(r"[:.\-]", "", value).lower()
+
+
 @router.get("", response_model=List[CircuitOut])
 @limiter.limit("60/minute")
 async def list_circuits(
@@ -57,7 +63,10 @@ async def resolve_circuit_endpoint(
     from app.services.access_policies_service import to_out_schema
     from app.services.bandwidth_profiles import get_profile
 
-    circuit, trace_steps = await resolve_circuit(db, username, nas_ip, calling_station_id)
+    # Normalize calling_station_id to match DB storage format
+    normalized_mac = _normalize_mac(calling_station_id) if calling_station_id else None
+
+    circuit, trace_steps = await resolve_circuit(db, username, nas_ip, normalized_mac)
 
     mapping = None
     profile = None

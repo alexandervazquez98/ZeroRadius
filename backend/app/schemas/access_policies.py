@@ -128,16 +128,33 @@ class AccessPolicyAssignmentCreate(BaseModel):
             or bool(self.target_end_ip and self.target_end_ip.strip())
         )
 
+        # 1. IP + MAC is high-specificity — no other targeting method allowed
+        #    EXCEPT: CIR can override IP+MAC targeting (CIR takes precedence)
         if has_ip and has_mac:
-            if has_cat or has_seg or has_cir:
-                raise ValueError("IP+MAC targeting cannot be combined with Category, Segment, or CIR")
+            if has_cir:
+                return self  # CIR overrides IP+MAC combination
+            if has_cat or has_seg:
+                raise ValueError("IP+MAC targeting cannot be combined with Category or Segment")
             return self
 
+        # 2. Range Exception (Segment + IP range) — CIR can override segment
         if is_range_exception:
-            if has_cat or has_ip or has_mac or has_cir:
-                raise ValueError("Network Segment range exceptions cannot be combined with other methods")
+            if has_cat or has_ip or has_mac:
+                raise ValueError("Network Segment range exceptions cannot be combined with other targeting methods")
             return self
 
+        # 3. CIR assignments can optionally carry nas_ip and/or calling_station_id
+        #    as routing context metadata, but CIR is the sole targeting method
+        if has_cir:
+            return self
+
+        # 4. Segment assignments (without exception range) can have nas_ip for routing
+        if has_seg:
+            if has_mac:
+                raise ValueError("Segment targeting cannot be combined with MAC")
+            return self
+
+        # 5. Otherwise, strictly ONE targeting method
         provided = sum([has_ip, has_mac, has_cat, has_seg, has_cir])
         if provided == 0:
             raise ValueError("targeting method required")
