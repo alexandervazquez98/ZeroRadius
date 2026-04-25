@@ -243,3 +243,7 @@ class AccessPolicyPreviewResponse(BaseModel):
     mapping: Optional[AccessPolicyAssignmentOut] = None
     profile: Optional[BandwidthProfileOut] = None
     trace: List[AccessPolicyResolutionTraceItem]
+
+
+class CategoryReassignPayload(BaseModel):
+    target_category_id: int
