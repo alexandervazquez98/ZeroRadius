@@ -9,9 +9,10 @@ from typing import Any
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+import os
+
 # Import the Base from models to get all table definitions
 from app.models.models import Base
-from app.core.config import settings
 
 # this is the Alembic Config object
 config = context.config
@@ -25,11 +26,18 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
-    """Build database URL from settings."""
-    return (
-        f"mysql+aiomysql://{settings.DB_USER}:{settings.DB_PASS}"
-        f"@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
-    )
+    """Build database URL from environment."""
+    url = os.getenv("DATABASE_URL")
+    if url:
+        return url.replace("mysql+aiomysql://", "mysql+pymysql://")
+
+    # Fallback for docker-compose environment vars
+    user = os.getenv("MYSQL_USER", "radius")
+    password = os.getenv("MYSQL_PASSWORD", "radius")
+    host = os.getenv("DB_HOST", "db")
+    port = os.getenv("DB_PORT", "3306")
+    db = os.getenv("MYSQL_DATABASE", "radius")
+    return f"mysql+pymysql://{user}:{password}@{host}:{port}/{db}"
 
 
 def run_migrations_offline() -> None:

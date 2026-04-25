@@ -43,24 +43,24 @@ function renderGroups(role = 'superadmin') {
 }
 
 describe('GroupsPage — rendering', () => {
-  it('renders the Grupos RADIUS heading', async () => {
+  it('renders the RADIUS Policy Engine heading', async () => {
     renderGroups()
     await waitFor(() => {
-      expect(screen.getByText('Grupos RADIUS')).toBeInTheDocument()
+      expect(screen.getByText('RADIUS Policy Engine')).toBeInTheDocument()
     })
   })
 
-  it('renders Nuevo Grupo button', async () => {
+  it('renders Nueva Política button', async () => {
     renderGroups()
     await waitFor(() => {
-      expect(screen.getByText('Nuevo Grupo')).toBeInTheDocument()
+      expect(screen.getByText('Nueva Política')).toBeInTheDocument()
     })
   })
 
-  it('renders empty state when no group selected', async () => {
+  it('renders empty state when no policy selected', async () => {
     renderGroups()
     await waitFor(() => {
-      expect(screen.getByText(/Seleccioná un grupo/i)).toBeInTheDocument()
+      expect(screen.getByText(/Seleccioná una política/i)).toBeInTheDocument()
     })
   })
 })

@@ -63,6 +63,9 @@ radtest testuser testpassword 127.0.0.1 0 testing123
 | `RADIUS_HOST` | `127.0.0.1` | IP del servidor FreeRADIUS |
 | `RADIUS_PORT` | `1812` | Puerto UDP de autenticación |
 | `RADIUS_SECRET` | `testing123` | Shared secret del NAS de test |
+| `RADIUS_MATRIX_PROBE_USER` | `segment_admin_a` | Usuario de precondición para validar wiring de `nas_based_authorization` |
+| `RADIUS_MATRIX_PROBE_PASS` | `testpassword` | Password del usuario de precondición |
+| `RADIUS_MATRIX_PROBE_NAS_IP` | `192.168.10.50` | NAS-IP del probe que debe resolver por regla exacta |
 
 ```bash
 # Ejemplo con servidor remoto
@@ -80,7 +83,55 @@ pytest radius-tests/test_radius_auth.py -v
 
 # Solo tests de VSA
 pytest radius-tests/test_radius_vsa.py -v
+
+# Matriz determinística segment/CIDR/CIR
+cd radius-tests
+python -m pytest -m radius test_radius_network_segments.py -v
 ```
+
+## Seed determinístico de autorización
+
+La matriz de precedencia/CIR usa un seed explícito en:
+
+`radius-tests/fixtures/seed_authorization_matrix.sql`
+
+Objetos esperados por el probe y la suite:
+
+- Usuarios: `segment_admin_a`, `segment_reader_b`
+- Marcadores de regla ganadora: `MATRIX-EXACT-*`, `MATRIX-RANGE-*`, `MATRIX-BASE-*`, `MATRIX-FALLBACK-*`
+- CIR (Access-Accept): `Cambium-Canopy-HPDLCIR`, `Cambium-Canopy-HPULCIR`
+
+La fixture `authorization_matrix_seed` valida que ese contrato exista antes de correr la matriz.
+Si falta algún objeto en el SQL, la suite falla en setup (fail fast).
+
+## Baseline real Cambium AP proxy
+
+Para cubrir los casos reales validados en entorno `.212` se usa un seed determinístico:
+
+`seed_cambium_proxy_baseline.sql` (raíz del repo)
+
+Casos cubiertos por la suite baseline (`radius-tests/test_radius_mac_priority.py`):
+
+- AP directo vs SM vía proxy (misma NAS-IP, prioridad por Calling-Station-Id)
+- Grupo lector con 1 reply attr (`Cambium-Canopy-UserLevel := 1`)
+- Grupo lector con 2 reply attrs (`UserLevel` + `UserMode`) hidratados nativamente
+- Grupo con `radgroupcheck` + `radgroupreply`
+- Zero-trust sin match (Access-Reject)
+
+Nota importante del baseline actual:
+
+- `nas_based_authorization` sigue resolviendo `SQL-Group` correctamente.
+- La hidratación de atributos de grupo en `Access-Accept` ocurre por el camino nativo de `rlm_sql`.
+
+## Probe de precondición (wiring activo)
+
+La fixture `radius_policy_precondition` diferencia tres casos:
+
+1. **Servidor inalcanzable / timeout** → `pytest.skip` (infra no disponible)
+2. **Servidor reachable pero sin marker/CIR esperado** → `pytest.fail("nas_based_authorization disabled or seed missing")`
+3. **Servidor + wiring + seed OK** → ejecuta la matriz de precedencia
+
+Esto evita falsos verdes cuando FreeRADIUS responde, pero no está ejecutando `nas_based_authorization`.
 
 ## Excluir tests RADIUS del suite principal
 
@@ -99,6 +150,10 @@ Si el servidor no responde, el fixture `skip_if_no_radius` detecta la situación
 SKIPPED [1] conftest.py:XX: FreeRADIUS server not reachable at 127.0.0.1:1812.
 Run with Docker: see radius-tests/README.md
 ```
+
+Si el servidor responde pero no aparece el marcador/CIR esperado del probe, la matriz falla explícitamente con:
+
+`nas_based_authorization disabled or seed missing`
 
 ## Estructura
 

@@ -69,10 +69,6 @@ export const handlers = [
     ])
   }),
 
-  http.get('/api/iam-nac/macros', () => {
-    return HttpResponse.json([])
-  }),
-
   // -------------------------------------------------------------------------
   // NAS
   // -------------------------------------------------------------------------
@@ -142,6 +138,30 @@ export const handlers = [
   }),
 
   // -------------------------------------------------------------------------
+  // Network Segments
+  // -------------------------------------------------------------------------
+  http.get('/api/network-segments', () => {
+    return HttpResponse.json([
+      { id: 1, name: 'Core Network', cidr: '10.0.0.0/8', description: 'Main core network block' },
+      { id: 2, name: 'Branch Offices', cidr: '172.16.0.0/16', description: 'Branch networks' },
+    ])
+  }),
+
+  http.post('/api/network-segments', async ({ request }) => {
+    const body = await request.json()
+    return HttpResponse.json({ id: 99, ...body }, { status: 201 })
+  }),
+
+  http.put('/api/network-segments/:id', async ({ request, params }) => {
+    const body = await request.json()
+    return HttpResponse.json({ id: parseInt(params.id), ...body }, { status: 200 })
+  }),
+
+  http.delete('/api/network-segments/:id', () => {
+    return HttpResponse.json({ ok: true })
+  }),
+
+  // -------------------------------------------------------------------------
   // Privilege Map
   // -------------------------------------------------------------------------
   http.get('/api/privilege-map', () => {
@@ -185,6 +205,79 @@ export const handlers = [
 
   http.delete('/api/privilege-map/:id', () => {
     return HttpResponse.json({ ok: true })
+  }),
+
+  // -------------------------------------------------------------------------
+  // CIR Manager
+  // -------------------------------------------------------------------------
+  http.get('/api/cir/profiles', () => {
+    return HttpResponse.json([])
+  }),
+
+  http.post('/api/cir/profiles', async ({ request }) => {
+    const body = await request.json()
+    return HttpResponse.json({ ...body, groupname: `cir_${String(body.name || '').toLowerCase()}` }, { status: 201 })
+  }),
+
+  http.put('/api/cir/profiles/:name', async ({ request, params }) => {
+    const body = await request.json()
+    return HttpResponse.json({ ...body, groupname: `cir_${params.name}` })
+  }),
+
+  http.delete('/api/cir/profiles/:name', () => {
+    return HttpResponse.json({ ok: true })
+  }),
+
+  http.get('/api/cir/assignments', () => {
+    return HttpResponse.json([])
+  }),
+
+  http.post('/api/cir/assignments', async ({ request }) => {
+    const body = await request.json()
+    return HttpResponse.json({ id: 200, ...body }, { status: 201 })
+  }),
+
+  http.put('/api/cir/assignments/:id', async ({ request, params }) => {
+    const body = await request.json()
+    return HttpResponse.json({ id: Number(params.id), ...body })
+  }),
+
+  http.delete('/api/cir/assignments/:id', () => {
+    return HttpResponse.json({ ok: true })
+  }),
+
+  http.post('/api/cir/preview', async ({ request }) => {
+    const body = await request.json()
+    if (body.username === 'missing') {
+      return HttpResponse.json({
+        resolution_path: 'none',
+        mapping: null,
+        profile: null,
+        trace: [
+          { step: 'exact_or_range', matched: false },
+          { step: 'segment', matched: false },
+          { step: 'category', matched: false },
+        ],
+      })
+    }
+
+    return HttpResponse.json({
+      resolution_path: 'exact',
+      mapping: { username: body.username, nas_ip: body.nas_ip, radius_group: 'cir_gold' },
+      profile: {
+        name: 'gold',
+        groupname: 'cir_gold',
+        downlink_high: '12000000',
+        uplink_high: '6000000',
+        downlink_low: '4000000',
+        uplink_low: '2000000',
+      },
+      trace: [
+        { step: 'exact_or_range', matched: true },
+        { step: 'segment', matched: false },
+        { step: 'category', matched: false },
+      ],
+    })
   }),
 
   // -------------------------------------------------------------------------

@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "chunks": [
+    {
+      "id": "18fc52d3",
+      "created_by": "polop",
+      "created_at": "2026-03-30T04:53:47Z",
+      "sessions": 11,
+      "memories": 33,
+      "prompts": 1
+    },
+    {
+      "id": "2ce2ad4d",
+      "created_by": "Alex",
+      "created_at": "2026-03-30T23:28:36Z",
+      "sessions": 1,
+      "memories": 1,
+      "prompts": 0
+    },
+    {
+      "id": "38ac1a3f",
+      "created_by": "Alex",
+      "created_at": "2026-04-03T04:38:15Z",
+      "sessions": 5,
+      "memories": 4,
+      "prompts": 0
+    },
+    {
+      "id": "f62c0d81",
+      "created_by": "Alex",
+      "created_at": "2026-04-03T04:58:44Z",
+      "sessions": 0,
+      "memories": 1,
+      "prompts": 0
+    },
+    {
+      "id": "ed183ffd",
+      "created_by": "polop",
+      "created_at": "2026-04-03T06:47:02Z",
+      "sessions": 2,
+      "memories": 3,
+      "prompts": 48
+    },
+    {
+      "id": "ee3d43d3",
+      "created_by": "polop",
+      "created_at": "2026-04-03T21:37:07Z",
+      "sessions": 5,
+      "memories": 32,
+      "prompts": 79
+    },
+    {
+      "id": "ca05a43e",
+      "created_by": "Alex",
+      "created_at": "2026-04-06T16:16:30Z",
+      "sessions": 1,
+      "memories": 0,
+      "prompts": 0
+    }
+  ]
+}

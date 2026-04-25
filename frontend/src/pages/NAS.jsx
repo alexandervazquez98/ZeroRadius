@@ -392,43 +392,20 @@ const NasPage = () => {
                                 />
                             </div>
 
-                            {/* Shortname */}
-                            <div>
-                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
-                                    Short Name (ISO naming)
-                                </label>
-                                <div className="flex gap-2">
-                                    <select
-                                        id="nas-category-prefix"
-                                        className="w-1/3 border border-slate-200 rounded-xl px-3 py-2.5 text-sm"
-                                        value={nasCategory}
-                                        onChange={e => setNasCategory(e.target.value)}
-                                    >
-                                        <option value="AP">AP</option>
-                                        <option value="SM">SM</option>
-                                        <option value="PTZ">PTZ</option>
-                                        <option value="SW">Switch</option>
-                                        <option value="RTR">Router</option>
-                                        <option value="FW">Firewall</option>
-                                        <option value="WLC">WLC</option>
-                                        <option value="OTHER">Other</option>
-                                    </select>
+                                {/* Shortname */}
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
+                                        Short Name
+                                    </label>
                                     <input
                                         id="nas-shortname"
-                                        className="w-2/3 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                                        className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
                                         value={nasName}
                                         onChange={e => setNasName(e.target.value)}
-                                        placeholder="Sector1-Norte"
+                                        placeholder="e.g. Sector1-Norte"
                                         required
                                     />
                                 </div>
-                                <p className="text-xs text-slate-400 mt-1">
-                                    Result:{' '}
-                                    <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded">
-                                        {nasCategory === 'OTHER' ? nasName : `${nasCategory}-${nasName}`}
-                                    </span>
-                                </p>
-                            </div>
 
                             {/* Type + Category */}
                             <div className="grid grid-cols-2 gap-3">

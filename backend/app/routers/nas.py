@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from starlette.requests import Request
 from app.db.session import get_db
-from app.models.models import Nas, AdminUser
+from app.models.models import Nas, AdminUser, AccessPolicyAssignment
 from app.schemas.schemas import NasCreate, NasOut
 from app.services.audit import log_audit, EventCode
 from app.core.security import get_current_active_user
@@ -51,7 +51,6 @@ def _nas_to_out(nas: Nas) -> NasOut:
         server=nas.server,
         community=nas.community,
         description=nas.description,
-        zone_id=nas.zone_id,
         category_id=nas.category_id,
         category_name=nas.category.name if nas.category else None,
     )
@@ -117,13 +116,24 @@ async def update_nas(
         raise HTTPException(status_code=404, detail="NAS not found")
 
     old_data = _nas_to_out(nas).model_dump()
+    old_nasname = nas.nasname
     update_data = nas_update.model_dump(exclude_unset=True)
 
     # Check if secret is being changed → log ADMIN-009
     secret_changed = "secret" in update_data and update_data["secret"] != nas.secret
+    nasname_changed = "nasname" in update_data and update_data["nasname"] != old_nasname
 
     for key, value in update_data.items():
         setattr(nas, key, value)
+
+    if nasname_changed:
+        assignments_result = await db.execute(
+            select(AccessPolicyAssignment).where(
+                AccessPolicyAssignment.nas_ip == old_nasname
+            )
+        )
+        for assignment in assignments_result.scalars().all():
+            assignment.nas_ip = update_data["nasname"]
 
     await db.commit()
 

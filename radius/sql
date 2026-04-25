@@ -33,9 +33,14 @@ sql {
     authorize_check_query = "SELECT id, username, attribute, value, op FROM radcheck WHERE username = '%{User-Name}' ORDER BY id"
     authorize_reply_query = "SELECT id, username, attribute, value, op FROM radreply WHERE username = '%{User-Name}' ORDER BY id"
 
-    group_membership_query = "SELECT groupname FROM radusergroup WHERE username = '%{User-Name}' ORDER BY priority"
-    authorize_group_check_query = "SELECT id, groupname, attribute, value, op FROM radgroupcheck WHERE groupname = '%{SQL-Group}' ORDER BY id"
-    authorize_group_reply_query = "SELECT id, groupname, attribute, value, op FROM radgroupreply WHERE groupname = '%{SQL-Group}' ORDER BY id"
+    # Resolve membership from dynamic control:SQL-Group first so rlm_sql executes
+    # authorize_group_* queries even when radusergroup has no username rows.
+    # Fallback to classic radusergroup lookup only when control:SQL-Group is empty.
+    group_membership_query = "SELECT '%{control:SQL-Group}' AS groupname, 0 AS priority WHERE '%{%{control:SQL-Group}:-}' <> '' UNION ALL SELECT groupname, priority FROM radusergroup WHERE '%{%{control:SQL-Group}:-}' = '' AND username = '%{SQL-User-Name}' ORDER BY priority"
+    # nas_based_authorization sets SQL-Group in the control list.
+    # Use control:SQL-Group first, fallback to SQL-Group for compatibility with classic flows.
+    authorize_group_check_query = "SELECT id, groupname, attribute, value, op FROM radgroupcheck WHERE groupname = '%{%{control:SQL-Group}:-%{SQL-Group}}' ORDER BY id"
+    authorize_group_reply_query = "SELECT id, groupname, attribute, value, op FROM radgroupreply WHERE groupname = '%{%{control:SQL-Group}:-%{SQL-Group}}' ORDER BY id"
 
     # Accounting queries (basic)
     accounting_on = "UPDATE radacct SET acctstoptime = acctstarttime, acctsessiontime = 0, connectinfo_stop = connectinfo_start, acctterminatecause = 'NAS-Reboot' WHERE nasipaddress = '%{NAS-IP-Address}' AND acctstoptime IS NULL"

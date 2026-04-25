@@ -11,17 +11,10 @@ const UserWizard = ({ onComplete, onCancel }) => {
         password: '',
         passwordType: 'Cleartext-Password'
     });
-    const [selectedGroups, setSelectedGroups] = useState([]);
     const [customAttributes, setCustomAttributes] = useState([]);
     const [newAttr, setNewAttr] = useState({ attribute: '', op: ':=', value: '' });
 
-    // Fetch Groups List for Step 2
-    const { data: availableGroups } = useQuery({
-        queryKey: ['groups', 'list'],
-        queryFn: () => api.get('/groups/list').then(r => r.data)
-    });
-
-    // Fetch Dictionary Attributes for Step 3
+    // Fetch Dictionary Attributes for Step 2
     const { data: dictionaryAttributes } = useQuery({
         queryKey: ['dictionary', 'attributes'],
         queryFn: () => api.get('/dictionary/attributes').then(r => r.data)
@@ -29,8 +22,7 @@ const UserWizard = ({ onComplete, onCancel }) => {
 
     const steps = [
         { id: 1, title: 'Identity', icon: User },
-        { id: 2, title: 'Policies', icon: Shield },
-        { id: 3, title: 'Attributes', icon: Activity },
+        { id: 2, title: 'Attributes', icon: Activity },
     ];
 
     const handleAddAttribute = () => {
@@ -54,16 +46,7 @@ const UserWizard = ({ onComplete, onCancel }) => {
                 value: userData.password
             });
 
-            // 2. Assign Groups
-            for (const group of selectedGroups) {
-                await api.post('/groups/assign', {
-                    username: userData.username,
-                    groupname: group,
-                    priority: 1
-                });
-            }
-
-            // 3. Add Custom Reply Attributes
+            // 2. Add Custom Reply Attributes
             for (const attr of customAttributes) {
                 await api.post('/users/reply', {
                     username: userData.username,
@@ -134,38 +117,6 @@ const UserWizard = ({ onComplete, onCancel }) => {
                 )}
 
                 {step === 2 && (
-                    <div className="space-y-6">
-                        <div className="text-center">
-                            <h3 className="text-lg font-semibold">Assign Policies (Groups)</h3>
-                            <p className="text-sm text-gray-500">Select pre-confgured policies for this user.</p>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3 max-h-64 overflow-y-auto p-2 border rounded-lg">
-                            {availableGroups?.length === 0 && <p className="text-gray-500 p-4 text-center col-span-2">No groups defined. Create them in Group Manager.</p>}
-                            {availableGroups?.map(g => (
-                                <div
-                                    key={g.groupname}
-                                    onClick={() => {
-                                        if (selectedGroups.includes(g.groupname)) {
-                                            setSelectedGroups(selectedGroups.filter(sg => sg !== g.groupname));
-                                        } else {
-                                            setSelectedGroups([...selectedGroups, g.groupname]);
-                                        }
-                                    }}
-                                    className={`p-4 border rounded-lg cursor-pointer flex justify-between items-center transition-all ${selectedGroups.includes(g.groupname)
-                                        ? 'border-blue-500 bg-blue-50 text-blue-700'
-                                        : 'hover:bg-gray-50'
-                                        }`}
-                                >
-                                    <span className="font-medium">{g.groupname}</span>
-                                    {selectedGroups.includes(g.groupname) && <Check size={18} />}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {step === 3 && (
                     <div className="space-y-6">
                         <div className="text-center">
                             <h3 className="text-lg font-semibold">Custom Reply Attributes</h3>
@@ -267,14 +218,14 @@ const UserWizard = ({ onComplete, onCancel }) => {
 
                 <button
                     onClick={() => {
-                        if (step < 3) setStep(step + 1);
+                        if (step < 2) setStep(step + 1);
                         else submitMutation.mutate();
                     }}
                     disabled={step === 1 && (!userData.username || !userData.password)}
                     className="px-8 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    {step === 3 ? (submitMutation.isPending ? 'Saving...' : 'Create User') : 'Next'}
-                    {step === 3 && <Save size={18} />}
+                    {step === 2 ? (submitMutation.isPending ? 'Saving...' : 'Create User') : 'Next'}
+                    {step === 2 && <Save size={18} />}
                 </button>
             </div>
         </div>

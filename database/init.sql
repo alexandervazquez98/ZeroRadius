@@ -58,11 +58,9 @@ CREATE TABLE IF NOT EXISTS nas (
   server varchar(64),
   community varchar(50),
   description varchar(200) DEFAULT 'RADIUS Client',
-  zone_id int(11) NULL DEFAULT NULL,
   category_id int(11) NULL DEFAULT NULL,
   PRIMARY KEY (id),
   KEY nasname (nasname),
-  KEY fk_nas_zone (zone_id),
   KEY fk_nas_category (category_id)
 );
 
@@ -183,13 +181,15 @@ CREATE TABLE IF NOT EXISTS radius_reply_audit (
     INDEX idx_rra_created_at (created_at)
 ) ENGINE=InnoDB;
 
--- T06: user_nas_privilege_map — NAS-based access control (ISO 27001 A.5.15, A.8.2)
+-- T06: access_policy_assignments — NAS-based access control (ISO 27001 A.5.15, A.8.2)
 -- nas-categories: nas_ip extended to VARCHAR(50) and made nullable;
 --   nas_category_id added for category-based entries (either nas_ip OR nas_category_id required).
-CREATE TABLE IF NOT EXISTS user_nas_privilege_map (
+CREATE TABLE IF NOT EXISTS access_policy_assignments (
     id              INT AUTO_INCREMENT PRIMARY KEY,
     username        VARCHAR(64)  NOT NULL,
+    target_key      VARCHAR(128) NOT NULL,
     nas_ip          VARCHAR(50)  NULL,                  -- NULL when using category-based mapping
+    calling_station_id VARCHAR(50) NULL,
     nas_category_id INT          NULL DEFAULT NULL,     -- NULL when using IP-based mapping
     segment_id      INT          NULL DEFAULT NULL,
     segment_target_key VARCHAR(128) NOT NULL DEFAULT '',
@@ -205,11 +205,9 @@ CREATE TABLE IF NOT EXISTS user_nas_privilege_map (
     is_active       TINYINT(1)   NOT NULL DEFAULT 1,
     created_at      DATETIME(6)  DEFAULT CURRENT_TIMESTAMP(6),
     updated_at      DATETIME(6)  DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-    -- Separate unique keys per targeting mode
-    UNIQUE KEY uq_user_nas_ip  (username, nas_ip),
-    UNIQUE KEY uq_user_nas_cat (username, nas_category_id),
-    UNIQUE KEY uq_user_segment_target (username, segment_id, segment_target_key),
+    UNIQUE KEY uq_unpm_target_key (target_key),
     INDEX idx_unpm_nas_ip     (nas_ip),
+    INDEX idx_unpm_calling_station_id (calling_station_id),
     INDEX idx_unpm_category   (nas_category_id),
     INDEX idx_unpm_is_active  (is_active),
     INDEX idx_unpm_review_date (review_date)
@@ -226,6 +224,27 @@ CREATE TABLE IF NOT EXISTS nas_categories (
     INDEX idx_nc_name (name),
     INDEX idx_nc_criticality (criticality)
 ) ENGINE=InnoDB;
+
+-- T10: device_registry — known endpoint devices (SMs, CPEs) by MAC with category
+-- Enables RADIUS Step 1.5: MAC → device category → user category policy.
+CREATE TABLE IF NOT EXISTS device_registry (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    mac             VARCHAR(50)  NOT NULL,
+    name            VARCHAR(120) NULL DEFAULT NULL,
+    category_id     INT          NULL DEFAULT NULL,
+    nas_ip          VARCHAR(50)  NULL DEFAULT NULL,
+    description     VARCHAR(200) NULL DEFAULT NULL,
+    is_active       TINYINT(1)   NOT NULL DEFAULT 1,
+    created_at      DATETIME(6)  DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at      DATETIME(6)  DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    UNIQUE KEY uq_device_mac (mac),
+    INDEX idx_device_category (category_id),
+    INDEX idx_device_nas_ip   (nas_ip),
+    INDEX idx_device_active   (is_active)
+) ENGINE=InnoDB;
+
+ALTER TABLE device_registry ADD CONSTRAINT fk_device_category
+    FOREIGN KEY (category_id) REFERENCES nas_categories(id) ON DELETE SET NULL;
 
 -- syslog-compliance: Phase 2 - syslog_events table with partitioning by month
 -- Partitioning strategy: PARTITION BY RANGE (YEAR(received_at) * 100 + MONTH(received_at))
@@ -273,55 +292,18 @@ CREATE TABLE IF NOT EXISTS network_segments (
     INDEX idx_ns_name (name)
 ) ENGINE=InnoDB;
 
-CREATE TABLE IF NOT EXISTS hardware_zones (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL UNIQUE,
-    description TEXT NULL,
-    INDEX idx_hz_name (name)
-) ENGINE=InnoDB;
-
-CREATE TABLE IF NOT EXISTS iam_roles (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(50) NOT NULL UNIQUE,
-    description TEXT NULL,
-    INDEX idx_ir_name (name)
-) ENGINE=InnoDB;
-
-CREATE TABLE IF NOT EXISTS policy_macros (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL UNIQUE,
-    description TEXT NULL,
-    attributes_json JSON DEFAULT NULL,
-    INDEX idx_pm_name (name)
-) ENGINE=InnoDB;
-
-CREATE TABLE IF NOT EXISTS role_zone_policies (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    role_id INT NOT NULL,
-    zone_id INT NOT NULL,
-    policy_id INT NOT NULL,
-    UNIQUE KEY uq_role_zone_policy (role_id, zone_id),
-    CONSTRAINT fk_rzp_role FOREIGN KEY (role_id) REFERENCES iam_roles(id) ON DELETE CASCADE,
-    CONSTRAINT fk_rzp_zone FOREIGN KEY (zone_id) REFERENCES hardware_zones(id) ON DELETE CASCADE,
-    CONSTRAINT fk_rzp_policy FOREIGN KEY (policy_id) REFERENCES policy_macros(id) ON DELETE CASCADE
-) ENGINE=InnoDB;
-
--- Add FK for nas.zone_id after hardware_zones is created
-ALTER TABLE nas ADD CONSTRAINT fk_nas_zone FOREIGN KEY (zone_id) REFERENCES hardware_zones(id) ON DELETE SET NULL;
-
 -- Add FK for nas.category_id to nas_categories
 ALTER TABLE nas ADD CONSTRAINT fk_nas_category FOREIGN KEY (category_id) REFERENCES nas_categories(id) ON DELETE SET NULL;
 
--- Add FK for user_nas_privilege_map.nas_category_id to nas_categories
-ALTER TABLE user_nas_privilege_map ADD CONSTRAINT fk_unpm_category FOREIGN KEY (nas_category_id) REFERENCES nas_categories(id) ON DELETE SET NULL;
+-- Add FK for access_policy_assignments.nas_category_id to nas_categories
+ALTER TABLE access_policy_assignments ADD CONSTRAINT fk_unpm_category FOREIGN KEY (nas_category_id) REFERENCES nas_categories(id) ON DELETE SET NULL;
 
--- Add FK for user_nas_privilege_map.segment_id to network_segments
--- Add FK for user_nas_privilege_map.segment_id to network_segments
+-- Add FK for access_policy_assignments.segment_id to network_segments
 -- FIX #55: Changed from ON DELETE SET NULL to ON DELETE RESTRICT to enforce:
 -- 1. DB-level protection against orphaned privilege-map rows
 -- 2. Matches API-level protection (router checks before delete)
 -- 3. Consistent behavior regardless of delete path (API vs direct SQL)
-ALTER TABLE user_nas_privilege_map ADD CONSTRAINT fk_unpm_segment FOREIGN KEY (segment_id) REFERENCES network_segments(id) ON DELETE RESTRICT;
+ALTER TABLE access_policy_assignments ADD CONSTRAINT fk_unpm_segment FOREIGN KEY (segment_id) REFERENCES network_segments(id) ON DELETE RESTRICT;
 
 -- nas_cidr_ranges VIEW: pre-computes network range boundaries for CIDR-aware policy lookup.
 -- Used by the FreeRADIUS nas_based_authorization policy (Step 2: category fallback).

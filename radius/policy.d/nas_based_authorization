@@ -1,13 +1,16 @@
 # NAS-Based Authorization Policy — nas-categories update
 # ISO 27001:2022 A.8.3 — Access control based on NAS identity
 #
-# Two-step authorization:
+# Three-step authorization:
 #
 #   Step 1 (IP-specific, unchanged):
-#     Query user_nas_privilege_map by exact NAS-IP-Address.
+#     Query access_policy_assignments by exact NAS-IP-Address.
 #     Most specific — always wins over category.
 #
-#   Step 2 (Category fallback, NEW):
+#   Step 2 (Segment base):
+#     Match NAS-IP against segment CIDR without exception range.
+#
+#   Step 3 (Category fallback):
 #     If no IP match, resolve the NAS device's category via the
 #     nas_cidr_ranges VIEW (handles both /32 and CIDR ranges).
 #     Then look up the user's category-level privilege mapping.
@@ -24,38 +27,129 @@
 nas_based_authorization {
 
     if (&NAS-IP-Address) {
-
-        # ── STEP 1: Exact IP match ──────────────────────────────────────────
-        # Unchanged from original — backwards compatible with all existing rows.
-        # nas_category_id IS NULL ensures we only match IP-based entries here.
         update control {
-            Tmp-String-0 := "%{sql:SELECT radius_group FROM user_nas_privilege_map \
-                WHERE username='%{User-Name}' \
-                AND nas_ip='%{NAS-IP-Address}' \
-                AND nas_category_id IS NULL \
-                AND is_active=1 \
+            Tmp-String-1 := "unmatched"
+            Tmp-String-2 := "native"
+        }
+
+        # ── STEP 1: Exact MAC, Exact IP or IP Range Exception ───────────────
+        # Priority: MAC+IP > MAC > IP > Range Exception
+        # MACs are normalized to lowercase without separators in DB.
+        update control {
+            Tmp-String-0 := "%{sql:SELECT unpm.radius_group FROM access_policy_assignments unpm \
+                LEFT JOIN network_segments ns ON unpm.segment_id = ns.id \
+                WHERE unpm.username='%{User-Name}' \
+                AND unpm.is_active=1 \
+                AND ( \
+                    (unpm.calling_station_id IS NOT NULL AND unpm.calling_station_id=LOWER(REPLACE(REPLACE(REPLACE('%{Calling-Station-Id}', '-', ''), ':', ''), '.', ''))) \
+                    OR (unpm.nas_ip='%{NAS-IP-Address}' AND unpm.calling_station_id IS NULL) \
+                    OR (unpm.segment_id IS NOT NULL AND unpm.calling_station_id IS NULL \
+                        AND unpm.target_start_ip IS NOT NULL AND unpm.target_end_ip IS NOT NULL \
+                        AND ns.id IS NOT NULL \
+                        AND INET_ATON(unpm.target_start_ip) BETWEEN \
+                            INET_ATON(SUBSTRING_INDEX(ns.cidr, '/', 1)) AND \
+                            INET_ATON(SUBSTRING_INDEX(ns.cidr, '/', 1)) + POW(2, 32 - CAST( \
+                                CASE WHEN LOCATE('/', ns.cidr) > 0 THEN SUBSTRING_INDEX(ns.cidr, '/', -1) ELSE '32' END \
+                            AS UNSIGNED)) - 1 \
+                        AND INET_ATON(unpm.target_end_ip) BETWEEN \
+                            INET_ATON(SUBSTRING_INDEX(ns.cidr, '/', 1)) AND \
+                            INET_ATON(SUBSTRING_INDEX(ns.cidr, '/', 1)) + POW(2, 32 - CAST( \
+                                CASE WHEN LOCATE('/', ns.cidr) > 0 THEN SUBSTRING_INDEX(ns.cidr, '/', -1) ELSE '32' END \
+                            AS UNSIGNED)) - 1 \
+                        AND INET_ATON('%{NAS-IP-Address}') BETWEEN INET_ATON(unpm.target_start_ip) AND INET_ATON(unpm.target_end_ip)) \
+                ) \
+                ORDER BY \
+                    CASE \
+                        WHEN unpm.calling_station_id IS NOT NULL AND unpm.calling_station_id=LOWER(REPLACE(REPLACE(REPLACE('%{Calling-Station-Id}', '-', ''), ':', ''), '.', '')) AND unpm.nas_ip='%{NAS-IP-Address}' THEN 0 \
+                        WHEN unpm.calling_station_id IS NOT NULL AND unpm.calling_station_id=LOWER(REPLACE(REPLACE(REPLACE('%{Calling-Station-Id}', '-', ''), ':', ''), '.', '')) THEN 1 \
+                        WHEN unpm.nas_ip='%{NAS-IP-Address}' THEN 2 \
+                        ELSE 3 \
+                    END ASC, \
+                    CASE \
+                        WHEN unpm.target_start_ip IS NOT NULL AND unpm.target_end_ip IS NOT NULL \
+                        THEN INET_ATON(unpm.target_end_ip) - INET_ATON(unpm.target_start_ip) \
+                        ELSE 4294967295 \
+                    END ASC, \
+                    unpm.target_start_ip ASC, \
+                    unpm.target_end_ip ASC, \
+                    unpm.id ASC \
                 LIMIT 1}"
         }
 
-        if (&control:Tmp-String-0 && "%{control:Tmp-String-0}" != "") {
-            # IP match found — use this group and fall through to SQL group-reply
+        if ("%{control:Tmp-String-0}" != "") {
             update control {
-                SQL-Group := "%{control:Tmp-String-0}"
+                Tmp-String-1 := "step1"
             }
         }
-        else {
-            # ── STEP 2: Category fallback ───────────────────────────────────
-            # Resolve the category of the NAS device from the nas_cidr_ranges
-            # view, then match the user's category-level privilege mapping.
-            #
-            # nas_cidr_ranges pre-computes INET_ATON boundaries for CIDR entries,
-            # defaulting to /32 for plain IP registrations.
-            # ORDER BY prefix_len DESC ensures most-specific CIDR wins.
+
+        if ("%{control:Tmp-String-0}" == "") {
+            # ── STEP 1.5: Device Registry — MAC → category → user category policy ──
+            # Resolves Calling-Station-Id against device_registry to find the device's
+            # assigned category, then looks up a category-level policy for the user.
+            # Avoids registering individual SM MACs in access_policy_assignments.
             update control {
                 Tmp-String-0 := "%{sql:SELECT unpm.radius_group \
-                    FROM user_nas_privilege_map unpm \
+                    FROM access_policy_assignments unpm \
+                    WHERE unpm.username='%{User-Name}' \
+                    AND unpm.is_active=1 \
+                    AND unpm.nas_ip IS NULL \
+                    AND unpm.calling_station_id IS NULL \
+                    AND unpm.segment_id IS NULL \
+                    AND unpm.nas_category_id = ( \
+                        SELECT dr.category_id FROM device_registry dr \
+                        WHERE dr.mac = LOWER(REPLACE(REPLACE(REPLACE('%{Calling-Station-Id}', '-', ''), ':', ''), '.', '')) \
+                        AND dr.is_active = 1 \
+                        LIMIT 1 \
+                    ) \
+                    LIMIT 1}"
+            }
+
+            if ("%{control:Tmp-String-0}" != "") {
+                update control {
+                    Tmp-String-1 := "step1_5"
+                }
+            }
+        }
+
+        if ("%{control:Tmp-String-0}" == "") {
+            # ── STEP 2: Segment Base match ──────────────────────────────────
+            # Look for a mapping to a network segment where the NAS IP is inside the segment's CIDR
+            update control {
+                Tmp-String-0 := "%{sql:SELECT unpm.radius_group \
+                    FROM access_policy_assignments unpm \
+                    JOIN network_segments ns ON unpm.segment_id = ns.id \
+                     WHERE unpm.username='%{User-Name}' \
+                     AND unpm.is_active=1 \
+                     AND unpm.calling_station_id IS NULL \
+                     AND unpm.target_start_ip IS NULL AND unpm.target_end_ip IS NULL \
+                     AND INET_ATON('%{NAS-IP-Address}') BETWEEN \
+                         INET_ATON(SUBSTRING_INDEX(ns.cidr, '/', 1)) AND \
+                         INET_ATON(SUBSTRING_INDEX(ns.cidr, '/', 1)) + POW(2, 32 - CAST( \
+                             CASE WHEN LOCATE('/', ns.cidr) > 0 THEN SUBSTRING_INDEX(ns.cidr, '/', -1) ELSE '32' END \
+                         AS UNSIGNED)) - 1 \
+                     ORDER BY CAST( \
+                         CASE WHEN LOCATE('/', ns.cidr) > 0 THEN SUBSTRING_INDEX(ns.cidr, '/', -1) ELSE '32' END \
+                     AS UNSIGNED) DESC, ns.id ASC, unpm.id ASC \
+                      LIMIT 1}"
+            }
+
+            if ("%{control:Tmp-String-0}" != "") {
+                update control {
+                    Tmp-String-1 := "step2"
+                }
+            }
+        }
+
+        if ("%{control:Tmp-String-0}" == "") {
+            # ── STEP 3: Category fallback ───────────────────────────────
+            # Resolve the category of the NAS device from the nas_cidr_ranges
+            # view, then match the user's category-level privilege mapping.
+            update control {
+                Tmp-String-0 := "%{sql:SELECT unpm.radius_group \
+                    FROM access_policy_assignments unpm \
                     WHERE unpm.username='%{User-Name}' \
                     AND unpm.nas_ip IS NULL \
+                    AND unpm.segment_id IS NULL \
                     AND unpm.is_active=1 \
                     AND unpm.nas_category_id = ( \
                         SELECT category_id FROM nas_cidr_ranges \
@@ -65,20 +159,30 @@ nas_based_authorization {
                     LIMIT 1}"
             }
 
-            if (&control:Tmp-String-0 && "%{control:Tmp-String-0}" != "") {
-                # Category match found — apply category-level group
+            if ("%{control:Tmp-String-0}" != "") {
                 update control {
-                    SQL-Group := "%{control:Tmp-String-0}"
+                    Tmp-String-1 := "step3"
                 }
-            }
-            else {
-                # No match in either step — Zero Trust reject
-                update reply {
-                    Reply-Message := "Access denied: NAS not authorized for this user"
-                }
-                reject
             }
         }
+
+        if ("%{control:Tmp-String-0}" != "") {
+            # Match found in one of the steps — apply group.
+            # Native hydration is now the official path:
+            # rlm_sql authorize pass reads control:SQL-Group and hydrates
+            # radgroupcheck/radgroupreply attributes automatically.
+            update control {
+                SQL-Group := "%{control:Tmp-String-0}"
+            }
+        }
+        else {
+            # No match in any step — Zero Trust reject
+            update reply {
+                Reply-Message := "Access denied: NAS not authorized for this user"
+            }
+            reject
+        }
+
     }
     # If NAS-IP-Address is missing, fall through silently (allow default processing)
 }

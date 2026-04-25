@@ -35,6 +35,23 @@ ZeroRadius is fully containerized and consists of four main pillars:
 4. **Database (MariaDB)**:
    - Stores the standard FreeRADIUS schemas extended with ZeroRadius custom identity management tables.
 
+### Advanced: Anti-Proxy Strategy for Major NAS
+
+**The Challenge with RADIUS Proxies:**
+When a Major NAS (e.g., an Access Point, an Aggregation Switch, or a VPN Concentrator) acts as a RADIUS proxy for downstream devices (like SMs, CPEs, or Modems), it sends authentication requests using its own IP (`NAS-IP-Address`). If generic `Admin` privileges are granted based solely on this IP, those privileges are inadvertently inherited by all downstream devices authenticating through it.
+
+**The Solution: ZeroRadius Priority Engine**
+To isolate administrative access to the Major NAS from the proxied downstream devices—without the administrative burden of registering thousands of individual MAC addresses—ZeroRadius leverages its built-in Priority Engine:
+
+- **Direct NAS Login:** When an administrator logs directly into the Major NAS, the device typically does not send a MAC address (`Calling-Station-Id`). In FreeRADIUS, we can inject a dummy MAC (e.g., `00:00:00:00:00:00`) for these direct requests.
+- **Proxied Device Login:** When authenticating a downstream device (e.g., a customer's SM or Modem), the Major NAS forwards the real MAC address of that downstream device.
+
+Leveraging this behavior, we establish a secure isolation flow:
+1. **Rule 1 (Direct NAS Access - Priority 0):** Create a highly specific policy (Target: `mac_plus_ip`) matching the Major NAS IP + the dummy MAC (`00:00:00:00:00:00`). Assign the `Admin` profile to this rule.
+2. **Rule 2 (Proxied Devices - Priority 2):** Create a generic fallback policy (Target: `nas_ip`) matching only the Major NAS IP (leaving the MAC field empty). Assign a restrictive profile like `ReadOnly` or explicitly deny access.
+
+This architecture guarantees secure, granular isolation for management interfaces without the overhead of micro-managing downstream device MACs.
+
 ## 📚 Official Documentation & User Manuals
 The project relies on localized, flowchart-driven Markdown manuals to ensure network administrators can confidently provision networks.
 

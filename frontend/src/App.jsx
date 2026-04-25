@@ -15,8 +15,9 @@ import Groups from './pages/Groups';
 import Audit from './pages/Audit';
 import Dictionaries from './pages/Dictionaries';
 import AdminUsers from './pages/AdminUsers';
-import PrivilegeMap from './pages/PrivilegeMap';
-import IAM from './pages/IAM';
+import AccessPolicies from './pages/AccessPolicies';
+import NetworkSegments from './pages/NetworkSegments';
+import DeviceRegistry from './pages/DeviceRegistry';
 import SyslogDashboard from './pages/SyslogDashboard';
 
 /** Simple page shown when a user lacks permissions to access a route */
@@ -57,7 +58,6 @@ function App() {
                         <Route path="groups" element={<ErrorBoundary><Groups /></ErrorBoundary>} />
                         <Route path="audit" element={<ErrorBoundary><Audit /></ErrorBoundary>} />
                         <Route path="dictionaries" element={<ErrorBoundary><Dictionaries /></ErrorBoundary>} />
-                        <Route path="iam" element={<ErrorBoundary><IAM /></ErrorBoundary>} />
                         <Route path="syslog" element={<ErrorBoundary><SyslogDashboard /></ErrorBoundary>} />
 
                         {/* Superadmin-only: System Users */}
@@ -72,13 +72,37 @@ function App() {
                             }
                         />
 
-                        {/* Privilege Map: superadmin, admin, auditor */}
+                        {/* Access Policies: superadmin, admin, auditor */}
                         <Route
-                            path="privilege-map"
+                            path="access-policies"
                             element={
                                 <ErrorBoundary>
                                     <RoleGuard allowedRoles={['superadmin', 'admin', 'auditor']} fallback={<Unauthorized />}>
-                                        <PrivilegeMap />
+                                        <AccessPolicies />
+                                    </RoleGuard>
+                                </ErrorBoundary>
+                            }
+                        />
+
+                        {/* Network Segments */}
+                        <Route
+                            path="network-segments"
+                            element={
+                                <ErrorBoundary>
+                                    <RoleGuard allowedRoles={['superadmin', 'admin']} fallback={<Unauthorized />}>
+                                        <NetworkSegments />
+                                    </RoleGuard>
+                                </ErrorBoundary>
+                            }
+                        />
+
+                        {/* Device Registry */}
+                        <Route
+                            path="device-registry"
+                            element={
+                                <ErrorBoundary>
+                                    <RoleGuard allowedRoles={['superadmin', 'admin']} fallback={<Unauthorized />}>
+                                        <DeviceRegistry />
                                     </RoleGuard>
                                 </ErrorBoundary>
                             }

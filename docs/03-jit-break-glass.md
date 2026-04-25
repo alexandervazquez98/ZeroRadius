@@ -23,7 +23,7 @@ sequenceDiagram
     participant Radius as FreeRADIUS
 
     Oper->>ZR: Clicks "Request Break-Glass"
-    ZR->>API: POST /api/v1/iam-nac/jit-requests/{user}/approve (TTL: 2 Hours)
+    ZR->>API: POST /api/v1/users/jit-requests/{user}/approve (TTL: 2 Hours)
     API->>API: Calculate Time == [Current + 2H Format: 'Nov 04 2026 14:00']
     API->>DB: INSERT Expiration into radcheck
     API-->>ZR: 200 OK (JIT Granted)

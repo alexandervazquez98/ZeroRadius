@@ -75,9 +75,14 @@ artifacts/
 .artifacts/
 .clirules
 .cline_rules
-.engram/
 openspec/
 AGENTS.md
+.engram/
+sdd/
+
+# ─── Testing and Dictionaries ────────────────────────────────────────────────
+frontend/coverage/
+dictionaries/
 
 # ─── Archives / temp ──────────────────────────────────────────────────────────
 .tmp/

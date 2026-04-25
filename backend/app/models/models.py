@@ -1,3 +1,7 @@
+import datetime
+import hashlib
+import ipaddress
+import re
 from sqlalchemy import (
     Column,
     Integer,
@@ -12,15 +16,31 @@ from sqlalchemy import (
     ForeignKey,
     Enum,
     text,
+    event,
 )
 from sqlalchemy.dialects.mysql import DATETIME as MySQLDATETIME
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.sql import func
 from sqlalchemy.schema import FetchedValue
 from typing import Optional
 from app.db.session import Base
 import datetime
 import secrets
+
+
+_MAC_ACCEPTED_FORMATS = (
+    re.compile(r"^[0-9a-fA-F]{12}$"),
+    re.compile(r"^(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$"),
+    re.compile(r"^(?:[0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}$"),
+    re.compile(r"^(?:[0-9a-fA-F]{4}\.){2}[0-9a-fA-F]{4}$"),
+)
+
+
+def _normalize_mac(value: str) -> str:
+    """Validate exact supported MAC formats, then normalize to 12 lowercase hex."""
+    if not any(pattern.fullmatch(value) for pattern in _MAC_ACCEPTED_FORMATS):
+        raise ValueError("invalid MAC address format (must be 12 hex chars)")
+    return re.sub(r"[:.\-]", "", value).lower()
 
 
 def _generate_secret() -> str:
@@ -98,12 +118,6 @@ class Nas(Base):
     description: Mapped[Optional[str]] = mapped_column(
         String(200), default="RADIUS Client", nullable=True
     )
-    zone_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("hardware_zones.id", ondelete="SET NULL"), nullable=True
-    )
-    zone: Mapped[Optional["HardwareZone"]] = relationship(
-        "HardwareZone", back_populates="nases"
-    )
     # nas-categories feature: structured device classification
     category_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("nas_categories.id", ondelete="SET NULL"), nullable=True
@@ -150,12 +164,19 @@ class RadAcct(Base):
     acctauthentic: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     connectinfo_start: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     connectinfo_stop: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    acctinputoctets: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    acctoutputoctets: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    acctinputoctets: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    acctoutputoctets: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     calledstationid: Mapped[str] = mapped_column(String(50), nullable=False, default="")
     callingstationid: Mapped[str] = mapped_column(
         String(50), nullable=False, default=""
     )
+
+    @validates("callingstationid")
+    def validate_callingstationid(self, key, value):
+        if value is None:
+            return value
+        return _normalize_mac(value)
+
     acctterminatecause: Mapped[str] = mapped_column(
         String(32), nullable=False, default=""
     )
@@ -186,6 +207,13 @@ class RadPostAuth(Base):
     nas_identifier: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     nas_port: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     calling_station_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    @validates("calling_station_id")
+    def validate_calling_station_id(self, key, value):
+        if value is None:
+            return value
+        return _normalize_mac(value)
+
     called_station_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     reply_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     event_source: Mapped[str] = mapped_column(
@@ -259,18 +287,46 @@ class RadiusReplyAudit(Base):
 
 
 # T06 — UserNasPrivilegeMap model (ISO 27001 A.5.15, A.8.2)
-class UserNasPrivilegeMap(Base):
-    __tablename__ = "user_nas_privilege_map"
+class AccessPolicyAssignment(Base):
+    __tablename__ = "access_policy_assignments"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(64), nullable=False)
+    # T26 — target_key for absolute uniqueness (sha256 hash)
+    target_key: Mapped[str] = mapped_column(String(128), nullable=False)
     # nas-categories: nas_ip is nullable when using category-based targeting
     nas_ip: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    calling_station_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     nas_category_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("nas_categories.id", ondelete="SET NULL"), nullable=True
+        Integer,
+        ForeignKey(
+            "nas_categories.id",
+            ondelete="SET NULL",
+            name="fk_unpm_category",
+        ),
+        nullable=True,
     )
     category: Mapped[Optional["NasCategory"]] = relationship(
         "NasCategory", foreign_keys=[nas_category_id]
     )
+    # network-segments-v1: targeting by network segment and IP ranges
+    segment_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey(
+            "network_segments.id",
+            ondelete="RESTRICT",
+            name="fk_unpm_segment",
+        ),
+        nullable=True,
+    )
+    segment: Mapped[Optional["NetworkSegment"]] = relationship(
+        "NetworkSegment", foreign_keys=[segment_id]
+    )
+    segment_target_key: Mapped[str] = mapped_column(
+        String(128), nullable=False, default=""
+    )
+    target_start_ip: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    target_end_ip: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
     nas_identifier: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     nas_vendor: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     radius_group: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -292,63 +348,103 @@ class UserNasPrivilegeMap(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("username", "nas_ip", name="uq_user_nas_ip"),
-        UniqueConstraint("username", "nas_category_id", name="uq_user_nas_cat"),
+        UniqueConstraint("target_key", name="uq_unpm_target_key"),
+    )
+
+    @validates("calling_station_id")
+    def validate_calling_station_id(self, key, value):
+        if value is None:
+            return value
+        return _normalize_mac(value)
+
+    def compute_target_key(self) -> str:
+        """Deterministic sha256 hash for absolute uniqueness.
+        Uses length-prefixed components to prevent delimiter injection attacks.
+        Distinguishes None from empty values.
+        """
+
+        def safe(val):
+            if val is None:
+                return "4:None"
+            s = str(val)
+            return f"{len(s)}:{s}"
+
+        components = [
+            safe(self.username),
+            safe(self.nas_ip),
+            safe(self.calling_station_id),
+            safe(self.nas_category_id),
+            safe(self.segment_id),
+            safe(self.target_start_ip),
+            safe(self.target_end_ip),
+        ]
+        raw = "|".join(components)
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+
+@event.listens_for(AccessPolicyAssignment, "before_insert")
+def set_target_key_on_insert(mapper, connection, target: AccessPolicyAssignment):
+    target.target_key = target.compute_target_key()
+
+
+@event.listens_for(AccessPolicyAssignment, "before_update")
+def set_target_key_on_update(mapper, connection, target: AccessPolicyAssignment):
+    target.target_key = target.compute_target_key()
+
+
+def _build_segment_target_key(
+    segment_id: Optional[int],
+    target_start_ip: Optional[str],
+    target_end_ip: Optional[str],
+) -> str:
+    """Build logical key for segment rules. Matches compute_target_key logic."""
+
+    def safe(val):
+        if val is None:
+            return "4:None"
+        s = str(val)
+        return f"{len(s)}:{s}"
+
+    if segment_id is None:
+        return ""
+
+    if not target_start_ip and not target_end_ip:
+        return "__base__"
+
+    return f"{safe(target_start_ip)}|{safe(target_end_ip)}"
+
+
+@event.listens_for(AccessPolicyAssignment, "before_insert")
+@event.listens_for(AccessPolicyAssignment, "before_update")
+def _sync_segment_target_key(mapper, connection, target):
+    target.segment_target_key = _build_segment_target_key(
+        target.segment_id,
+        target.target_start_ip,
+        target.target_end_ip,
     )
 
 
-# --- IAM & NAC RBAC Models ---
+# --- Access Policies Domain Models ---
 
 
-class HardwareZone(Base):
-    __tablename__ = "hardware_zones"
+class NetworkSegment(Base):
+    """Network Segments for access policy targeting."""
+
+    __tablename__ = "network_segments"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(
         String(100), unique=True, nullable=False, index=True
     )
+    cidr: Mapped[str] = mapped_column(String(50), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
-    nases: Mapped[list["Nas"]] = relationship("Nas", back_populates="zone")
-
-
-class IAM_Role(Base):
-    __tablename__ = "iam_roles"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(
-        String(50), unique=True, nullable=False, index=True
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=True
     )
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
-
-class PolicyMacro(Base):
-    __tablename__ = "policy_macros"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(
-        String(100), unique=True, nullable=False, index=True
-    )
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    attributes_json: Mapped[dict] = mapped_column(JSON, default={})
-
-
-class RoleZonePolicy(Base):
-    __tablename__ = "role_zone_policies"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    role_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("iam_roles.id", ondelete="CASCADE"), nullable=False
-    )
-    zone_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("hardware_zones.id", ondelete="CASCADE"), nullable=False
-    )
-    policy_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("policy_macros.id", ondelete="CASCADE"), nullable=False
-    )
-
-    role: Mapped["IAM_Role"] = relationship("IAM_Role")
-    zone: Mapped["HardwareZone"] = relationship("HardwareZone")
-    policy: Mapped["PolicyMacro"] = relationship("PolicyMacro")
-
-    __table_args__ = (
-        UniqueConstraint("role_id", "zone_id", name="uq_role_zone_policy"),
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=False),
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=FetchedValue(),
+        nullable=True,
     )
 
 
@@ -377,6 +473,44 @@ class NasCategory(Base):
     )
 
     nases: Mapped[list["Nas"]] = relationship("Nas", back_populates="category")
+    devices: Mapped[list["DeviceRegistry"]] = relationship("DeviceRegistry", back_populates="category")
+
+
+class DeviceRegistry(Base):
+    """Known endpoint devices (SMs, CPEs) identified by MAC address.
+    Assigned to a NAS category so RADIUS can resolve device-level policies
+    without registering individual MACs in access_policy_assignments.
+    """
+
+    __tablename__ = "device_registry"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    mac: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    category_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("nas_categories.id", ondelete="SET NULL", name="fk_device_category"),
+        nullable=True,
+    )
+    category: Mapped[Optional["NasCategory"]] = relationship("NasCategory", back_populates="devices")
+    nas_ip: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    is_active: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=True
+    )
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=False),
+        server_default=text("CURRENT_TIMESTAMP(6)"),
+        server_onupdate=FetchedValue(),
+        nullable=True,
+    )
+
+    @validates("mac")
+    def normalize_mac(self, key, value):
+        if value is None:
+            return value
+        return _normalize_mac(value)
 
 
 # syslog-compliance: Phase 2 - SyslogEvent model with hash chain for integrity

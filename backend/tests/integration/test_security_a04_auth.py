@@ -82,7 +82,7 @@ class TestJITTTLMax:
     async def test_jit_ttl_max_exceeded(self, async_client, superadmin_token):
         """ttl_hours > 168 → 422 (Query validator ge=1, le=168)."""
         resp = await async_client.post(
-            "/iam-nac/jit-requests/someuser/approve?ttl_hours=169",
+            "/users/jit-requests/someuser/approve?ttl_hours=169",
             headers={"Authorization": f"Bearer {superadmin_token}"},
         )
         assert resp.status_code == 422
@@ -90,7 +90,7 @@ class TestJITTTLMax:
     async def test_jit_ttl_max_ok(self, async_client, superadmin_token):
         """ttl_hours=168 → no 422 (puede ser 404 si user no existe)."""
         resp = await async_client.post(
-            "/iam-nac/jit-requests/nonexistent_user/approve?ttl_hours=168",
+            "/users/jit-requests/nonexistent_user/approve?ttl_hours=168",
             headers={"Authorization": f"Bearer {superadmin_token}"},
         )
         assert resp.status_code != 422

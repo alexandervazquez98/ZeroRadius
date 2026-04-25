@@ -8,6 +8,7 @@ Provides:
 - test_group_id: creates a test radius group and returns its id
 """
 
+import os
 import re
 
 import pytest
@@ -19,6 +20,11 @@ from sqlalchemy import event, text
 
 # Use SQLite in-memory for tests (aiosqlite driver)
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+# Keep auth-dependent tests isolated from machine-level env setup.
+os.environ.setdefault("SECRET_KEY", "test-secret-key-for-pytest-only-32b")
+os.environ.setdefault("ALGORITHM", "HS256")
+os.environ.setdefault("DATABASE_URL", TEST_DATABASE_URL)
 
 
 def _patch_sqlite_ddl(conn, cursor, statement, parameters, context, executemany):
@@ -41,6 +47,13 @@ def _patch_sqlite_ddl(conn, cursor, statement, parameters, context, executemany)
     return patched, parameters
 
 
+def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
+    """Mirror production FK enforcement in SQLite-backed tests."""
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+
 @pytest_asyncio.fixture(scope="session")
 async def test_engine():
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
@@ -53,12 +66,28 @@ async def test_engine():
         _patch_sqlite_ddl,
         retval=True,
     )
+    event.listen(engine.sync_engine, "connect", _enable_sqlite_foreign_keys)
 
     from app.db.session import Base
     import app.models.models  # noqa: F401 — register all ORM models with Base.metadata
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Create nas_cidr_ranges view for tests (Simplified for SQLite)
+        await conn.execute(text("DROP VIEW IF EXISTS nas_cidr_ranges"))
+        await conn.execute(text("""
+            CREATE VIEW nas_cidr_ranges AS
+            SELECT
+                id,
+                nasname,
+                category_id,
+                'test' as category_name,
+                'standard' as category_criticality,
+                0 as net_start,
+                4294967295 as net_end,
+                32 as prefix_len
+            FROM nas
+        """))
     yield engine
     await engine.dispose()
 
