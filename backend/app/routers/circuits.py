@@ -40,6 +40,54 @@ async def list_circuits(
     return circuits
 
 
+@router.get("/resolve", response_model=CIRPreviewResponse)
+@limiter.limit("30/minute")
+async def resolve_circuit_endpoint(
+    request: Request,
+    username: str,
+    nas_ip: str,
+    calling_station_id: str = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.AUDITOR, Role.ADMIN, Role.SUPERADMIN),
+):
+    """Resolve a CIR for the given RADIUS parameters.
+
+    Returns the CIRPreviewResponse with resolution path, mapping, profile, and trace.
+    """
+    from app.services.access_policies_service import to_out_schema
+    from app.services.bandwidth_profiles import get_profile
+
+    circuit, trace_steps = await resolve_circuit(db, username, nas_ip, calling_station_id)
+
+    mapping = None
+    profile = None
+
+    if circuit:
+        # Find the matching assignment to get full details
+        result = await db.execute(
+            select(AccessPolicyAssignment).where(
+                and_(
+                    AccessPolicyAssignment.username == username,
+                    AccessPolicyAssignment.cir_id == circuit.id,
+                )
+            )
+        )
+        assignment = result.scalars().first()
+        if assignment:
+            mapping = to_out_schema(assignment)
+
+        # Get bandwidth profile if groupname starts with cir_
+        if mapping and mapping.radius_group and mapping.radius_group.startswith("cir_"):
+            profile = await get_profile(db, mapping.radius_group)
+
+    return CIRPreviewResponse(
+        resolution_path="cir" if circuit else "none",
+        mapping=mapping,
+        profile=profile,
+        trace=trace_steps,
+    )
+
+
 @router.get("/{circuit_id}", response_model=CircuitOut)
 @limiter.limit("60/minute")
 async def get_circuit(
@@ -176,51 +224,3 @@ async def delete_circuit(
         event_code=EventCode.ADMIN_009,
     )
     return {"ok": True}
-
-
-@router.get("/resolve", response_model=CIRPreviewResponse)
-@limiter.limit("30/minute")
-async def resolve_circuit_endpoint(
-    request: Request,
-    username: str,
-    nas_ip: str,
-    calling_station_id: str = None,
-    db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = require_roles(Role.AUDITOR, Role.ADMIN, Role.SUPERADMIN),
-):
-    """Resolve a CIR for the given RADIUS parameters.
-
-    Returns the CIRPreviewResponse with resolution path, mapping, profile, and trace.
-    """
-    from app.services.access_policies_service import to_out_schema
-    from app.services.bandwidth_profiles import get_profile
-
-    circuit, trace_steps = await resolve_circuit(db, username, nas_ip, calling_station_id)
-
-    mapping = None
-    profile = None
-
-    if circuit:
-        # Find the matching assignment to get full details
-        result = await db.execute(
-            select(AccessPolicyAssignment).where(
-                and_(
-                    AccessPolicyAssignment.username == username,
-                    AccessPolicyAssignment.cir_id == circuit.id,
-                )
-            )
-        )
-        assignment = result.scalars().first()
-        if assignment:
-            mapping = to_out_schema(assignment)
-
-        # Get bandwidth profile if groupname starts with cir_
-        if mapping and mapping.radius_group and mapping.radius_group.startswith("cir_"):
-            profile = await get_profile(db, mapping.radius_group)
-
-    return CIRPreviewResponse(
-        resolution_path="cir" if circuit else "none",
-        mapping=mapping,
-        profile=profile,
-        trace=trace_steps,
-    )

@@ -89,6 +89,7 @@ class AccessPolicyAssignmentCreate(BaseModel):
 
     nas_category_id: Optional[int] = None
     segment_id: Optional[int] = None
+    cir_id: Optional[int] = None
     target_start_ip: Optional[str] = None
     target_end_ip: Optional[str] = None
 
@@ -120,6 +121,7 @@ class AccessPolicyAssignmentCreate(BaseModel):
         has_mac = bool(self.calling_station_id and self.calling_station_id.strip())
         has_cat = self.nas_category_id is not None
         has_seg = self.segment_id is not None
+        has_cir = self.cir_id is not None
 
         is_range_exception = has_seg and (
             bool(self.target_start_ip and self.target_start_ip.strip())
@@ -127,16 +129,16 @@ class AccessPolicyAssignmentCreate(BaseModel):
         )
 
         if has_ip and has_mac:
-            if has_cat or has_seg:
-                raise ValueError("IP+MAC targeting cannot be combined with Category or Segment")
+            if has_cat or has_seg or has_cir:
+                raise ValueError("IP+MAC targeting cannot be combined with Category, Segment, or CIR")
             return self
 
         if is_range_exception:
-            if has_cat or has_ip or has_mac:
+            if has_cat or has_ip or has_mac or has_cir:
                 raise ValueError("Network Segment range exceptions cannot be combined with other methods")
             return self
 
-        provided = sum([has_ip, has_mac, has_cat, has_seg])
+        provided = sum([has_ip, has_mac, has_cat, has_seg, has_cir])
         if provided == 0:
             raise ValueError("targeting method required")
         if provided > 1:
@@ -154,6 +156,7 @@ class AccessPolicyAssignmentOut(BaseModel):
     nas_category_name: Optional[str] = None
     segment_id: Optional[int] = None
     segment_name: Optional[str] = None
+    cir_id: Optional[int] = None
     target_start_ip: Optional[str] = None
     target_end_ip: Optional[str] = None
     nas_identifier: Optional[str] = None
