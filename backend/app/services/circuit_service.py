@@ -102,7 +102,17 @@ async def resolve_circuit(
     if calling_station_id:
         filters.append(AccessPolicyAssignment.calling_station_id == calling_station_id)
     if nas_ip:
-        filters.append(AccessPolicyAssignment.nas_ip == nas_ip)
+        # For CIR assignments (cir_id set), nas_ip is optional - if assignment has
+        # cir_id but nas_ip is NULL, it's a direct assignment that matches any nas_ip
+        filters.append(
+            or_(
+                AccessPolicyAssignment.nas_ip == nas_ip,
+                and_(
+                    AccessPolicyAssignment.cir_id.isnot(None),
+                    AccessPolicyAssignment.nas_ip.is_(None),
+                ),
+            )
+        )
 
     # CIR assignments are specific: either NAS IP or MAC is set (not category/segment)
     result = await db.execute(
