@@ -3,7 +3,9 @@ NAS router — nas-categories update (T2.3)
 Adds category_id pass-through on create/update and category_name resolution on reads.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -60,10 +62,14 @@ def _nas_to_out(nas: Nas) -> NasOut:
 @limiter.limit("60/minute")
 async def get_nas(
     request: Request,
+    category_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
 ):
-    result = await db.execute(select(Nas).options(selectinload(Nas.category)))
+    query = select(Nas).options(selectinload(Nas.category))
+    if category_id is not None:
+        query = query.where(Nas.category_id == category_id)
+    result = await db.execute(query)
     return [_nas_to_out(n) for n in result.scalars().all()]
 
 
