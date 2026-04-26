@@ -119,8 +119,12 @@ async def resolve_circuit(
         select(AccessPolicyAssignment).where(
             and_(
                 *filters,
+                AccessPolicyAssignment.is_active == 1,
                 AccessPolicyAssignment.cir_id.isnot(None),
             )
+        ).order_by(
+            AccessPolicyAssignment.nas_ip.isnot(None).desc(),
+            AccessPolicyAssignment.id,
         )
     )
     assignment = result.scalars().first()
@@ -157,12 +161,13 @@ async def resolve_circuit(
             select(AccessPolicyAssignment).where(
                 and_(
                     AccessPolicyAssignment.username == username,
+                    AccessPolicyAssignment.is_active == 1,
                     AccessPolicyAssignment.nas_ip == nas_ip,
                     AccessPolicyAssignment.segment_id.isnot(None),
                     AccessPolicyAssignment.target_start_ip.is_(None),
                     AccessPolicyAssignment.target_end_ip.is_(None),
                 )
-            )
+            ).order_by(AccessPolicyAssignment.id)
         )
         assignment = result.scalars().first()
         if assignment and assignment.segment_id:
@@ -194,6 +199,7 @@ async def resolve_circuit(
                 select(AccessPolicyAssignment).where(
                     and_(
                         AccessPolicyAssignment.username == username,
+                        AccessPolicyAssignment.is_active == 1,
                         AccessPolicyAssignment.nas_category_id == nas.category_id,
                     )
                 )

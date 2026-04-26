@@ -5,7 +5,7 @@ from starlette.responses import JSONResponse
 from typing import List
 
 from app.db.session import get_db
-from app.models.models import Circuit, AdminUser, AccessPolicyAssignment
+from app.models.models import Circuit, AdminUser, AccessPolicyAssignment, _normalize_mac
 from app.schemas.schemas import (
     CircuitCreate,
     CircuitUpdate,
@@ -27,12 +27,6 @@ from app.services.circuit_service import (
 )
 
 router = APIRouter(prefix="/circuits", tags=["circuits"])
-
-
-def _normalize_mac(value: str) -> str:
-    """Normalize MAC address to 12 lowercase hex digits."""
-    import re
-    return re.sub(r"[:.\-]", "", value).lower()
 
 
 @router.get("", response_model=List[CircuitOut])
@@ -64,7 +58,13 @@ async def resolve_circuit_endpoint(
     from app.services.bandwidth_profiles import get_profile
 
     # Normalize calling_station_id to match DB storage format
-    normalized_mac = _normalize_mac(calling_station_id) if calling_station_id else None
+    if calling_station_id:
+        try:
+            normalized_mac = _normalize_mac(calling_station_id)
+        except ValueError:
+            raise HTTPException(status_code=422, detail=f"Invalid MAC format: {calling_station_id}")
+    else:
+        normalized_mac = None
 
     circuit, trace_steps = await resolve_circuit(db, username, nas_ip, normalized_mac)
 
@@ -77,6 +77,7 @@ async def resolve_circuit_endpoint(
             select(AccessPolicyAssignment).where(
                 and_(
                     AccessPolicyAssignment.username == username,
+                    AccessPolicyAssignment.is_active == 1,
                     AccessPolicyAssignment.cir_id == circuit.id,
                 )
             )
