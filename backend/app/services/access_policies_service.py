@@ -130,7 +130,7 @@ async def validate_category_membership(
     has_membership = False
 
     # Path 1: DeviceRegistry — MAC-based membership when calling_station_id provided
-    if calling_station_id:
+    if calling_station_id and calling_station_id.strip():
         mac_normalized = calling_station_id.replace(":", "").replace("-", "").replace(".", "").lower()
         result = await db.execute(
             select(DeviceRegistry).where(

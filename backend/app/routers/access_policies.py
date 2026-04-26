@@ -132,17 +132,17 @@ async def create_or_replace_assignment(
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
 ):
-    existing = await find_existing_assignment(db, payload)
-
-    await validate_segment_exception(
-        db, payload, exclude_id=existing.id if existing else None
-    )
-
     await validate_category_membership(
         db,
         payload.username,
         payload.nas_category_id,
         payload.calling_station_id,
+    )
+
+    existing = await find_existing_assignment(db, payload)
+
+    await validate_segment_exception(
+        db, payload, exclude_id=existing.id if existing else None
     )
 
     review_dt = (
@@ -324,6 +324,20 @@ async def update_assignment(
         raise HTTPException(status_code=404, detail="Access policy entry not found")
 
     old_out = _to_out(row)
+
+    # Check no OTHER active assignment exists for same user in this category
+    existing_other = await db.execute(
+        select(AccessPolicyAssignment).where(
+            and_(
+                AccessPolicyAssignment.username == payload.username,
+                AccessPolicyAssignment.nas_category_id == payload.nas_category_id,
+                AccessPolicyAssignment.id != assignment_id,
+                AccessPolicyAssignment.is_active == True,
+            )
+        )
+    )
+    if existing_other.scalars().first() is not None:
+        raise HTTPException(status_code=409, detail="User already has an active assignment in this category")
 
     row.username = payload.username
     row.nas_ip = payload.nas_ip
