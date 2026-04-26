@@ -92,6 +92,43 @@ def send_access_request(
     return client.SendPacket(req)
 
 
+def send_access_request_vendor(
+    client: Client,
+    username: str,
+    password: str,
+    nas_ip: str,
+    called_station_id: str | None = None,
+    nas_identifier: str | None = None,
+    nas_port_type: int | None = None,
+    calling_station_id: str | None = None,
+):
+    """Send Access-Request with optional vendor-specific attributes.
+
+    Args:
+        client: pyrad Client instance
+        username: RADIUS username
+        password: RADIUS password
+        nas_ip: NAS IP address
+        called_station_id: Called-Station-Id (AP MAC:SSID format)
+        nas_identifier: NAS-Identifier string (e.g., WLC name)
+        nas_port_type: NAS-Port-Type integer (19=wireless, 15=ethernet, etc.)
+        calling_station_id: Calling-Station-Id (client MAC)
+    """
+    req = client.CreateAuthPacket(code=packet.AccessRequest, User_Name=username)
+    req["User-Password"] = req.PwCrypt(password)
+    req["NAS-IP-Address"] = nas_ip
+    req["NAS-Port"] = 0
+    if called_station_id:
+        req["Called-Station-Id"] = called_station_id
+    if nas_identifier:
+        req["NAS-Identifier"] = nas_identifier
+    if nas_port_type is not None:
+        req["NAS-Port-Type"] = nas_port_type
+    if calling_station_id:
+        req["Calling-Station-Id"] = calling_station_id
+    return client.SendPacket(req)
+
+
 def parse_reply_attributes(reply) -> dict[str, list[str]]:
     parsed: dict[str, list[str]] = {}
     for key in reply.keys():

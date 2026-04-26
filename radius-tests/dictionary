@@ -2,7 +2,24 @@ ATTRIBUTE	User-Name	1	string
 ATTRIBUTE	User-Password	2	string
 ATTRIBUTE	NAS-IP-Address	4	ipaddr
 ATTRIBUTE	NAS-Port	5	integer
+ATTRIBUTE	Service-Type	6	integer
+ATTRIBUTE	Framed-IP-Address	8	ipaddr
 ATTRIBUTE	Reply-Message	18	string
+ATTRIBUTE	Called-Station-Id	30	string
+ATTRIBUTE	Calling-Station-Id	31	string
+ATTRIBUTE	NAS-Identifier	32	string
+ATTRIBUTE	NAS-Port-Type	61	integer
+ATTRIBUTE	Vendor-Specific	26	octets
+
+VENDOR	Cisco	9
+BEGIN-VENDOR	Cisco
+ATTRIBUTE	Cisco-AVPair	1	string
+END-VENDOR	Cisco
+
+VENDOR	Dahua	47793
+BEGIN-VENDOR	Dahua
+ATTRIBUTE	Dahua-Recording-Channel	1	integer
+END-VENDOR Dahua
 
 VENDOR	Motorola	161
 BEGIN-VENDOR	Motorola
