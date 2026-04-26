@@ -68,7 +68,10 @@ async def get_nas(
 ):
     query = select(Nas).options(selectinload(Nas.category))
     if category_id is not None:
+        if category_id <= 0:
+            raise HTTPException(status_code=422, detail="category_id must be positive")
         query = query.where(Nas.category_id == category_id)
+    query = query.order_by(Nas.id)
     result = await db.execute(query)
     return [_nas_to_out(n) for n in result.scalars().all()]
 

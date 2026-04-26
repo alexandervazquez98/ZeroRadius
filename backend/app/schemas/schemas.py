@@ -323,6 +323,13 @@ class NasCreate(BaseModel):
             return v
         raise ValueError("nasname must be a valid IP, CIDR, or hostname")
 
+    @field_validator("category_id")
+    @classmethod
+    def category_id_must_be_positive(cls, v: int | None) -> int | None:
+        if v is not None and v <= 0:
+            raise ValueError("category_id must be positive")
+        return v
+
 
 class NasOut(BaseModel):
     id: int

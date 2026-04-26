@@ -120,7 +120,7 @@ class Nas(Base):
     )
     # nas-categories feature: structured device classification
     category_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("nas_categories.id", ondelete="SET NULL"), nullable=True
+        Integer, ForeignKey("nas_categories.id", ondelete="SET NULL"), nullable=True, index=True
     )
     category: Mapped[Optional["NasCategory"]] = relationship(
         "NasCategory", back_populates="nases"
