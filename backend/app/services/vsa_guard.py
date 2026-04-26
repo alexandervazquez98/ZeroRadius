@@ -12,6 +12,7 @@ VENDOR_ATTRIBUTE_MAP: dict[str, list[str]] = {
     "Juniper": ["Juniper-Local-User-Name"],
     "Fortinet": ["Fortinet-Group-Name", "Fortinet-Vdom-Name"],
     "Huawei": ["Huawei-Exec-Privilege"],
+    "Dahua": ["Dahua-Recording-Channel"],
 }
 
 # Patterns/values that indicate high-privilege assignments per vendor
