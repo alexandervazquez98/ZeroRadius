@@ -210,7 +210,7 @@ if _token_expire > 1440:
 
 app = FastAPI(
     title="FreeRADIUS Manager",
-    version="1.1.1",
+    version="1.3.0",
     redirect_slashes=False,
     docs_url=None if _disable_docs else "/docs",
     redoc_url=None if _disable_docs else "/redoc",
