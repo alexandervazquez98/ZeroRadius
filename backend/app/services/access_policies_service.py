@@ -123,6 +123,10 @@ async def validate_category_membership(
     if not _CATEGORY_MEMBERSHIP_GUARD_ENABLED:
         return
 
+    # If no category specified, guard does not apply (e.g., IP-based assignment)
+    if nas_category_id is None:
+        return
+
     has_membership = False
 
     # Path 1: DeviceRegistry — MAC-based membership when calling_station_id provided

@@ -26,6 +26,7 @@ from app.services.access_policies_service import (
     raise_assignment_integrity_error,
     raise_nas_conflict,
     to_out_schema as _to_out,
+    validate_category_membership,
     validate_segment_exception,
 )
 from app.services.bandwidth_profiles import (
@@ -135,6 +136,13 @@ async def create_or_replace_assignment(
 
     await validate_segment_exception(
         db, payload, exclude_id=existing.id if existing else None
+    )
+
+    await validate_category_membership(
+        db,
+        payload.username,
+        payload.nas_category_id,
+        payload.calling_station_id,
     )
 
     review_dt = (
@@ -295,6 +303,13 @@ async def update_assignment(
     current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
 ):
     await validate_segment_exception(db, payload, exclude_id=assignment_id)
+
+    await validate_category_membership(
+        db,
+        payload.username,
+        payload.nas_category_id,
+        payload.calling_station_id,
+    )
 
     result = await db.execute(
         select(AccessPolicyAssignment)
