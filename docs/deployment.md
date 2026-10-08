@@ -178,9 +178,21 @@ docker run --rm -v zeroradius_db_data:/data -v "$PWD":/backup \
 git pull
 docker compose build --pull              # rebuild with latest base images
 docker compose up -d                     # rolling restart
-docker exec radius-backend python -m scripts.alembic upgrade head   # if migrations need to run
+docker exec radius-backend python -m scripts.alembic upgrade head   # apply pending migrations
+docker exec radius-backend python -m scripts.alembic stamp head    # only on first deploy from init.sql
 docker exec radius-backend python -m scripts.seed_admin --check   # confirm admin still exists
 ```
+
+`scripts.alembic` is a thin wrapper that forwards every argument to
+`alembic.command.<subcommand>`, so `python -m scripts.alembic current`,
+`history`, `downgrade -1`, `revision --autogenerate ...` and the rest of
+the Alembic surface also work.
+
+**First-deploy note (issue #75):** on a brand-new database initialized
+from `database/init.sql`, the backend startup hook automatically detects
+that `alembic_version` is empty / missing and stamps at head instead of
+running the chain. The explicit `stamp head` shown above is only needed
+if you bypass the backend startup (e.g. when the container is stopped).
 
 The Alembic chain is idempotent; **never** edit migrations that have been
 applied to a deployed environment.
@@ -221,6 +233,7 @@ docker compose up -d backend              # rolling restart
 |---|---|---|
 | `db` reports `starting` for > 30 s | `docker compose logs db` for `permission denied` on volume mount; check `db_data` volume | — |
 | `backend` reports `unhealthy` after start | `docker compose logs backend`; check `SECRET_KEY` is set and ≥ 32 chars | [`docs/security-coverage.md`](security-coverage.md#a04-auth) |
+| `backend` restarts every ~2 s on first deploy with `Duplicate column` in logs | `database/init.sql` seeded the schema but left `alembic_version` empty; run `docker exec radius-backend alembic stamp head` (or rely on the auto-stamp in the backend startup hook, fixed in #75) | [`docs/deployment.md` → §6.4](#64-upgrades) |
 | `radius` exits immediately | `docker compose logs radius`; usually a TLS or rlm_sql config; check `radius/certs/` is populated | [`docs/architecture.md` → data flow](architecture.md#22-nac--radius-authentication) |
 | Login returns 401 with correct creds | Check `app_audit_log` for the failure reason; verify `SECRET_KEY` did not change mid-session | [`docs/security-coverage.md`](security-coverage.md#a04-auth) |
 | Live log viewer shows nothing | Backend cannot reach Docker daemon (volume mount issue); verify `/var/run/docker.sock` is the host socket | [`docs/04-live-log-viewer.md`](04-live-log-viewer.md#architecture) |
