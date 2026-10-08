@@ -16,6 +16,24 @@ _No unreleased changes yet._
 
 ---
 
+## [v1.3.2] - 2026-10-08
+
+The **Issues Triage** release. 4 fixes from the post-`#73` audit:
+3 bugs that blocked real deployments and 1 docs mass-fix. All bump PATCH
+per the project's SemVer policy (`fix/` and `docs/` → PATCH).
+
+### Fixed
+- **RADIUS healthcheck was probing TCP against a UDP port** ([#74](https://github.com/alexandervazquez98/ZeroRadius/issues/74), [PR #81](https://github.com/alexandervazquez98/ZeroRadius/pull/81), 9523196). The Linux `radius` container was stuck `unhealthy` forever because `nc -z -w2 127.0.0.1 1812` defaults to a TCP probe; RADIUS auth binds UDP. Added `-u`. `radius-syslog` (which `depends_on: backend: condition: service_healthy`) was collateral damage. Locked the contract with a 3-test regression guard covering both `docker-compose.yml` and `docker-compose.linux.yml` (the latter uses `network_mode: host` for `radius`, so the port assertion skips that case).
+- **First clean deploy entered an infinite restart loop** ([#75](https://github.com/alexandervazquez98/ZeroRadius/issues/75), [PR #82](https://github.com/alexandervazquez98/ZeroRadius/pull/82), 2afdf26). `database/init.sql` seeds every table but does not stamp `alembic_version`; the startup hook called `alembic upgrade head` which re-ran the whole chain against an already-populated schema and crashed with `Duplicate column 'zone_id'`. `run_pending_migrations()` now detects the empty / missing `alembic_version` and stamps at head instead of upgrading. The schema from `init.sql` already matches head; only the bookmark was missing. Ships a 6-test regression suite.
+- **All documented API paths used a non-existent `/api/v1` prefix** ([#77](https://github.com/alexandervazquez98/ZeroRadius/issues/77), [PR #83](https://github.com/alexandervazquez98/ZeroRadius/pull/83), 87f4a93). 171 `/api/v1/` occurrences across 26 docs files, every `curl` example returning 404. Mass-`sed s|/api/v1/|/|g`; symmetric 171/171 insertion/deletion count confirms only path prefixes were touched. `docs/api-reference.md` front-matter updated to state the no-prefix contract. Locked with a 2-test regression guard (live OpenAPI + static docs walk).
+- **Backend port 8000 was never published** ([#78](https://github.com/alexandervazquez98/ZeroRadius/issues/78), [PR #84](https://github.com/alexandervazquez98/ZeroRadius/pull/84), 9ed455e). `docker-compose.yml` `backend` service had no `ports:` mapping, so `curl localhost:8000/health` and the Swagger UI at `/docs` were unreachable from the operator's shell. Added `127.0.0.1:8000:8000` (loopback only — not exposed to the network). Docs aligned. Locked with 2 unit tests asserting the port is published AND bound to loopback (not `0.0.0.0`).
+
+### Added
+- `backend/scripts/alembic.py` ([#80](https://github.com/alexandervazquez98/ZeroRadius/issues/80), same PR as #75). The `docs/deployment.md` §6.4 upgrade instructions referenced `python -m scripts.alembic upgrade head` but the module did not exist. Thin wrapper that forwards every argument to `alembic.command.<subcommand>` so the operator only needs to remember one command form.
+- `backend/dictionaries/dictionary.cisco` (PR #86, [issue #76](https://github.com/alexandervazquez98/ZeroRadius/issues/76)). Ships a minimal Cisco vendor dict (vendor 9, `Cisco-AVPair 1 string`) so `shell:priv-lvl=15` authorization works out of the box. The `dictionaries/*` gitignore rule was refined to whitelist this project-shipped file while keeping operator-specific custom dicts ignored. **Not included in this release** — #86 was opened after this release was tagged and is queued for v1.3.3.
+
+---
+
 ## [v1.3.1] - 2026-10-08
 
 The **AI-Ready Documentation** release. Zero code changes; the bump is on
