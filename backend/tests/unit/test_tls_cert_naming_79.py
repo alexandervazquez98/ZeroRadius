@@ -16,7 +16,9 @@ import importlib.util
 import io
 import os
 import re
+import shutil
 import socket
+import subprocess
 import sys
 import tokenize
 from pathlib import Path
@@ -319,3 +321,60 @@ class TestResolveServerIpBehavior:
             lambda host: (_ for _ in ()).throw(socket.gaierror("no resolution")),
         )
         assert generate_certs_module._resolve_server_ip() == "127.0.0.1"
+
+
+class TestGeneratedFilenamesMatchNginxConf:
+    """Symmetry test: every file referenced by nginx.conf must be produced by generate_certs.py.
+
+    Catches the class of bug that #79 originally exposed in the reverse
+    direction — the script writing a different name than nginx loads. The
+    static tests in `TestNginxConfCertFilenames` only check what nginx.conf
+    *references*; this one runs the actual generator and asserts the files
+    it writes match.
+    """
+
+    def test_generated_filenames_match_nginx(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Run generate_certs.py in a temp dir; every cert path nginx.conf references must exist."""
+        # Skip if openssl is not on PATH (the script shells out to it).
+        if shutil.which("openssl") is None:
+            pytest.skip("openssl is not on PATH; cannot run generate_certs.py end-to-end")
+
+        # Run generate_certs.py from the repo root so relative paths
+        # (`certs/server.crt` etc.) resolve as they do in production.
+        repo_root = Path(__file__).resolve().parents[3]  # backend/tests/unit -> repo root
+        generate_certs_py = repo_root / "generate_certs.py"
+        assert generate_certs_py.exists(), f"missing {generate_certs_py}"
+
+        # Isolated cwd so we don't trample any host-side `certs/` directory.
+        monkeypatch.chdir(tmp_path)
+        # Use 127.0.0.1 to avoid any env-var dependency on the dev host.
+        monkeypatch.setenv("SERVER_IP", "127.0.0.1")
+
+        result = subprocess.run(
+            [sys.executable, str(generate_certs_py)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, (
+            f"generate_certs.py exited {result.returncode}\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+        # Extract every cert filename nginx.conf references.
+        nginx_conf = (repo_root / "frontend" / "nginx.conf").read_text()
+        referenced = re.findall(r"/etc/nginx/certs/([\w.]+)", nginx_conf)
+        assert referenced, "nginx.conf has no /etc/nginx/certs/ references — sanity check failed"
+
+        # Every referenced filename must exist in the freshly-generated certs/ dir.
+        missing = [f for f in referenced if not (tmp_path / "certs" / f).exists()]
+        assert not missing, (
+            f"generate_certs.py does not produce the files nginx.conf loads.\n"
+            f"  Referenced by nginx.conf: {referenced}\n"
+            f"  Missing from certs/: {missing}\n"
+            f"  Produced: {sorted((tmp_path / 'certs').iterdir()) if (tmp_path / 'certs').exists() else '(no certs/ dir)'}"
+        )

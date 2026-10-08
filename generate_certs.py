@@ -6,7 +6,10 @@ CA_KEY = "certs/ca.key"
 CA_CERT = "certs/ca.crt"
 SERVER_KEY = "certs/server.key"
 SERVER_CSR = "certs/server.csr"
-SERVER_CERT = "certs/server.pem"
+# Filename is `server.crt` (not `server.pem`) so it matches the name
+# referenced by `frontend/nginx.conf` (`ssl_certificate /etc/nginx/certs/server.crt;`).
+# One canonical name — no parallel `.pem` to keep in sync. See issue #79.
+SERVER_CERT = "certs/server.crt"
 
 
 def _resolve_server_ip():
