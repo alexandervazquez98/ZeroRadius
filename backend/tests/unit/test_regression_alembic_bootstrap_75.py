@@ -83,7 +83,14 @@ def test_scripts_alembic_module_is_importable():
 
 
 def test_scripts_alembic_main_rejects_missing_subcommand(capsys):
-    """No-args invocation must print usage and exit non-zero."""
+    """No-args invocation must print usage and return a non-zero exit code.
+
+    The wrapper exposes \`main()\` as a regular function returning an int
+    (the process exit code). The \`if __name__ == "__main__"\` block
+    turns that into \`sys.exit(main())\` for the CLI path. We test the
+    function contract directly — assert the return value, not a
+    SystemExit, because the wrapper is also reusable as a library.
+    """
     backend_root = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     )
@@ -96,9 +103,8 @@ def test_scripts_alembic_main_rejects_missing_subcommand(capsys):
     saved_argv = sys.argv
     try:
         sys.argv = ["scripts.alembic"]
-        with pytest.raises(SystemExit) as exc:
-            main()
-        assert exc.value.code == 1, "missing subcommand must exit 1"
+        exit_code = main()
+        assert exit_code == 1, f"missing subcommand must return 1, got {exit_code}"
     finally:
         sys.argv = saved_argv
 
