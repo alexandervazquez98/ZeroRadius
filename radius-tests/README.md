@@ -1,33 +1,41 @@
 # RADIUS Protocol Tests
 
-Tests de simulación del protocolo RADIUS usando **pyrad**. Verifican autenticación Access-Request/Accept/Reject y VSA handling a nivel UDP.
+> **Status:** Refreshed for v1.3.0. Six test files (was three at v1.1.1). The
+> `preconditions` probe guards against false positives when FreeRADIUS is
+> reachable but `nas_based_authorization` is disabled.
 
-## Prerrequisitos
+Tests of the **RADIUS protocol** simulation using **pyrad**. They verify
+authentication `Access-Request / Accept / Reject` and VSA handling at the
+UDP level — i.e. they exercise the full FreeRADIUS + MariaDB pipeline
+end-to-end.
+
+## Prerequisites
 
 - Python 3.11+
-- Docker (para levantar FreeRADIUS de prueba)
+- Docker (to bring up FreeRADIUS)
 
-## Instalación
+## Installation
 
 ```bash
 cd radius-tests/
 pip install -r requirements.txt
 ```
 
-## Levantar FreeRADIUS con Docker
+## Bring up FreeRADIUS with Docker
 
-Los tests requieren un servidor FreeRADIUS corriendo con los usuarios de test configurados.
+The tests require a FreeRADIUS server running with the test users configured.
 
-### Opción A — Docker compose del proyecto (recomendado)
+### Option A — Project docker compose (recommended)
 
-El proyecto ya tiene un `docker-compose.yml` en la raíz. Asegurate de que el servicio `radius-server` esté activo:
+The repository's root `docker-compose.yml` already has a `radius-server`
+service. Make sure it is up:
 
 ```bash
-# Desde la raíz del proyecto
+# From the repository root
 docker compose up radius-server -d
 ```
 
-### Opción B — FreeRADIUS standalone para tests
+### Option B — Standalone FreeRADIUS for tests
 
 ```bash
 docker run -d \
@@ -36,132 +44,177 @@ docker run -d \
   -p 1813:1813/udp \
   -e TESTING=yes \
   freeradius/freeradius-server:3.2
-```
 
-Luego configurar usuarios de test en el contenedor:
-
-```bash
-docker exec freeradius-test bash -c "echo 'testuser Cleartext-Password := \"testpassword\"' >> /etc/freeradius/3.0/mods-config/files/authorize"
+# Add a test user
+docker exec freeradius-test bash -c "
+  echo 'testuser Cleartext-Password := \"testpassword\"' \
+    >> /etc/freeradius/3.0/mods-config/files/authorize
+"
 docker restart freeradius-test
 ```
 
-### Verificar que el servidor está listo
+### Verify the server is ready
 
 ```bash
-# Desde el host (requiere freeradius-utils)
 radtest testuser testpassword 127.0.0.1 0 testing123
-
-# Output esperado:
-# Sent Access-Request Id 1 from 0.0.0.0:... to 127.0.0.1:1812
-# Received Access-Accept Id 1 from 127.0.0.1:1812
+# Expected:
+#   Sent Access-Request Id 1 from 0.0.0.0:... to 127.0.0.1:1812
+#   Received Access-Accept Id 1 from 127.0.0.1:1812
 ```
 
-## Variables de entorno
+## Environment variables
 
-| Variable | Default | Descripción |
+| Variable | Default | Purpose |
 |---|---|---|
-| `RADIUS_HOST` | `127.0.0.1` | IP del servidor FreeRADIUS |
-| `RADIUS_PORT` | `1812` | Puerto UDP de autenticación |
-| `RADIUS_SECRET` | `testing123` | Shared secret del NAS de test |
-| `RADIUS_MATRIX_PROBE_USER` | `segment_admin_a` | Usuario de precondición para validar wiring de `nas_based_authorization` |
-| `RADIUS_MATRIX_PROBE_PASS` | `testpassword` | Password del usuario de precondición |
-| `RADIUS_MATRIX_PROBE_NAS_IP` | `192.168.10.50` | NAS-IP del probe que debe resolver por regla exacta |
+| `RADIUS_HOST` | `127.0.0.1` | FreeRADIUS server IP |
+| `RADIUS_PORT` | `1812` | UDP authentication port |
+| `RADIUS_SECRET` | `testing123` | Shared secret for the test NAS |
+| `RADIUS_MATRIX_PROBE_USER` | `segment_admin_a` | Precondition probe user |
+| `RADIUS_MATRIX_PROBE_PASS` | `testpassword` | Probe password |
+| `RADIUS_MATRIX_PROBE_NAS_IP` | `192.168.10.50` | NAS-IP that must resolve via the exact-IP rule |
 
 ```bash
-# Ejemplo con servidor remoto
+# Remote server example
 RADIUS_HOST=192.168.1.100 RADIUS_SECRET=mysecret pytest radius-tests/
 ```
 
-## Ejecutar los tests
+## Run the tests
 
 ```bash
-# Todos los tests RADIUS (requiere servidor activo)
+# All RADIUS tests (requires a running FreeRADIUS)
 pytest radius-tests/ -v
 
-# Solo tests de autenticación básica
+# One test file at a time
 pytest radius-tests/test_radius_auth.py -v
-
-# Solo tests de VSA
 pytest radius-tests/test_radius_vsa.py -v
+pytest radius-tests/test_radius_mac_priority.py -v
+pytest radius-tests/test_radius_network_segments.py -v
+pytest radius-tests/test_radius_preconditions.py -v
+pytest radius-tests/test_radius_vendor_scenarios.py -v
 
-# Matriz determinística segment/CIDR/CIR
+# Deterministic segment/CIDR/CIR matrix (run via python -m pytest for Windows portability)
 cd radius-tests
 python -m pytest -m radius test_radius_network_segments.py -v
 ```
 
-## Seed determinístico de autorización
+## Test files (six)
 
-La matriz de precedencia/CIR usa un seed explícito en:
+| File | Purpose | Count (approx.) |
+|---|---|---|
+| `test_radius_auth.py` | Basic Access-Request / Accept / Reject | ~6 |
+| `test_radius_vsa.py` | VSA — Cisco `AVPair` validation | ~8 |
+| `test_radius_mac_priority.py` | Cambium AP proxy baseline (direct vs proxied MAC priority) | ~10 |
+| `test_radius_network_segments.py` | Deterministic segment precedence / CIDR / CIR matrix | ~25 |
+| `test_radius_preconditions.py` | Probe contract (`nas_based_authorization` + seed) | ~5 |
+| `test_radius_vendor_scenarios.py` | Cisco WLC, Dahua CCTV, Proxy-MAC, generic IP (16 scenarios added in `9e39084`) | 16 |
 
-`radius-tests/fixtures/seed_authorization_matrix.sql`
+Total: ~70 RADIUS protocol scenarios.
 
-Objetos esperados por el probe y la suite:
+## Deterministic seed for authorization matrix
 
-- Usuarios: `segment_admin_a`, `segment_reader_b`
-- Marcadores de regla ganadora: `MATRIX-EXACT-*`, `MATRIX-RANGE-*`, `MATRIX-BASE-*`, `MATRIX-FALLBACK-*`
+The matrix of precedence / CIR scenarios uses an explicit seed at:
+`radius-tests/fixtures/seed_authorization_matrix.sql`.
+
+Expected objects (created by the seed; required by the probe and suite):
+
+- Users: `segment_admin_a`, `segment_reader_b`
+- Winning-rule markers: `MATRIX-EXACT-*`, `MATRIX-RANGE-*`, `MATRIX-BASE-*`, `MATRIX-FALLBACK-*`
 - CIR (Access-Accept): `Cambium-Canopy-HPDLCIR`, `Cambium-Canopy-HPULCIR`
 
-La fixture `authorization_matrix_seed` valida que ese contrato exista antes de correr la matriz.
-Si falta algún objeto en el SQL, la suite falla en setup (fail fast).
+The `authorization_matrix_seed` fixture verifies that this contract exists
+before the matrix runs. **Fail fast** if any expected object is missing.
 
-## Baseline real Cambium AP proxy
+## Cambium AP proxy baseline (real `.212` environment)
 
-Para cubrir los casos reales validados en entorno `.212` se usa un seed determinístico:
+A second deterministic seed (`radius-tests/fixtures/seed_mac_priority.sql`)
+backs the `test_radius_mac_priority.py` suite.
 
-`seed_cambium_proxy_baseline.sql` (raíz del repo)
+Coverage of the baseline:
 
-Casos cubiertos por la suite baseline (`radius-tests/test_radius_mac_priority.py`):
+- Direct AP login vs SM-via-proxy (same NAS-IP, differentiated by
+  `Calling-Station-Id`).
+- Reader group with one reply attribute (`Cambium-Canopy-UserLevel := 1`).
+- Reader group with two reply attributes (`UserLevel` + `UserMode`),
+  hydrated natively.
+- Group with both `radgroupcheck` and `radgroupreply`.
+- Zero-trust Access-Reject when no mapping matches.
 
-- AP directo vs SM vía proxy (misma NAS-IP, prioridad por Calling-Station-Id)
-- Grupo lector con 1 reply attr (`Cambium-Canopy-UserLevel := 1`)
-- Grupo lector con 2 reply attrs (`UserLevel` + `UserMode`) hidratados nativamente
-- Grupo con `radgroupcheck` + `radgroupreply`
-- Zero-trust sin match (Access-Reject)
+Note on the current baseline:
 
-Nota importante del baseline actual:
+- `nas_based_authorization` still resolves `SQL-Group` correctly.
+- Group attribute hydration in `Access-Accept` happens through the native
+  `rlm_sql` path.
 
-- `nas_based_authorization` sigue resolviendo `SQL-Group` correctamente.
-- La hidratación de atributos de grupo en `Access-Accept` ocurre por el camino nativo de `rlm_sql`.
+## Vendor-specific baseline
 
-## Probe de precondición (wiring activo)
+A third deterministic seed (`radius-tests/fixtures/seed_vendor_scenarios.sql`)
+backs the `test_radius_vendor_scenarios.py` suite, exercising Cisco WLC,
+Dahua CCTV, proxy-MAC, and generic IP variants. Required by the `9e39084`
+commit.
 
-La fixture `radius_policy_precondition` diferencia tres casos:
+## Probe of precondition (active wiring)
 
-1. **Servidor inalcanzable / timeout** → `pytest.skip` (infra no disponible)
-2. **Servidor reachable pero sin marker/CIR esperado** → `pytest.fail("nas_based_authorization disabled or seed missing")`
-3. **Servidor + wiring + seed OK** → ejecuta la matriz de precedencia
+The `radius_policy_precondition` fixture separates three cases:
 
-Esto evita falsos verdes cuando FreeRADIUS responde, pero no está ejecutando `nas_based_authorization`.
+1. **Server unreachable / timeout** → `pytest.skip` (infra not available).
+2. **Server reachable but expected marker / CIR missing** →
+   `pytest.fail("nas_based_authorization disabled or seed missing")`.
+3. **Server + wiring + seed OK** → runs the precedence matrix.
 
-## Excluir tests RADIUS del suite principal
+This prevents false positives when FreeRADIUS is up but not actually running
+`nas_based_authorization`.
 
-Los tests RADIUS están marcados con `@pytest.mark.radius`. Para correr el backend sin requerir FreeRADIUS:
+## Excluding RADIUS tests from the main suite
+
+RADIUS tests are marked `@pytest.mark.radius`. To run the backend without
+requiring FreeRADIUS:
 
 ```bash
-# Desde backend/
+# From backend/
 pytest -m "not radius" -v
 ```
 
-## Comportamiento cuando FreeRADIUS no está disponible
+## Behaviour when FreeRADIUS is not available
 
-Si el servidor no responde, el fixture `skip_if_no_radius` detecta la situación y **skipea** el test automáticamente con un mensaje claro. **No falla** — solo se omite:
+When the server does not respond, the `skip_if_no_radius` fixture detects it
+and **skips** the test automatically with a clear message (does **not** fail):
 
 ```
 SKIPPED [1] conftest.py:XX: FreeRADIUS server not reachable at 127.0.0.1:1812.
 Run with Docker: see radius-tests/README.md
 ```
 
-Si el servidor responde pero no aparece el marcador/CIR esperado del probe, la matriz falla explícitamente con:
+When the server is reachable but the expected marker / CIR does not appear
+in the probe reply, the matrix fails explicitly:
 
-`nas_based_authorization disabled or seed missing`
+```
+nas_based_authorization disabled or seed missing
+```
 
-## Estructura
+## Layout
 
 ```
 radius-tests/
-  conftest.py          # Fixtures: radius_client, skip_if_no_radius
-  requirements.txt     # pyrad, pytest
-  test_radius_auth.py  # Access-Request / Accept / Reject básico
-  test_radius_vsa.py   # VSA Cisco-AVPair validation
-  README.md            # Este archivo
+├── conftest.py                                   # fixtures
+├── pytest.ini                                    # markers (radius)
+├── test_radius_auth.py
+├── test_radius_vsa.py
+├── test_radius_mac_priority.py
+├── test_radius_network_segments.py
+├── test_radius_preconditions.py
+├── test_radius_vendor_scenarios.py
+├── dictionary                                    # FreeRADIUS test dictionary
+├── fixtures/
+│   ├── seed_authorization_matrix.sql
+│   ├── seed_mac_priority.sql
+│   └── seed_vendor_scenarios.sql
+├── requirements.txt                              # pyrad, pytest
+└── README.md                                     # this file
 ```
+
+## Cross-references
+
+- **Architecture / auth flow:** [`docs/architecture.md` § 2.2](../docs/architecture.md#22-nac--radius-authentication)
+- **FreeRADIUS policy file:** `radius/policy.d/nas_based_authorization`
+- **Backend pytest markers:** [`docs/testing.md`](../docs/testing.md#markers)
+- **Live log viewer (post-auth trail):** [`docs/04-live-log-viewer.md`](../docs/04-live-log-viewer.md)

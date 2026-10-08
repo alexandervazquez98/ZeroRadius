@@ -2,8 +2,11 @@
 
 ZeroRadius is a modern, full-stack, state-driven management interface for the **FreeRADIUS** AAA Server. Built to abstract the severe complexities, flat-file hell, and UX pitfalls of traditional legacy managers (like daloRADIUS), it offers a React-driven frontend and an asynchronous Python/FastAPI backend designed for enterprise networks and ISPs.
 
-![ZeroRadius Version](https://img.shields.io/badge/version-1.2.0-blue)
+![ZeroRadius Version](https://img.shields.io/badge/version-1.3.0-blue)
 ![Architecture](https://img.shields.io/badge/infrastructure-Docker_Compose-blueviolet)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![React](https://img.shields.io/badge/react-19-61dafb)
+![FreeRADIUS](https://img.shields.io/badge/freeradius-3.2.3-orange)
 
 ## 🚀 Why ZeroRadius over daloRADIUS?
 
@@ -11,68 +14,90 @@ Historically, operating daloRADIUS meant fighting with raw SQL schemas, clunky 2
 - **Visual Macro Builders:** Drag and drop RADIUS attributes instead of manually typing `radgroupreply` statements. Syntax constraints are strictly validated by `pyrad`.
 - **Zero-Trust Identity Mapping:** Granular, NAS-based privilege scopes (ISO 27001 compliant) instead of granting global network access for every administrator.
 - **RESTful Asynchronous Backend:** Built entirely on modern FastAPI + SQLAlchemy 2.0 Async, enabling massive high-concurrency without breaking a sweat.
+- **Multi-Category Privilege Resolution:** Map users by exact IP, segment CIDR, exception range, or NAS category — with deterministic precedence. See [`docs/modules/access-policies.md`](docs/modules/access-policies.md).
 
-## 🏗 Architecture & Stack 
+## 🏗 Architecture & Stack (5 containers)
 
-ZeroRadius is fully containerized and consists of four main pillars:
+| Container | Image / Build | Purpose | Exposed ports |
+|---|---|---|---|
+| `radius-db` | `mariadb:10.11` | Standard FreeRADIUS schema extended with ZeroRadius identity tables | (internal 3306) |
+| `radius-server` | `freeradius/freeradius-server:3.2.3` (in-repo Dockerfile) | 100% SQL-driven FreeRADIUS with custom NAS-based authorization policy | `1812/udp`, `1813/udp` |
+| `radius-backend` | FastAPI + SQLAlchemy Async (in-repo Dockerfile) | REST + WebSocket API; Docker SDK access for log streaming | `8000` (via Nginx proxy) |
+| `radius-syslog` | rsyslog forwarder (in-repo Dockerfile) | Forwards network device syslog into the audit database | `514/udp` |
+| `radius-frontend` | React + Vite + Tailwind (in-repo Dockerfile) | Containerized UI served by Nginx | `3009` (HTTP), `443` (HTTPS) |
 
-1. **Frontend (React + Vite + TailwindCSS)**:
-   - Consumer-grade UI/UX for network administrators.
-   - Manages Users, Accounts, NAS Devices, Active Sessions, Audit Logs, and **NAS Categories**.
-   - **Real-time RADIUS Log Viewer** accessible from the header for live Access-Request monitoring.
-   - **Privilege Map** with category-based targeting for ISO 27001 compliance.
-   - Communicates with the Backend via REST APIs and WebSockets.
-
-2. **Backend (FastAPI)**:
-   - High-throughput REST API written in Python.
-   - Manages business logic and direct connection to the AAA MariaDB.
-   - **WebSocket log streaming** endpoint for real-time FreeRADIUS log monitoring via Docker SDK.
-   - Executes custom localized Audit Trails (`app_audit_log`).
-
-3. **RADIUS AAA Server (FreeRADIUS v3.2.3)**:
-   - Standard FreeRADIUS configured for 100% SQL-driven operation. No local `users` or text-based configurations. All network policies reside dynamically inside MariaDB.
-
-4. **Database (MariaDB)**:
-   - Stores the standard FreeRADIUS schemas extended with ZeroRadius custom identity management tables.
-
-### Advanced: Anti-Proxy Strategy for Major NAS
-
-**The Challenge with RADIUS Proxies:**
-When a Major NAS (e.g., an Access Point, an Aggregation Switch, or a VPN Concentrator) acts as a RADIUS proxy for downstream devices (like SMs, CPEs, or Modems), it sends authentication requests using its own IP (`NAS-IP-Address`). If generic `Admin` privileges are granted based solely on this IP, those privileges are inadvertently inherited by all downstream devices authenticating through it.
-
-**The Solution: ZeroRadius Priority Engine**
-To isolate administrative access to the Major NAS from the proxied downstream devices—without the administrative burden of registering thousands of individual MAC addresses—ZeroRadius leverages its built-in Priority Engine:
-
-- **Direct NAS Login:** When an administrator logs directly into the Major NAS, the device typically does not send a MAC address (`Calling-Station-Id`). In FreeRADIUS, we can inject a dummy MAC (e.g., `00:00:00:00:00:00`) for these direct requests.
-- **Proxied Device Login:** When authenticating a downstream device (e.g., a customer's SM or Modem), the Major NAS forwards the real MAC address of that downstream device.
-
-Leveraging this behavior, we establish a secure isolation flow:
-1. **Rule 1 (Direct NAS Access - Priority 0):** Create a highly specific policy (Target: `mac_plus_ip`) matching the Major NAS IP + the dummy MAC (`00:00:00:00:00:00`). Assign the `Admin` profile to this rule.
-2. **Rule 2 (Proxied Devices - Priority 2):** Create a generic fallback policy (Target: `nas_ip`) matching only the Major NAS IP (leaving the MAC field empty). Assign a restrictive profile like `ReadOnly` or explicitly deny access.
-
-This architecture guarantees secure, granular isolation for management interfaces without the overhead of micro-managing downstream device MACs.
+For a detailed component view, see [`docs/architecture.md`](docs/architecture.md).
 
 ## 📚 Official Documentation & User Manuals
-The project relies on localized, flowchart-driven Markdown manuals to ensure network administrators can confidently provision networks.
 
-- [**01. NAS Provisioning & Huntgroups**](docs/01-nas-provisioning.md) - How to onboard hardware, segment network devices, and categorize NAS devices by type/location using **NAS Categories**.
-- [**02. ISO 27001 Privilege Map & RBAC**](docs/02-iso27001-privilege-map.md) - Deep dive into ZeroRadius's Identity Access Management (IAM), explaining how general authentication tokens are converted into restricted, hardware-specific group roles dynamically during login. **Now supports category-based targeting**.
-- [**03. JIT "Break-Glass" Workflow**](docs/03-jit-break-glass.md) - Understanding Just-In-Time role elevation logic. How operators request timed root-access and how the `Expiration` attribute is injected into the AAA workflow.
-- [**04. Live RADIUS Log Viewer**](docs/04-live-log-viewer.md) - Real-time monitoring of Access-Request events (Accept/Reject) via WebSocket streaming from the FreeRADIUS container.
-- [**05. NAS Categories Management**](docs/05-nas-categories.md) - Managing NAS device categories for streamlined provisioning and bulk operations.
+### AI-Agent Onboarding
+- [**00. Agent Quickstart**](docs/00-agent-quickstart.md) — clone → deploy → smoke-test → full pyramid in <10 minutes. Self-validating commands.
+
+### Architecture & Operations
+- [**Architecture**](docs/architecture.md) — components, networking, data flow, dependencies
+- [**Deployment**](docs/deployment.md) — docker-compose stacks, env vars, secrets, troubleshooting
+- [**Database**](docs/database.md) — schema reference, Alembic migrations, SQL views
+- [**Testing**](docs/testing.md) — layered pyramid (Vitest + pytest + pyrad + Playwright)
+- [**Security Coverage**](docs/security-coverage.md) — A01–A10 threat catalog with test mapping
+
+### Feature Manuals
+- [**01. NAS Provisioning & Huntgroups**](docs/01-nas-provisioning.md) — onboard hardware and segment by category
+- [**02. ISO 27001 Privilege Map & RBAC**](docs/02-iso27001-privilege-map.md) — historical reference (deprecated; use Access Policies below)
+- [**03. JIT "Break-Glass" Workflow**](docs/03-jit-break-glass.md) — timed operator elevation via `Expiration` attribute
+- [**04. Live RADIUS Log Viewer**](docs/04-live-log-viewer.md) — WebSocket streaming of Access-Request events
+- [**05. NAS Categories Management**](docs/05-nas-categories.md) — bulk operations + privilege mapping targets
+- [**06. CIR Configuration**](docs/06-cir-configuration-manual.md) — *(legacy pointer — see [Modules / Access Policies](docs/modules/access-policies.md) for the current unified implementation)*
+
+### Modules (per-feature reference for AI agents)
+- [**Access Policies**](docs/modules/access-policies.md) *(Phase 2 — under construction)*
+- [**Device Registry**](docs/modules/device-registry.md) *(Phase 2)*
+- [**Network Segments**](docs/modules/network-segments.md) *(Phase 2)*
+- [**NAS Categories**](docs/modules/nas-categories.md) *(Phase 2)*
+- **Other modules** *(Phase 2)*
+
+### Simulation Recipes for NACs registered in the system
+*(Phase 3 — under construction)*
+
+### Backwards Compatibility Notes
+
+The codebase has unified what used to be called "Privilege Map" and "CIR Manager" into a single **Access Policies** module (PR #59, released in v1.3.0). Use [`docs/modules/access-policies.md`](docs/modules/access-policies.md) for the current source of truth. Older paths like `/privilege-map` may still resolve via legacy routing but the canonical path is now `/access-policies`.
 
 ## 🛠 Deployment & Setup
 
-Deploying the stack is native and self-contained via Docker.
+Quickstart:
 
 ```bash
-# Clone the repository
+# 1. Clone and configure environment
 git clone https://github.com/alexandervazquez98/ZeroRadius.git
 cd ZeroRadius
+cp .env.example .env
+$EDITOR .env  # fill MYSQL_*, SECRET_KEY, SYSLOG_API_KEY
 
-# Initialize the stack
-docker-compose up -d --build
+# 2. Boot the full stack (5 containers)
+docker compose up -d --build
+
+# 3. Bootstrap the first superadmin account
+docker exec -it radius-backend python -m scripts.seed_admin \
+    --username admin --password "MyS3cur3P@ss!"
+
+# 4. Validate readiness
+curl -sS http://localhost:8000/health    # → {"status":"ok"}
+open http://localhost:3009               # log in with bootstrap credentials
 ```
 
-- **Frontend Application**: [http://localhost:3000](http://localhost:3000)
-- **Backend Swagger Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+For full deployment options (Linux variant, test stack, TLS certs, secret rotation), see [`docs/deployment.md`](docs/deployment.md).
+
+## ⚖️ Versioning
+
+This release is **v1.3.0**. See [`CHANGELOG.md`](CHANGELOG.md) for the full history. The current version is also emitted by `GET /system/version` (backend) and shown in the footer (frontend).
+
+## 🤝 For AI Agents and Automation
+
+If you are an AI agent reading this repo to autonomously deploy, test, or simulate against registered NACs:
+1. Start with [`docs/00-agent-quickstart.md`](docs/00-agent-quickstart.md).
+2. All operational docs follow a self-validating contract: each step includes the expected output so you can stop and ask the human only on real divergence.
+3. The [`docs/testing.md`](docs/testing.md) document catalogues fast vs. heavy test layers and how to skip infrastructure-dependent tests when the environment is not available.
+
+---
+
+Built with care for network operators who prefer SQL-driven, deterministic authorization flows over flighty web abstractions.

@@ -91,3 +91,14 @@ dictionaries/
 *.tar.gz
 *.tar.bz2
 nul
+
+# ─── Debug / test scratch (legacy; not part of the test pyramid) ───────────────
+# These were tracked when the repo had no .gitignore cleanup. They are
+# referenced from `docs/simulation/00-overview.md` § 5 ("Local debug scripts")
+# for historical traceability but are NOT part of the public surface.
+scripts/check_hash.py
+scripts/eapol_test.conf
+scripts/test_mac.sh
+scripts/test_mac_wrong.sh
+scripts/test_mac_user.sql
+scripts/test_groups_modal.py

@@ -1,9 +1,19 @@
-# ZeroRadius — Layered Testing Strategy
+---
+goal: Document the layered testing strategy and the deterministic commands an AI agent can run to execute any layer, including environment-dependent fallback rules.
+audience: agent + human
+prerequisites:
+  - Repository cloned and dependencies installed
+  - Python ≥ 3.11, Node ≥ 18, optional Docker for heavy layers
+inputs:
+  - .env.test (optional, copied from .env.test.example)
+outputs:
+  - Test pass/fail status per layer; coverage deltas; exit code 0
+---
 
-This document describes the testing pyramid for ZeroRadius and the official
-commands to run each layer.
+# Testing Strategy
 
-## Test Layers
+ZeroRadius uses a four-layer pyramid. Each layer is independent; the only
+shared assumption is that the source code under test is the same.
 
 ```
         ┌─────────────────────┐
@@ -17,246 +27,275 @@ commands to run each layer.
         └─────────────────────┘
 ```
 
-## Quick Reference
+## Quick reference
 
-| Layer | When to run | Command |
-|-------|-------------|---------|
-| **All fast (default)** | Before any commit | `./scripts/test-all.sh` |
-| Frontend fast | After changing `frontend/src/` | `./scripts/test-frontend-fast.sh` |
-| Backend fast | After changing `backend/app/` | `./scripts/test-backend-fast.sh` |
-| Docker test env | For integration/RADIUS/E2E tests | `docker compose -f docker-compose.test.yml up -d` |
-| RADIUS | After changing RADIUS config or `radius-tests/` | See § RADIUS Tests |
-| E2E | Before releases, after major flows | See § E2E Tests |
-| Full pyramid | Pre-release, heavy validation | `./scripts/test-all.sh --full` |
+| Layer | When to run | Command | Skipped when… |
+|---|---|---|---|
+| **All fast (default)** | Before any commit | `./scripts/test-all.sh` | never |
+| Frontend fast | After changing `frontend/src/` | `./scripts/test-frontend-fast.sh` | never |
+| Backend fast | After changing `backend/app/` | `./scripts/test-backend-fast.sh` | never |
+| RADIUS | After changing `radius/`, `radius-tests/`, FreeRADIUS policy | `./scripts/test-all.sh --full` | FreeRADIUS unreachable (test is skipped, not failed) |
+| E2E | Before releases, after major flows | `./scripts/test-all.sh --e2e` | no running frontend + backend |
+| Full pyramid | Pre-release | `./scripts/test-all.sh --full` | — |
 
 ## Orchestrator: `test-all.sh`
 
-The recommended entry point for running tests is `./scripts/test-all.sh`.
-It orchestrates the entire test pyramid with sensible defaults and opt-in
-heavy layers.
-
 ```bash
-# Default: fast local only (backend + frontend)
-./scripts/test-all.sh
-
-# Full pyramid: fast + docker + radius + e2e
-./scripts/test-all.sh --full
-
-# Selective layers
-./scripts/test-all.sh --radius              # fast + RADIUS
-./scripts/test-all.sh --e2e                 # fast + E2E
-./scripts/test-all.sh --with-docker --e2e   # docker stack + E2E
-
-# Control flow
-./scripts/test-all.sh --full --continue-on-failure  # don't stop on first failure
-./scripts/test-all.sh --full --no-cleanup           # keep Docker stack up after
-./scripts/test-all.sh --no-fast --with-docker       # skip fast, only docker
+./scripts/test-all.sh                       # fast only
+./scripts/test-all.sh --full                # fast + docker + radius + e2e
+./scripts/test-all.sh --radius              # fast + radius
+./scripts/test-all.sh --e2e                 # fast + e2e
+./scripts/test-all.sh --with-docker --e2e   # docker stack + e2e
+./scripts/test-all.sh --full --continue-on-failure
+./scripts/test-all.sh --full --no-cleanup   # leave docker stack up
+./scripts/test-all.sh --no-fast --with-docker
 ```
 
-**Exit codes:** `0` = all passed, `1` = one or more failed, `2` = invalid args or pre-flight failure.
+**Exit codes:**
+- `0` — all passed
+- `1` — one or more failed
+- `2` — invalid args or pre-flight failure
 
-**Important:** `--with-docker` only starts the Docker Compose test stack. It does **not** run any tests by itself. You must combine it with `--radius`, `--e2e`, or `--full` to actually execute tests against the stack.
+`--with-docker` starts the compose test stack but does **not** run any tests; combine it with `--radius`, `--e2e`, or `--full` to actually execute against the stack.
 
-Run `./scripts/test-all.sh --help` for the full flag reference.
-
----
-
-## 1. Frontend Fast Tests (Vitest)
-
-Runs component and unit tests in jsdom with MSW v2 for API mocking.
+## 1. Frontend — Vitest
 
 ```bash
 ./scripts/test-frontend-fast.sh
 ```
 
 **What it does:**
-- Uses local `frontend/node_modules` (no Docker)
-- Invokes Vitest via the Windows-safe `cmd /c` wrapper
-- Runs in non-watch mode (`run`)
-- Exits with the test result code
+- Uses local `frontend/node_modules` (no Docker).
+- Invokes Vitest via Windows-safe `cmd /c vitest.cmd` wrapper or direct binary on POSIX.
+- Non-watch mode (`run`).
+- Exits with the test result code.
 
 **Manual invocation:**
 
 ```bash
-# From project root (Git Bash / WSL / Linux):
+# POSIX (macOS, Linux, WSL)
 ./scripts/test-frontend-fast.sh
 
-# From project root (PowerShell / CMD):
+# Windows CMD / PowerShell
 cmd /c "frontend\node_modules\.bin\vitest.cmd run"
-
-# From frontend directory (Git Bash / WSL / Linux / macOS):
-cd frontend && cmd /c "node_modules\.bin\vitest.cmd run"
 ```
 
-**Note:** Avoid `npm run test` on Windows PowerShell — it may fail due to execution policy restrictions. Use the `cmd /c` wrapper or the repo script instead.
+**Expected output:** `Test Files  N passed (N)` + a coverage table when thresholds trigger.
 
-**Configuration:** `frontend/vitest.config.js`
+**Configuration:** `frontend/vitest.config.js`. Mocks live in `frontend/src/test/mocks/handlers.js`.
 
----
-
-## 2. Backend Fast Tests (pytest)
-
-Runs unit and integration tests using an in-memory SQLite database.
-RADIUS-dependent tests are excluded by default.
+## 2. Backend — pytest
 
 ```bash
 ./scripts/test-backend-fast.sh
 ```
 
 **What it does:**
-- Activates `backend/.venv` (project virtualenv) — handles both Unix (`bin/activate`) and Windows (`Scripts/activate`) paths
-- Loads `.env.test.example` defaults, then overlays `.env.test` if present
-- Runs `python -m pytest` with `-m "not radius and not infra"` to skip heavy RADIUS and infrastructure tests
-- Coverage is enabled by default (enforced by `--cov-fail-under=59` in `pytest.ini`)
-- Pass `--no-cov` to the script for maximum speed: `./scripts/test-backend-fast.sh --no-cov`
+- Activates `backend/.venv` (POSIX `bin/activate`, Windows `Scripts/activate`).
+- Loads `.env.test.example` defaults; overlays `.env.test` if present.
+- Runs `python -m pytest -m "not radius and not infra"` (skip heavy layers).
+- Coverage enforced via `--cov-fail-under=59` in `backend/pytest.ini`.
+- Pass `--no-cov` to skip coverage for max speed.
 
 **Manual invocation:**
 
 ```bash
-# From project root (Git Bash / WSL / Linux):
+# POSIX
 ./scripts/test-backend-fast.sh
-
-# From backend directory (with .venv activated):
-# Unix/Git Bash: source .venv/bin/activate
-# Windows CMD:  .venv\Scripts\activate.bat
-# Windows PowerShell: .venv\Scripts\Activate.ps1
+# or, with venv active:
 python -m pytest tests/ -v -m "not radius and not infra"
 
-# Without coverage for maximum speed:
-python -m pytest tests/ -v -m "not radius and not infra" --no-cov
+# Windows
+.venv\Scripts\activate.bat
+python -m pytest tests/ -v -m "not radius and not infra"
 ```
 
-**Configuration:** `backend/pytest.ini`, `backend/conftest.py`
+**Expected output:** `N passed in Xs` plus a coverage summary table.
 
-**Test environment defaults:** See `.env.test.example` at repo root.
+**Configuration:** `backend/pytest.ini`, `backend/conftest.py`.
 
----
+### Markers
 
-## 3. RADIUS Tests (pyrad) — Available (environment-dependent)
+| Marker | Skipped by fast suite? | Marker purpose |
+|---|---|---|
+| (default) | included | Unit + integration tests against SQLite |
+| `@pytest.mark.radius` | **yes** | Requires a running FreeRADIUS server (see §3) |
+| `@pytest.mark.infra` | **yes** | Requires certificates / Docker / Linux-specific setup |
 
-Protocol-level tests that communicate with a real FreeRADIUS server.
+Run only one marker:
 
-**Status:** Infrastructure in place. Requires a live FreeRADIUS server to run.
+```bash
+cd backend
+python -m pytest -m "not radius" -v           # everything except pyrad
+python -m pytest -m radius -v                 # only pyrad
+python -m pytest -m "infra" -v                # only certificate/Docker tests
+```
 
-**Prerequisites:**
-- FreeRADIUS server running on `localhost:1812` (env var: `RADIUS_PORT`, default `1812`)
-- `pyrad` installed in the test environment
-- RADIUS shared secret configured (`RADIUS_SECRET`)
+### Test taxonomy
 
-**Manual invocation:**
+```
+backend/tests/
+├── unit/                # service-level unit tests (no FastAPI client)
+│   ├── test_auth_service.py
+│   ├── test_bandwidth_profiles.py
+│   ├── test_cert_init.py
+│   ├── test_db_exceptions.py
+│   ├── test_dictionary_loader.py
+│   ├── test_groups_service.py
+│   ├── test_integrity.py
+│   ├── test_lockout.py
+│   ├── test_models_regression_parity.py
+│   ├── test_network_segment_fix.py
+│   ├── test_regression_sqlite_foreign_keys.py
+│   ├── test_schema_sync.py
+│   ├── test_schema_validator.py
+│   └── test_vsa_guard.py
+├── integration/         # FastAPI AsyncClient + httpx + SQLite
+│   ├── (read-write CRUD per router)
+│   ├── test_jit.py
+│   ├── test_circuits.py
+│   ├── test_circuits_resolve.py
+│   └── test_security_*.py  # A01–A10 threat regression tests
+└── (no separate e2e here — e2e is Playwright in /e2e/)
+```
+
+### Conventions
+
+- Use `python -m pytest`, never bare `pytest` (Windows compatibility).
+- Use `@pytest.mark.radius` / `infra` for environment-dependent tests.
+
+## 3. RADIUS — pyrad
 
 ```bash
 cd radius-tests
-python -m pytest . -v -m radius
+python -m pytest -v -m radius
 ```
 
----
+**Status:** infrastructure in place; run only when FreeRADIUS is reachable at
+`$RADIUS_HOST:$RADIUS_PORT` (default `localhost:1812`).
 
-## 4. E2E Tests (Playwright) — Available (environment-dependent)
+**Environment variables:**
 
-Full browser tests that exercise the complete stack (frontend + backend + DB).
+| Variable | Default | Purpose |
+|---|---|---|
+| `RADIUS_HOST` | `127.0.0.1` | FreeRADIUS host |
+| `RADIUS_PORT` | `1812` | Auth port |
+| `RADIUS_SECRET` | `testing123` | Shared secret |
+| `RADIUS_MATRIX_PROBE_USER` | `segment_admin_a` | Precondition probe user |
+| `RADIUS_MATRIX_PROBE_PASS` | `testpassword` | Probe password |
+| `RADIUS_MATRIX_PROBE_NAS_IP` | `192.168.10.50` | Probe NAS-IP for exact-match test |
 
-**Status:** Specs and config exist; requires both frontend and backend running.
+**Probe of precondition (`radius_policy_precondition` fixture):**
 
-**Prerequisites:**
-- Frontend serving on `localhost:5173`
-- Backend API running — see two modes below:
+1. Server unreachable / timeout → `pytest.skip` (skipped, not failed).
+2. Server reachable but marker / CIR not present → `pytest.fail("nas_based_authorization disabled or seed missing")`.
+3. Server + wiring + seed OK → matrix runs.
 
-**Mode 1 — Fast local (default):**
-- Backend on `localhost:8000` (local dev with `.venv`)
-- Vite proxy (`vite.config.js`) routes `/api` → `localhost:8000` automatically
-- No extra configuration needed
+This avoids false positives when FreeRADIUS responds but isn't running
+`nas_based_authorization`.
 
-**Mode 2 — Docker test stack:**
-- Backend on `localhost:8001` (from `docker-compose.test.yml`)
-- Change proxy target in `frontend/vite.config.js` from `8000` to `8001`
-  (this is the **only** supported way — there is no `VITE_API_URL` env var in the frontend codebase)
+**Test files:**
 
-- Playwright browsers installed (`npx playwright install`)
+```
+radius-tests/
+├── conftest.py                          # fixtures
+├── test_radius_auth.py                  # basic Access-Accept/Reject
+├── test_radius_vsa.py                   # Cisco AVPair validation
+├── test_radius_mac_priority.py          # Cambium AP proxy baseline
+├── test_radius_network_segments.py      # matrix deterministic
+├── test_radius_preconditions.py         # wiring probe
+├── test_radius_vendor_scenarios.py      # Cisco WLC, Dahua CCTV, Proxy-MAC, generic IP
+├── fixtures/seed_authorization_matrix.sql
+└── README.md
+```
 
-**Manual invocation:**
+## 4. E2E — Playwright
 
 ```bash
 cd e2e
-npx playwright test
-
-# Debug with UI:
-npx playwright test --ui
+npx playwright test                # headless
+npx playwright test --ui           # debug UI
 ```
 
----
+**Prereqs:**
+- Frontend on `http://localhost:5173` (Vite dev) or `http://localhost:3009` (Docker).
+- Backend on `http://localhost:8000` (default mode) or `http://localhost:8001` (Docker test stack — requires `frontend/vite.config.js` proxy target update per [`docs/testing.md` → §4 Mode 2](#mode-2--docker-test-stack)).
 
-## 5. Docker Compose Test Stack
+### Mode 1 — Fast local (default)
+- Backend on `localhost:8000` (dev with `.venv`).
+- Vite proxy (`vite.config.js`) routes `/api` → `localhost:8000`.
 
-A dedicated Docker Compose stack (`docker-compose.test.yml`) that spins up an
-isolated, ephemeral environment for integration, RADIUS, and E2E testing.
+### Mode 2 — Docker test stack
+- Backend on `localhost:8001` (from `docker-compose.test.yml`).
+- Edit `frontend/vite.config.js` to proxy `/api` → `localhost:8001` (the only supported way; no `VITE_API_URL` env var exists).
 
-**What it includes:**
-- MariaDB on port `3307` (no persistent volume — clean slate each run)
-- FreeRADIUS on ports `1812/1813` (debug mode enabled)
-- Backend API on port `8001` (test configuration)
-
-**Usage:**
+### Install Playwright browsers (one-time)
 
 ```bash
-# Start the test environment
-docker compose -f docker-compose.test.yml up -d
-
-# Wait for all services to be healthy
-docker compose -f docker-compose.test.yml ps
-
-# Run tests against the test environment
-# (configure your test runner to target localhost:8001, localhost:3307, etc.)
-
-# Tear down — -v removes the ephemeral database
-docker compose -f docker-compose.test.yml down -v
+npx playwright install
 ```
 
-**Test environment variables:**
+**Test files:**
+
+```
+e2e/tests/
+├── login.spec.js
+├── policies.spec.js
+├── rbac-ui.spec.js
+└── users-crud.spec.js
+```
+
+## 5. Docker Compose test stack
+
+```bash
+docker compose -f docker-compose.test.yml up -d      # start
+docker compose -f docker-compose.test.yml ps         # wait for healthy
+# run tests
+docker compose -f docker-compose.test.yml down -v    # teardown (drops volume)
+```
+
+**Includes:** test-db (3307), test-radius (1812/udp, 1813/udp), test-backend (8001).
+
+**Test env vars** (set in `docker-compose.test.yml`):
+
 | Variable | Value |
-|----------|-------|
+|---|---|
 | `DATABASE_URL` | `mysql+aiomysql://test_user:test_password@test-db/zeroradius_test` |
 | `RADIUS_HOST` | `test-radius` |
 | `RADIUS_PORT` | `1812` |
 | `RADIUS_SECRET` | `testing123` |
-| `SECRET_KEY` | test-only value (not for production) |
-
----
+| `SECRET_KEY` | `test-secret-key-not-for-production-use-32chars` |
 
 ## 6. CI / Heavy Tests — Planned
 
-Full CI pipeline wiring with Playwright headless E2E tests in a containerized
-environment.
+Containerised Playwright + GitHub Actions workflow + reporting. Until
+landed, run the pyramid locally before tagging a release.
 
-**Planned scope:**
-- Playwright container for headless E2E
-- GitHub Actions workflow
-- Test result reporting and coverage thresholds
+## 7. Troubleshooting
 
----
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `bash: pytest: command not found` | Wrong shell invocation | Use `python -m pytest …` |
+| `database is locked` | SQLite file lock left from a hung prior run | `rm backend/test.db backend/.coverage*` (the SQLite file is gitignored) |
+| RADIUS tests fail with connection refused | FreeRADIUS not running | `docker compose up radius-server -d` |
+| RADIUS tests skip (env OK but matrix fails) | `nas_based_authorization` disabled or seed missing | Apply `radius-tests/fixtures/seed_authorization_matrix.sql` |
+| Vitest output stalls on Windows | PowerShell execution policy | Use `cmd /c "vitest.cmd run"` or the script wrapper |
+| E2E timeout | Frontend not running | `npm run dev` in `frontend/` |
+| `403` on `/api/v1/admin/...` | Token lacks role | Re-login as superadmin |
+| `coverage failed: 59` threshold | Code added without tests | Add a test or annotate with `# pragma: no cover` (rare) |
 
-## Test Environment Configuration
+## 8. Conventions
 
-### `.env.test` (optional)
+- Always `python -m pytest`, never bare `pytest`.
+- Always `cmd /c "vitest.cmd …"` on Windows for Vitest.
+- RADIUS tests marked `@pytest.mark.radius`, skipped by default.
+- Infra tests marked `@pytest.mark.infra`, skipped by default (certs, Docker, Linux-specific).
+- Backend fast tests use in-memory SQLite — no external DB needed.
+- Frontend tests use MSW v2 — see `frontend/src/test/mocks/`.
 
-Copy `.env.test.example` to `.env.test` at the repo root if you need to
-override test defaults. The backend fast-test script will source it
-automatically.
+## 9. Cross-references
 
-```bash
-cp .env.test.example .env.test
-# Edit .env.test as needed
-```
-
-**Note:** `.env.test` is gitignored. Only `.env.test.example` is tracked.
-
----
-
-## Conventions
-
-- **Always use `python -m pytest`**, never `pytest` directly (Windows compatibility)
-- **Always use `cmd /c "vitest.cmd ..."`** on Windows for Vitest (PowerShell execution policy)
-- **RADIUS tests are marked** with `@pytest.mark.radius` and excluded by default
-- **Infrastructure tests are marked** with `@pytest.mark.infra` and excluded by default (certs, Docker, Linux-specific)
-- **Backend tests use in-memory SQLite** — no external DB needed for fast tests
-- **Frontend tests use MSW v2** for API mocking — see `frontend/src/test/mocks/`
+- **Deployment:** [`docs/deployment.md`](deployment.md)
+- **Architecture:** [`docs/architecture.md`](architecture.md)
+- **Security tests:** [`docs/security-coverage.md`](security-coverage.md)
+- **RADIUS protocol:** [`docs/architecture.md` → §2.2 NAC → RADIUS](architecture.md#22-nac--radius-authentication)
