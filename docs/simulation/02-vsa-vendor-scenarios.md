@@ -95,6 +95,7 @@ attributes.
 | `Unknown VSA` from FreeRADIUS | Vendor dictionary not loaded | `/dictionary/upload` for the vendor `.dict` file |
 | All scenarios `Access-Reject` | Seed didn't apply (table empty) | Re-run `seed_vendor_scenarios.sql` |
 | `radpostauth` shows wrong `reply` attribute | Custom dictionary not picked up | `/dictionary/radius-logs?lines=100` for the last FreeRADIUS startup |
+| Cisco WLC `shell:priv-lvl=15` reply missing or `Unknown VSA (Vendor-9/Cisco)` | `dictionary.cisco` not loaded in radius-server | This file ships in the repo at `backend/dictionaries/dictionary.cisco` (minimal `VENDOR Cisco 9` / `Cisco-AVPair 1 string`). If you replaced it via the UI, re-upload or re-drop-in; if it never loaded, run `docker exec radius-server grep Cisco-AVPair /etc/raddb/dictionary` and `/dictionary/builtin` to inspect |
 
 ## 6. Backout
 

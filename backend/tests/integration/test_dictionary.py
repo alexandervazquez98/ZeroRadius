@@ -116,9 +116,17 @@ class TestAttributesMerge:
         self, async_client, superadmin_token
     ):
         """Built-in attribute dictionary field must start with '[Sistema]'."""
+        # NOTE: We mock the built-in dictionary with TWO Cisco attributes:
+        #   - `Cisco-AVPair` (1, string) — also present in the project-shipped
+        #     custom `backend/dictionaries/dictionary.cisco`, so the merge
+        #     picks the custom version (no `[Sistema]` tag).
+        #   - `Cisco-NAS-Port` (2, integer) — built-in-only, never shadowed
+        #     by any custom dict, so it carries the `[Sistema]` tag.
+        # The test asserts the tag on the built-in-only attribute.
         mock_grep = (
             "/usr/share/freeradius/dictionary.cisco:BEGIN-VENDOR\tCisco\n"
             "/usr/share/freeradius/dictionary.cisco:ATTRIBUTE\tCisco-AVPair\t1\tstring\n"
+            "/usr/share/freeradius/dictionary.cisco:ATTRIBUTE\tCisco-NAS-Port\t2\tinteger\n"
             "/usr/share/freeradius/dictionary.cisco:END-VENDOR\tCisco\n"
         )
         import app.routers.dictionary as dict_router
@@ -134,7 +142,7 @@ class TestAttributesMerge:
             )
 
         data = resp.json()
-        cisco_attr = next((a for a in data if a["name"] == "Cisco-AVPair"), None)
+        cisco_attr = next((a for a in data if a["name"] == "Cisco-NAS-Port"), None)
         assert cisco_attr is not None
         assert cisco_attr["dictionary"].startswith("[Sistema]")
         assert cisco_attr["vendor"] == "Cisco"
