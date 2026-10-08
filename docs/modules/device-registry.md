@@ -25,7 +25,7 @@ imports upsert on MAC.
 
 ## 2. URL surface
 
-Base path: `/api/v1/device-registry`
+Base path: `/device-registry`
 
 | Method | Path | Roles | Notes |
 |---|---|---|---|
@@ -71,17 +71,17 @@ mac,nas_ip,name,description,category_id
 ## 5. End-to-end agent run
 
 ```bash
-TOKEN=$(curl -sS -X POST http://localhost:8000/api/v1/auth/token \
+TOKEN=$(curl -sS -X POST http://localhost:8000/auth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin&password=BootStrap\!2026" | jq -r '.access_token')
 
 # 1. Download the template
 curl -sS -o /tmp/template.csv \
   -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8000/api/v1/device-registry/bulk/template
+  http://localhost:8000/device-registry/bulk/template
 
 # 2. Edit it, then upload
-curl -sS -X POST http://localhost:8000/api/v1/device-registry/bulk/csv \
+curl -sS -X POST http://localhost:8000/device-registry/bulk/csv \
   -H "Authorization: Bearer $TOKEN" \
   -F "file=@/tmp/template.csv" \
   -F "default_category_id=2" | jq .

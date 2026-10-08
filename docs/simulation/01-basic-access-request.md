@@ -23,12 +23,12 @@ backout: deletes the seeded user / group / NAS
 ## 1. Provision the dependencies
 
 ```bash
-TOKEN=$(curl -sS -X POST http://localhost:8000/api/v1/auth/token \
+TOKEN=$(curl -sS -X POST http://localhost:8000/auth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin&password=BootStrap\!2026" | jq -r '.access_token')
 
 # 1. NAS — the agent will authenticate against this
-curl -sS -X POST http://localhost:8000/api/v1/nas \
+curl -sS -X POST http://localhost:8000/nas \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"nasname":"192.168.99.10","shortname":"sim-nas","secret":"test-secret"}' | jq .
 
@@ -99,7 +99,7 @@ row. The RADIUS layer sees no `SQL-Group` to hydrate.
 
 ```bash
 curl -sS -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/v1/audit/access?nas_ip=192.168.99.10&limit=5" | jq '.[].reply | {reply, username}'
+  "http://localhost:8000/audit/access?nas_ip=192.168.99.10&limit=5" | jq '.[].reply | {reply, username}'
 ```
 
 **Expected output:** at least three entries: `Access-Accept`, `Access-Reject`, `Access-Reject`.
@@ -122,10 +122,10 @@ docker exec radius-db mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" -e
   DELETE FROM radgroupreply WHERE groupname='Sim-Group';
 "
 NAS_ID=$(curl -sS -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/v1/nas?search=sim-nas" | jq -r '.[0].id')
+  "http://localhost:8000/nas?search=sim-nas" | jq -r '.[0].id')
 [ -n "$NAS_ID" ] && curl -sS -X DELETE \
   -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/v1/nas/$NAS_ID"
+  "http://localhost:8000/nas/$NAS_ID"
 ```
 
 ## Cross-references

@@ -44,7 +44,7 @@ Resolution happens at RADIUS protocol time via `radius/policy.d/nas_based_author
 
 ## 2. URL surface
 
-Base path: `/api/v1/access-policies`
+Base path: `/access-policies`
 
 | Method | Path | Roles | Notes |
 |---|---|---|---|
@@ -122,12 +122,12 @@ this deterministic order:
 
 ```bash
 # JWT
-TOKEN=$(curl -sS -X POST http://localhost:8000/api/v1/auth/token \
+TOKEN=$(curl -sS -X POST http://localhost:8000/auth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin&password=BootStrap\!2026" | jq -r '.access_token')
 
 # 1. Create an assignment: user "netops" → exact NAS IP 192.168.10.50 → group "DC-Admins"
-curl -sS -X POST http://localhost:8000/api/v1/access-policies/assignments \
+curl -sS -X POST http://localhost:8000/access-policies/assignments \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -141,7 +141,7 @@ curl -sS -X POST http://localhost:8000/api/v1/access-policies/assignments \
   }' | jq .
 
 # 2. Preview the resolution without sending RADIUS
-curl -sS -X POST http://localhost:8000/api/v1/access-policies/preview \
+curl -sS -X POST http://localhost:8000/access-policies/preview \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"username":"netops","nas_ip":"192.168.10.50"}' | jq .

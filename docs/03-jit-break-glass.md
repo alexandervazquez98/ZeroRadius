@@ -34,7 +34,7 @@ sequenceDiagram
     participant Radius as FreeRADIUS
 
     Oper->>ZR: Clicks "Request Break-Glass"
-    ZR->>API: POST /api/v1/users/jit-requests/{user}/approve (TTL: 2 Hours)
+    ZR->>API: POST /users/jit-requests/{user}/approve (TTL: 2 Hours)
     API->>API: Calculate Time == [Current + 2H Format: 'Nov 04 2026 14:00']
     API->>DB: INSERT Expiration into radcheck
     API-->>ZR: 200 OK (JIT Granted)
@@ -57,7 +57,7 @@ sequenceDiagram
 
 > **Note on the IAM removal:** the legacy "JIT request" UI lived in the
 > `iam` module before commit `1ce0851 refactor: remove obsolete IAM module
-> and rescue JIT access`. JIT access is now exposed under `/api/v1/users/jit-*`.
+> and rescue JIT access`. JIT access is now exposed under `/users/jit-*`.
 > See the historical pull request that rescued the feature.
 
 ## Operator checklist

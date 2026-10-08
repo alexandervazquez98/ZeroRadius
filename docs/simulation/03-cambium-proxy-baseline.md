@@ -41,16 +41,16 @@ docker exec radius-db mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" -e
 ## 2. NAS
 
 ```bash
-TOKEN=$(curl -sS -X POST http://localhost:8000/api/v1/auth/token \
+TOKEN=$(curl -sS -X POST http://localhost:8000/auth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin&password=BootStrap\!2026" | jq -r '.access_token')
 
 # Register a category if missing
 CATEGORY_ID=$(curl -sS -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8000/api/v1/nas-categories | jq -r '.[] | select(.name=="WiFi-AP").id')
+  http://localhost:8000/nas-categories | jq -r '.[] | select(.name=="WiFi-AP").id')
 
 # Register (or update) the NAS at 192.168.10.50
-curl -sS -X POST http://localhost:8000/api/v1/nas \
+curl -sS -X POST http://localhost:8000/nas \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d "{\"nasname\":\"192.168.10.50\",\"shortname\":\"major-ap\",\"secret\":\"ap-secret\",\"category_id\":${CATEGORY_ID:-null}}" | jq .
 ```
@@ -63,7 +63,7 @@ access.
 
 ```bash
 # Direct admin rule (priority 1)
-curl -sS -X POST http://localhost:8000/api/v1/access-policies/assignments \
+curl -sS -X POST http://localhost:8000/access-policies/assignments \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{
     "username": "ap_admin",
@@ -77,7 +77,7 @@ curl -sS -X POST http://localhost:8000/api/v1/access-policies/assignments \
   }' | jq .
 
 # Proxied SM rule (priority 2)
-curl -sS -X POST http://localhost:8000/api/v1/access-policies/assignments \
+curl -sS -X POST http://localhost:8000/access-policies/assignments \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{
     "username": "proxied_sm",
@@ -131,7 +131,7 @@ docker exec radius-server bash -c '
 
 ```bash
 curl -sS -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/v1/audit/access?nas_ip=192.168.10.50&limit=5" \
+  "http://localhost:8000/audit/access?nas_ip=192.168.10.50&limit=5" \
   | jq '.[].reply | {reply, username}'
 ```
 
@@ -141,7 +141,7 @@ curl -sS -H "Authorization: Bearer $TOKEN" \
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| All three `Access-Reject` | Access Policy validation rejected the seeds; check `validate_category_membership` errors | `/api/v1/access-policies/preview` to debug |
+| All three `Access-Reject` | Access Policy validation rejected the seeds; check `validate_category_membership` errors | `/access-policies/preview` to debug |
 | Admin gets Reader attrs (priority wrong) | The two rows have equal priority; MAC tie-break not enforcing | Update priority on the rows (lower number = higher priority) |
 | `sql: error` from FreeRADIUS | `rlm_sql` connection failing (DB down?) | [`docs/deployment.md` troubleshooting](../deployment.md#troubleshooting) |
 

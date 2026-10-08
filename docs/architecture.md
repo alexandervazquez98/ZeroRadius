@@ -62,15 +62,15 @@ sequenceDiagram
     participant BE as Backend (FastAPI)
     participant DB as MariaDB
 
-    U->>FE: POST /api/v1/auth/token (form)
-    FE->>BE: POST /api/v1/auth/token
+    U->>FE: POST /auth/token (form)
+    FE->>BE: POST /auth/token
     BE->>DB: SELECT admin_users WHERE username=…
     DB-->>BE: row + bcrypt hash
     BE-->>FE: JWT (HS256, ACCESS_TOKEN_EXPIRE_MINUTES)
     FE-->>U: 200 + JWT (stored in memory)
 
-    U->>FE: GET /api/v1/nas + Authorization: Bearer JWT
-    FE->>BE: GET /api/v1/nas
+    U->>FE: GET /nas + Authorization: Bearer JWT
+    FE->>BE: GET /nas
     BE->>BE: rate-limit + JWT decode + role check
     BE->>DB: SELECT * FROM nas ORDER BY …
     DB-->>BE: rows

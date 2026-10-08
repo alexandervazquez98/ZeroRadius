@@ -98,7 +98,7 @@ docker compose down -v              # destroys db_data too
 | Mount | Source | Purpose |
 |---|---|---|
 | `./radius/certs/` → `/etc/freeradius/certs` | in-repo (regenerated on `docker compose up`) | Self-signed CA + server cert + DH params (FreeRADIUS EAP) |
-| `./radius/certs/` → `/app/radius-certs` | same | Backend can serve the CA cert for download (`/api/v1/nas` shows the CA URL) |
+| `./radius/certs/` → `/app/radius-certs` | same | Backend can serve the CA cert for download (`/nas` shows the CA URL) |
 | `./certs/` → `/etc/nginx/certs` | user-supplied | TLS cert + key for the frontend Nginx |
 
 Frontend certs are **not** generated automatically. To enable HTTPS on

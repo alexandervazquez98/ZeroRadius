@@ -40,15 +40,15 @@ If a recipe deviates, the deviation is explicitly called out at the top.
 |---|---|---|
 | `radtest` | `Access-Request` from the host | needs `freeradius-utils` |
 | `docker exec radius-server radtest …` | Same, from inside the container | always |
-| `curl + /api/v1/...` | Provision users, NAS, categories, policies, circuits | always |
+| `curl + /...` | Provision users, NAS, categories, policies, circuits | always |
 | `mysql -h db -u root …` | Inspect FreeRADIUS tables directly | only with DB shell |
 | `docker logs radius-server` | FreeRADIUS debug (`-X`) output | always |
-| `/api/v1/access-policies/preview` | Deterministic preview **before** sending RADIUS | always |
-| `/api/v1/circuits/resolve` | CIR resolution preview | always |
-| `/api/v1/audit/access` | Verify the post-auth trail landed | always |
+| `/access-policies/preview` | Deterministic preview **before** sending RADIUS | always |
+| `/circuits/resolve` | CIR resolution preview | always |
+| `/audit/access` | Verify the post-auth trail landed | always |
 
-> **Always preview before launching.** `POST /api/v1/access-policies/preview`
-> and `GET /api/v1/circuits/resolve` give you the same answer FreeRADIUS will
+> **Always preview before launching.** `POST /access-policies/preview`
+> and `GET /circuits/resolve` give you the same answer FreeRADIUS will
 > compute, without a UDP round-trip. If the preview disagrees with the
 > simulation outcome, the bug is in the recipe — fix the seed first.
 

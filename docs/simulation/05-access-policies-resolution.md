@@ -25,26 +25,26 @@ backout: drops assignments + segment + NAS
 ## 1. Provision
 
 ```bash
-TOKEN=$(curl -sS -X POST http://localhost:8000/api/v1/auth/token \
+TOKEN=$(curl -sS -X POST http://localhost:8000/auth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin&password=BootStrap\!2026" | jq -r '.access_token')
 
 # Segment 192.168.50.0/24
-SEG=$(curl -sS -X POST http://localhost:8000/api/v1/network-segments \
+SEG=$(curl -sS -X POST http://localhost:8000/network-segments \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"name":"ReconSegment","cidr":"192.168.50.0/24"}' | jq -r '.id')
 
 # NAS at .50.1 inside the segment
-curl -sS -X POST http://localhost:8000/api/v1/nas \
+curl -sS -X POST http://localhost:8000/nas \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"nasname":"192.168.50.1","shortname":"recon","secret":"rs"}' > /dev/null
 
 # Two Access Policy assignments, both active, for the same user
-curl -sS -X POST http://localhost:8000/api/v1/access-policies/assignments \
+curl -sS -X POST http://localhost:8000/access-policies/assignments \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"username":"recon_user","nas_ip":"192.168.50.1","radius_group":"Group-IP","justification":"ip rule","approved_by":"admin","is_active":true}' > /dev/null
 
-curl -sS -X POST http://localhost:8000/api/v1/access-policies/assignments \
+curl -sS -X POST http://localhost:8000/access-policies/assignments \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d "{\"username\":\"recon_user\",\"segment_id\":$SEG,\"radius_group\":\"Group-Seg\",\"justification\":\"seg rule\",\"approved_by\":\"admin\",\"is_active\":true}" > /dev/null
 
@@ -62,7 +62,7 @@ docker exec radius-db mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" -e
 ## 2. Ask the API
 
 ```bash
-curl -sS -X POST http://localhost:8000/api/v1/access-policies/preview \
+curl -sS -X POST http://localhost:8000/access-policies/preview \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"username":"recon_user","nas_ip":"192.168.50.1"}' \
   | jq '.resolution_path, .mapping.radius_group'
@@ -115,7 +115,7 @@ NASES=(192.168.50.1)
 for u in "${USERS[@]}"; do
   for n in "${NASES[@]}"; do
     echo "[preview] $u @ $n"
-    curl -sS -X POST http://localhost:8000/api/v1/access-policies/preview \
+    curl -sS -X POST http://localhost:8000/access-policies/preview \
       -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
       -d "{\"username\":\"$u\",\"nas_ip\":\"$n\"}" \
       | jq -r '"group=" + (.mapping.radius_group // "none")'
@@ -135,11 +135,11 @@ docker exec radius-db mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" -e
 "
 TOKEN=...
 AIDS=$(curl -sS -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/v1/access-policies/assignments" \
+  "http://localhost:8000/access-policies/assignments" \
   | jq -r '.[] | select(.username=="recon_user") | .id')
 for id in $AIDS; do
   curl -sS -X DELETE -H "Authorization: Bearer $TOKEN" \
-    "http://localhost:8000/api/v1/access-policies/assignments/$id"
+    "http://localhost:8000/access-policies/assignments/$id"
 done
 # (segment + NAS kept if used by other recipes; remove manually otherwise)
 ```
