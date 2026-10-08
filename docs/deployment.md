@@ -138,7 +138,7 @@ account.
 | Service | Endpoint / command |
 |---|---|
 | `db` | `mysqladmin ping` inside the container (10s interval) |
-| `radius` | `freeradius` process check via `healthcheck` (varies by stack) |
+| `radius` | UDP probe: `nc -z -u -w2 127.0.0.1 1812` via `healthcheck` (Linux); RADIUS auth binds UDP, not TCP |
 | `backend` | `python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"` (10s interval) |
 | `syslog` | no explicit healthcheck; observed via log volume |
 | `frontend` | no explicit healthcheck; observed via `nginx -t` |

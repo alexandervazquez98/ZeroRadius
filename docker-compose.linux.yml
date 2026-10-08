@@ -20,9 +20,9 @@ services:
     environment:
       # On host networking, DB is on the host's loopback
       DB_HOST: 127.0.0.1
-      # Healthcheck: verify FreeRADIUS is listening on auth port
+      # Healthcheck: verify FreeRADIUS is listening on auth port (UDP)
     healthcheck:
-      test: [ "CMD-SHELL", "nc -z -w2 127.0.0.1 1812 || exit 1" ]
+      test: [ "CMD-SHELL", "nc -z -u -w2 127.0.0.1 1812 || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 5
