@@ -96,14 +96,34 @@ def test_linux_healthcheck_does_not_probe_tcp_only():
     ],
 )
 def test_radius_ports_are_udp(compose_filename, service_name):
-    """The RADIUS auth/acct ports must be published as UDP, not TCP."""
+    """The RADIUS auth/acct ports must be published as UDP, not TCP.
+
+    The bridge-network stack (docker-compose.yml) publishes the ports
+    explicitly. The Linux-host-networking stack (docker-compose.linux.yml)
+    uses `network_mode: host` and intentionally has NO `ports:` mapping
+    — the container binds the host stack directly. There is nothing to
+    publish in that file, and adding a `ports:` entry would either be
+    ignored or conflict with the network mode.
+    """
     compose_path = REPO_ROOT / compose_filename
     with compose_path.open() as fh:
         data = yaml.safe_load(fh)
     services = data.get("services", {})
     if service_name not in services:
         pytest.skip(f"{service_name} service not defined in {compose_filename}")
-    ports = services[service_name].get("ports") or []
+
+    service = services[service_name]
+    ports = service.get("ports") or []
+
+    # Host networking: the container binds the host stack directly, so
+    # there is nothing to publish. Skip the positive assertion; the
+    # negative (no bare `1812:1812`) is also vacuous here.
+    if not ports and service.get("network_mode") == "host":
+        pytest.skip(
+            f"{service_name} uses host networking in {compose_filename} "
+            f"({service.get('network_mode')}); no `ports:` mapping expected."
+        )
+
     port_strs = [str(p) for p in ports]
 
     # The published form must end with /udp (e.g. "1812:1812/udp").
