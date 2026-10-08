@@ -1,7 +1,7 @@
 # NAS Provisioning & Huntgroups
 
-> **Status:** Refreshed for v1.3.0. Endpoint of record is `/api/v1/nas` and
-> `/api/v1/nas-categories`. For the AI-agent runnable version see
+> **Status:** Refreshed for v1.3.0. Endpoint of record is `/nas` and
+> `/nas-categories`. For the AI-agent runnable version see
 > [`docs/modules/nas-categories.md`](modules/nas-categories.md) and the
 > deployment examples in [`docs/simulation/01-basic-access-request.md`](simulation/01-basic-access-request.md)
 > (Phase 3 — placeholder).
@@ -79,7 +79,7 @@ For the full targeting + precedence chain, see
 
 ## 3. Cross-references
 
-- **API:** [`/api/v1/nas` and `/api/v1/nas-categories`](api-reference.md)
+- **API:** [`/nas` and `/nas-categories`](api-reference.md)
 - **NAS Categories module:** [`docs/modules/nas-categories.md`](modules/nas-categories.md)
 - **Access Policies module:** [`docs/modules/access-policies.md`](modules/access-policies.md)
 - **JIT Break-Glass (per-NAS):** [`docs/03-jit-break-glass.md`](03-jit-break-glass.md)

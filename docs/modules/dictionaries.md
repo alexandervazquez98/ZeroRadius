@@ -29,7 +29,7 @@ dictionaries (`/dictionary/builtin/*`) and to recent FreeRADIUS log lines
 
 ## 2. URL surface
 
-Base path: `/api/v1/dictionary`
+Base path: `/dictionary`
 
 | Method | Path | Roles | Notes |
 |---|---|---|---|
@@ -50,11 +50,11 @@ Base path: `/api/v1/dictionary`
 ### 3.1 Upload
 
 ```bash
-TOKEN=$(curl -sS -X POST http://localhost:8000/api/v1/auth/token \
+TOKEN=$(curl -sS -X POST http://localhost:8000/auth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin&password=BootStrap\!2026" | jq -r '.access_token')
 
-curl -sS -X POST http://localhost:8000/api/v1/dictionary/upload \
+curl -sS -X POST http://localhost:8000/dictionary/upload \
   -H "Authorization: Bearer $TOKEN" \
   -F "file=@./cambium_supplement.dict" | jq .
 ```

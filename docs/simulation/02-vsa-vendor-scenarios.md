@@ -92,9 +92,9 @@ attributes.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `Unknown VSA` from FreeRADIUS | Vendor dictionary not loaded | `/api/v1/dictionary/upload` for the vendor `.dict` file |
+| `Unknown VSA` from FreeRADIUS | Vendor dictionary not loaded | `/dictionary/upload` for the vendor `.dict` file |
 | All scenarios `Access-Reject` | Seed didn't apply (table empty) | Re-run `seed_vendor_scenarios.sql` |
-| `radpostauth` shows wrong `reply` attribute | Custom dictionary not picked up | `/api/v1/dictionary/radius-logs?lines=100` for the last FreeRADIUS startup |
+| `radpostauth` shows wrong `reply` attribute | Custom dictionary not picked up | `/dictionary/radius-logs?lines=100` for the last FreeRADIUS startup |
 
 ## 6. Backout
 

@@ -2,7 +2,7 @@
 
 > **This document is superseded.** What used to be called "CIR Manager" was
 > unified into the **Access Policies** module in v1.3.0 (PR #59). The CIR
-> resolution logic now lives under `/api/v1/circuits` (the **Circuits**
+> resolution logic now lives under `/circuits` (the **Circuits**
 > module), driven by `AccessPolicyAssignment.cir_id`.
 >
 > **Canonical references:**
@@ -92,7 +92,7 @@ The same chain applied:
 | No CIR telemetry screen | *(planned, `sdd/cir-metrics-ui`)* |
 | CIR validation generic | `BandwidthProfile` validates down/up/burst |
 | Category target behind Advanced/Legacy | Category now a first-class target option |
-| Runtime verification indirect | `/api/v1/circuits/resolve` returns the trace |
+| Runtime verification indirect | `/circuits/resolve` returns the trace |
 
 ## Reference implementation points (still relevant)
 

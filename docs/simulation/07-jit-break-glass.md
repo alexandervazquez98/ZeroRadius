@@ -6,7 +6,7 @@ prerequisites:
   - User account in `radcheck` for `jit_operator` (any baseline password)
 inputs:
   - One user (`jit_operator`) with a baseline password
-  - A JIT grant (`Expiration = NOW + 5 minutes`) via `/api/v1/users/jit-requests/{user}/approve`
+  - A JIT grant (`Expiration = NOW + 5 minutes`) via `/users/jit-requests/{user}/approve`
 outputs:
   - `radcheck` row with `attribute='Expiration'` for `jit_operator`
   - `radtest` → `Access-Accept` while in window
@@ -17,7 +17,7 @@ backout: deletes the `Expiration` row
 # Simulation 07 — JIT Break-Glass
 
 > **Scope:** the `Expiration` attribute path. The exact endpoint for
-> granting the JIT elevation is `POST /api/v1/users/jit-requests/{user}/approve`
+> granting the JIT elevation is `POST /users/jit-requests/{user}/approve`
 > (per the workflow in [`docs/03-jit-break-glass.md`](../03-jit-break-glass.md)).
 > TTL is configurable. This recipe uses a short 5-minute window for fast
 > testing.
@@ -25,12 +25,12 @@ backout: deletes the `Expiration` row
 ## 1. Provision the baseline user
 
 ```bash
-TOKEN=$(curl -sS -X POST http://localhost:8000/api/v1/auth/token \
+TOKEN=$(curl -sS -X POST http://localhost:8000/auth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin&password=BootStrap\!2026" | jq -r '.access_token')
 
 # A NAS is required for the simulation
-curl -sS -X POST http://localhost:8000/api/v1/nas \
+curl -sS -X POST http://localhost:8000/nas \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"nasname":"192.168.10.50","shortname":"jit-ap","secret":"js"}' > /dev/null
 
@@ -55,7 +55,7 @@ FreeRADIUS allows unconditionally.
 ## 3. Grant a JIT window (5 minutes)
 
 ```bash
-curl -sS -X POST "http://localhost:8000/api/v1/users/jit-requests/jit_operator/approve" \
+curl -sS -X POST "http://localhost:8000/users/jit-requests/jit_operator/approve" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"duration_minutes": 5, "justification":"agent smoke test"}' | jq .
 ```
@@ -108,7 +108,7 @@ docker exec radius-server bash -c '
 |---|---|---|
 | `Expiration` row missing after grant | Endpoint behind wrong path; check `/users/jit-requests/{user}/approve` | Verify path; check `app/routers/users.py` |
 | `Access-Reject` even inside window | `Expiration` value format wrong (FreeRADIUS expects `'Mon DD YYYY HH:MM:SS'`) | Re-grant or update with `DATE_FORMAT(UTC_TIMESTAMP(), '%b %d %Y %H:%i:%s')` |
-| Operator rejected with no Expiration | Lockout triggered (5 failed attempts) | `POST /api/v1/admin-users/{id}/unlock` |
+| Operator rejected with no Expiration | Lockout triggered (5 failed attempts) | `POST /admin-users/{id}/unlock` |
 
 ## 8. Backout
 

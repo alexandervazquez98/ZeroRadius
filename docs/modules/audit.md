@@ -27,7 +27,7 @@ Two streams of evidence surface here:
 
 ## 2. URL surface
 
-Base path: `/api/v1/audit`
+Base path: `/audit`
 
 | Method | Path | Roles | Notes |
 |---|---|---|---|
@@ -69,23 +69,23 @@ Every export **records an audit event itself** with `EventCode.ADMIN_008`
 ## 3. End-to-end agent run
 
 ```bash
-TOKEN=$(curl -sS -X POST http://localhost:8000/api/v1/auth/token \
+TOKEN=$(curl -sS -X POST http://localhost:8000/auth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin&password=BootStrap\!2026" | jq -r '.access_token')
 
 # Pull recent admin actions
 curl -sS -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/v1/audit/admin?limit=20" | jq '.[] | {id,admin_user,action,table_affected,target_user}'
+  "http://localhost:8000/audit/admin?limit=20" | jq '.[] | {id,admin_user,action,table_affected,target_user}'
 
 # Pull last 20 access decisions for NAS 192.168.10.50
 curl -sS -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/v1/audit/access?nas_ip=192.168.10.50&limit=20" | jq '.'
+  "http://localhost:8000/audit/access?nas_ip=192.168.10.50&limit=20" | jq '.'
 
 # Export to CSV for the last day
 FROM=$(date -u -d '1 day ago' +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u -v-1d +"%Y-%m-%dT%H:%M:%SZ")
 curl -sS -H "Authorization: Bearer $TOKEN" \
   -o audit-export.csv \
-  "http://localhost:8000/api/v1/audit/export?format=csv&from=$FROM"
+  "http://localhost:8000/audit/export?format=csv&from=$FROM"
 ```
 
 **Expected output (last command):** A `Content-Type: text/csv` file with header

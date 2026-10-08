@@ -24,7 +24,7 @@ Policies as either **segment-base targets** (`segment_id`) or as parents of
 
 ## 2. URL surface
 
-Base path: `/api/v1/network-segments`
+Base path: `/network-segments`
 
 | Method | Path | Roles | Notes |
 |---|---|---|---|
@@ -84,12 +84,12 @@ A segment cannot be deleted while any `AccessPolicyAssignment` references it:
 ## 5. End-to-end agent run
 
 ```bash
-TOKEN=$(curl -sS -X POST http://localhost:8000/api/v1/auth/token \
+TOKEN=$(curl -sS -X POST http://localhost:8000/auth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin&password=BootStrap\!2026" | jq -r '.access_token')
 
 # Create a segment
-curl -sS -X POST http://localhost:8000/api/v1/network-segments \
+curl -sS -X POST http://localhost:8000/network-segments \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{
     "name": "DC-Core",
@@ -98,7 +98,7 @@ curl -sS -X POST http://localhost:8000/api/v1/network-segments \
   }' | jq .
 
 # Attempt overlapping segment
-curl -sS -X POST http://localhost:8000/api/v1/network-segments \
+curl -sS -X POST http://localhost:8000/network-segments \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"name":"DC-Core-22","cidr":"10.1.5.0/24"}'
 # → 409 {"detail": "Network segment CIDR overlaps with existing segment 'DC-Core' (10.1.0.0/16)"}

@@ -281,7 +281,7 @@ landed, run the pyramid locally before tagging a release.
 | RADIUS tests skip (env OK but matrix fails) | `nas_based_authorization` disabled or seed missing | Apply `radius-tests/fixtures/seed_authorization_matrix.sql` |
 | Vitest output stalls on Windows | PowerShell execution policy | Use `cmd /c "vitest.cmd run"` or the script wrapper |
 | E2E timeout | Frontend not running | `npm run dev` in `frontend/` |
-| `403` on `/api/v1/admin/...` | Token lacks role | Re-login as superadmin |
+| `403` on `/admin/...` | Token lacks role | Re-login as superadmin |
 | `coverage failed: 59` threshold | Code added without tests | Add a test or annotate with `# pragma: no cover` (rare) |
 
 ## 8. Conventions

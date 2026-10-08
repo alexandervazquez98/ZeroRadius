@@ -1,5 +1,5 @@
 ---
-goal: Provide a complete, navigable index of every REST endpoint exposed by `/api/v1`, so an AI agent can locate the right route without re-reading the source.
+goal: Provide a complete, navigable index of every REST endpoint exposed at the FastAPI root (no `/api/v1` prefix — the backend mounts routes directly under `/`), so an AI agent can locate the right route without re-reading the source.
 audience: agent
 prerequisites:
   - Stack running and JWT obtainable (see [`docs/00-agent-quickstart.md`](00-agent-quickstart.md))
@@ -13,7 +13,7 @@ outputs:
 # API Reference
 
 > **Conventions:**
-> - All routes live under `/api/v1/` unless noted otherwise.
+> - All routes live under `/` unless noted otherwise.
 > - All writes are rate-limited (see [`docs/modules/rate-limiting.md`](modules/rate-limiting.md)).
 > - All mutations emit an entry in `app_audit_log` with the module's
 >   `EventCode.ADMIN_*` constant.

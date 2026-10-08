@@ -103,7 +103,7 @@ echo   # → 200
 cat /tmp/health.json | jq .   # → {"status":"ok", ...}
 
 # Login → JWT
-curl -sS -X POST http://localhost:8000/api/v1/auth/token \
+curl -sS -X POST http://localhost:8000/auth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin&password=BootStrap!2026" | jq -r '.access_token'
 ```
@@ -112,7 +112,7 @@ curl -sS -X POST http://localhost:8000/api/v1/auth/token \
 base64 headers). Save it:
 
 ```bash
-export TOKEN=$(curl -sS -X POST http://localhost:8000/api/v1/auth/token \
+export TOKEN=$(curl -sS -X POST http://localhost:8000/auth/token \
     -H "Content-Type: application/x-www-form-urlencoded" \
     -d "username=admin&password=BootStrap!2026" | jq -r '.access_token')
 ```
@@ -121,7 +121,7 @@ export TOKEN=$(curl -sS -X POST http://localhost:8000/api/v1/auth/token \
 
 ```bash
 # Register a NAS (Network Access Server) we'll simulate against
-curl -sS -X POST http://localhost:8000/api/v1/nas \
+curl -sS -X POST http://localhost:8000/nas \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -193,8 +193,8 @@ When you have finished this quickstart, confirm:
 
 - [ ] `docker compose ps` shows 5 healthy containers.
 - [ ] `curl http://localhost:8000/health` returns 200 with `{"status":"ok"}`.
-- [ ] You obtained a non-empty JWT from `POST /api/v1/auth/token`.
-- [ ] `POST /api/v1/nas` returned 201 with an `id`.
+- [ ] You obtained a non-empty JWT from `POST /auth/token`.
+- [ ] `POST /nas` returned 201 with an `id`.
 - [ ] At least one test layer (backend-fast minimum) returned exit code 0.
 
 If any of the above fail, **stop and report** the exact command, exact

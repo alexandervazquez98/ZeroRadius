@@ -29,7 +29,7 @@ The companion model is **BandwidthProfile** (managed under `/access-policies/ban
 
 ## 2. URL surface
 
-Base path: `/api/v1/circuits`
+Base path: `/circuits`
 
 | Method | Path | Roles | Notes |
 |---|---|---|---|
@@ -43,7 +43,7 @@ Base path: `/api/v1/circuits`
 ## 3. Resolution endpoint
 
 ```text
-GET /api/v1/circuits/resolve?username=<u>&nas_ip=<n>&calling_station_id=<m>
+GET /circuits/resolve?username=<u>&nas_ip=<n>&calling_station_id=<m>
 ```
 
 Returns:
@@ -91,12 +91,12 @@ Returns:
 ## 5. End-to-end agent run
 
 ```bash
-TOKEN=$(curl -sS -X POST http://localhost:8000/api/v1/auth/token \
+TOKEN=$(curl -sS -X POST http://localhost:8000/auth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin&password=BootStrap\!2026" | jq -r '.access_token')
 
 # 1. Create a bandwidth profile (group + CIR values)
-curl -sS -X POST http://localhost:8000/api/v1/access-policies/bandwidth-profiles \
+curl -sS -X POST http://localhost:8000/access-policies/bandwidth-profiles \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{
     "name": "cir_premium_50m",
@@ -107,7 +107,7 @@ curl -sS -X POST http://localhost:8000/api/v1/access-policies/bandwidth-profiles
   }' | jq .
 
 # 2. Create a circuit pointing to NAS 192.168.10.50
-curl -sS -X POST http://localhost:8000/api/v1/circuits \
+curl -sS -X POST http://localhost:8000/circuits \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{
     "name": "circ-torre-norte",
@@ -119,7 +119,7 @@ curl -sS -X POST http://localhost:8000/api/v1/circuits \
 
 # 3. Resolve the CIR for a test user against that NAS
 curl -sS -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/v1/circuits/resolve?username=netops&nas_ip=192.168.10.50" | jq .
+  "http://localhost:8000/circuits/resolve?username=netops&nas_ip=192.168.10.50" | jq .
 ```
 
 **Expected output (last command):**
@@ -143,7 +143,7 @@ curl -sS -H "Authorization: Bearer $TOKEN" \
 |---|---|---|
 | 400 "Circuit name already exists" | Duplicate `name` | Use a unique name |
 | 400 "Circuit ID already exists" | Duplicate `circuit_id` | Pick a distinct id |
-| 409 "Cannot delete circuit while dependent access policy assignments exist" | At least one AccessPolicyAssignment references the circuit | Detach first (`PUT /api/v1/access-policies/assignments/{id}` with `cir_id=null`) |
+| 409 "Cannot delete circuit while dependent access policy assignments exist" | At least one AccessPolicyAssignment references the circuit | Detach first (`PUT /access-policies/assignments/{id}` with `cir_id=null`) |
 | `resolve` returns `resolution_path: "none"` | No Access Policy mapping this (user, NAS) tuple | Create one first |
 | `null` MAC normalisation error from `/resolve?calling_station_id=...` | `calling_station_id` not parseable as MAC | Drop the param or supply a valid MAC |
 

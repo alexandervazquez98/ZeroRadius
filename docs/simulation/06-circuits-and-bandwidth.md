@@ -9,7 +9,7 @@ inputs:
   - `AccessPolicyAssignment(username=cir_user, group=cir_premium_50m, cir_id=<circuit.id>)`
 outputs:
   - `Access-Accept` reply attributes include `Cambium-Canopy-HPDLCIR=51200` and `Cambium-Canopy-HPULCIR=25600` (or the configured shape)
-  - `/api/v1/circuits/resolve?username=cir_user&nas_ip=192.168.10.50` returns `resolution_path: "cir"`
+  - `/circuits/resolve?username=cir_user&nas_ip=192.168.10.50` returns `resolution_path: "cir"`
 backout: drops circuit + assignments + profile
 ---
 
@@ -22,27 +22,27 @@ backout: drops circuit + assignments + profile
 ## 1. Provision
 
 ```bash
-TOKEN=$(curl -sS -X POST http://localhost:8000/api/v1/auth/token \
+TOKEN=$(curl -sS -X POST http://localhost:8000/auth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin&password=BootStrap\!2026" | jq -r '.access_token')
 
 # NAS
-curl -sS -X POST http://localhost:8000/api/v1/nas \
+curl -sS -X POST http://localhost:8000/nas \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"nasname":"192.168.10.50","shortname":"cir-nas","secret":"cs"}' > /dev/null
 
 # Bandwidth profile
-curl -sS -X POST http://localhost:8000/api/v1/access-policies/bandwidth-profiles \
+curl -sS -X POST http://localhost:8000/access-policies/bandwidth-profiles \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"name":"cir_premium_50m","downstream_kbps":51200,"upstream_kbps":25600,"burst_allowance_kbps":8192}' > /dev/null
 
 # Circuit
-CIRCUIT=$(curl -sS -X POST http://localhost:8000/api/v1/circuits \
+CIRCUIT=$(curl -sS -X POST http://localhost:8000/circuits \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"name":"circ-test","circuit_id":2001,"nas_ip":"192.168.10.50","bandwidth_down":51200,"bandwidth_up":25600}' | jq -r '.id')
 
 # Access Policy that ties user → group → cir
-curl -sS -X POST http://localhost:8000/api/v1/access-policies/assignments \
+curl -sS -X POST http://localhost:8000/access-policies/assignments \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d "{\"username\":\"cir_user\",\"nas_ip\":\"192.168.10.50\",\"radius_group\":\"cir_premium_50m\",\"cir_id\":$CIRCUIT,\"justification\":\"CIR demo\",\"approved_by\":\"admin\",\"is_active\":true}" > /dev/null
 
@@ -63,7 +63,7 @@ docker exec radius-db mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" -e
 
 ```bash
 curl -sS -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/v1/circuits/resolve?username=cir_user&nas_ip=192.168.10.50" \
+  "http://localhost:8000/circuits/resolve?username=cir_user&nas_ip=192.168.10.50" \
   | jq '{path: .resolution_path, mapping_id: .mapping.id, profile: .profile.name, down: .profile.downstream_kbps, up: .profile.upstream_kbps}'
 ```
 
@@ -100,7 +100,7 @@ Received Access-Accept Id N from 192.168.10.50:1812
 ## 4. Validate
 
 - `radpostauth.reply` row contains the CIR reply attributes.
-- `/api/v1/access-policies/preview?username=cir_user&nas_ip=192.168.10.50`
+- `/access-policies/preview?username=cir_user&nas_ip=192.168.10.50`
   returns the same mapping.
 
 ## 5. Failure modes
@@ -116,10 +116,10 @@ Received Access-Accept Id N from 192.168.10.50:1812
 ```bash
 TOKEN=...
 CIR_ID=$(curl -sS -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/v1/circuits?search=circ-test" | jq -r '.[0].id')
+  "http://localhost:8000/circuits?search=circ-test" | jq -r '.[0].id')
 [ -n "$CIR_ID" ] && curl -sS -X DELETE \
   -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/v1/circuits/$CIR_ID"
+  "http://localhost:8000/circuits/$CIR_ID"
 
 # Drop access-policy + bandwidth + seeded SQL rows
 docker exec radius-db mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" -e "
@@ -129,7 +129,7 @@ docker exec radius-db mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" -e
   DELETE FROM access_policy_assignments WHERE username='cir_user';
 "
 curl -sS -X DELETE -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/v1/access-policies/bandwidth-profiles/cir_premium_50m"
+  "http://localhost:8000/access-policies/bandwidth-profiles/cir_premium_50m"
 ```
 
 ## Cross-references

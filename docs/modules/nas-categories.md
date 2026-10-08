@@ -24,7 +24,7 @@ Group NAS devices by **type / location / vendor** for:
 
 ## 2. URL surface
 
-Base path: `/api/v1/nas-categories`
+Base path: `/nas-categories`
 
 | Method | Path | Roles |
 |---|---|---|
@@ -60,16 +60,16 @@ The value is shown in the NAS list ordering (`ORDER BY c.criticality DESC`).
 ## 5. End-to-end agent run
 
 ```bash
-TOKEN=$(curl -sS -X POST http://localhost:8000/api/v1/auth/token \
+TOKEN=$(curl -sS -X POST http://localhost:8000/auth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin&password=BootStrap\!2026" | jq -r '.access_token')
 
 # List categories
 curl -sS -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8000/api/v1/nas-categories | jq .
+  http://localhost:8000/nas-categories | jq .
 
 # Create
-curl -sS -X POST http://localhost:8000/api/v1/nas-categories \
+curl -sS -X POST http://localhost:8000/nas-categories \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{
     "name": "WiFi-AP",

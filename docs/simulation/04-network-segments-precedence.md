@@ -24,30 +24,30 @@ backout: deletes segments + assignments; preserves category
 ## 1. Provision segments and a category
 
 ```bash
-TOKEN=$(curl -sS -X POST http://localhost:8000/api/v1/auth/token \
+TOKEN=$(curl -sS -X POST http://localhost:8000/auth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin&password=BootStrap\!2026" | jq -r '.access_token')
 
 # Parent segment 10.1.0.0/16
-PARENT=$(curl -sS -X POST http://localhost:8000/api/v1/network-segments \
+PARENT=$(curl -sS -X POST http://localhost:8000/network-segments \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"name":"DC-Core","cidr":"10.1.0.0/16","description":"data-center core"}' | jq -r '.id')
 
 # Disjoint segment 10.2.0.0/16 (cannot overlap with parent)
-OTHER=$(curl -sS -X POST http://localhost:8000/api/v1/network-segments \
+OTHER=$(curl -sS -X POST http://localhost:8000/network-segments \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"name":"Branch","cidr":"10.2.0.0/16","description":"branch offices"}' | jq -r '.id')
 
 # Category
-CAT=$(curl -sS -X POST http://localhost:8000/api/v1/nas-categories \
+CAT=$(curl -sS -X POST http://localhost:8000/nas-categories \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"name":"DC-Routers","criticality":"critical","vendor":"Cisco"}' | jq -r '.id')
 
 # NASes
-curl -sS -X POST http://localhost:8000/api/v1/nas \
+curl -sS -X POST http://localhost:8000/nas \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d "{\"nasname\":\"10.1.5.5\",\"shortname\":\"dc-1\",\"secret\":\"s\",\"category_id\":$CAT}" | jq .
-curl -sS -X POST http://localhost:8000/api/v1/nas \
+curl -sS -X POST http://localhost:8000/nas \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d "{\"nasname\":\"10.2.7.7\",\"shortname\":\"branch-1\",\"secret\":\"s\",\"category_id\":$CAT}" | jq .
 ```
@@ -66,22 +66,22 @@ USERS=(dc_root dc_segment dc_segment_base dc_category)
 GROUPS=(L1-ExactAdmins L2-RangeAdmins L3-SegmentAdmins L4-CategoryAdmins)
 
 # L1 — exact IP
-curl -sS -X POST http://localhost:8000/api/v1/access-policies/assignments \
+curl -sS -X POST http://localhost:8000/access-policies/assignments \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"username":"dc_root","nas_ip":"10.1.5.5","radius_group":"L1-ExactAdmins","justification":"L1","approved_by":"admin","is_active":true}' > /dev/null
 
 # L2 — segment exception range
-curl -sS -X POST http://localhost:8000/api/v1/access-policies/assignments \
+curl -sS -X POST http://localhost:8000/access-policies/assignments \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d "{\"username\":\"dc_segment\",\"segment_id\":$PARENT,\"target_start_ip\":\"10.1.5.10\",\"target_end_ip\":\"10.1.5.20\",\"radius_group\":\"L2-RangeAdmins\",\"justification\":\"L2\",\"approved_by\":\"admin\",\"is_active\":true}" > /dev/null
 
 # L3 — segment base
-curl -sS -X POST http://localhost:8000/api/v1/access-policies/assignments \
+curl -sS -X POST http://localhost:8000/access-policies/assignments \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d "{\"username\":\"dc_segment_base\",\"segment_id\":$PARENT,\"radius_group\":\"L3-SegmentAdmins\",\"justification\":\"L3\",\"approved_by\":\"admin\",\"is_active\":true}" > /dev/null
 
 # L4 — category fallback
-curl -sS -X POST http://localhost:8000/api/v1/access-policies/assignments \
+curl -sS -X POST http://localhost:8000/access-policies/assignments \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d "{\"username\":\"dc_category\",\"nas_category_id\":$CAT,\"radius_group\":\"L4-CategoryAdmins\",\"justification\":\"L4\",\"approved_by\":\"admin\",\"is_active\":true}" > /dev/null
 ```
@@ -90,25 +90,25 @@ curl -sS -X POST http://localhost:8000/api/v1/access-policies/assignments \
 
 ```bash
 # (1) exact-IP user authenticating against 10.1.5.5
-curl -sS -X POST http://localhost:8000/api/v1/access-policies/preview \
+curl -sS -X POST http://localhost:8000/access-policies/preview \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"username":"dc_root","nas_ip":"10.1.5.5"}' \
   | jq '.resolution_path, .mapping.radius_group'
 
 # (2) range user authenticating against 10.1.5.15 (inside range)
-curl -sS -X POST http://localhost:8000/api/v1/access-policies/preview \
+curl -sS -X POST http://localhost:8000/access-policies/preview \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"username":"dc_segment","nas_ip":"10.1.5.15"}' \
   | jq '.resolution_path, .mapping.radius_group'
 
 # (3) base user authenticating against 10.1.99.99 (in segment, no exception hit)
-curl -sS -X POST http://localhost:8000/api/v1/access-policies/preview \
+curl -sS -X POST http://localhost:8000/access-policies/preview \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"username":"dc_segment_base","nas_ip":"10.1.99.99"}' \
   | jq '.resolution_path, .mapping.radius_group'
 
 # (4) category user authenticating against 10.2.7.7 (no IP, no segment match → category fallback)
-curl -sS -X POST http://localhost:8000/api/v1/access-policies/preview \
+curl -sS -X POST http://localhost:8000/access-policies/preview \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"username":"dc_category","nas_ip":"10.2.7.7"}' \
   | jq '.resolution_path, .mapping.radius_group'
@@ -162,11 +162,11 @@ docker exec radius-db mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" -e
 "
 TOKEN=...
 curl -sS -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/v1/access-policies/assignments" \
+  "http://localhost:8000/access-policies/assignments" \
   | jq -r '.[] | select(.username|startswith("dc_")) | .id' \
   | xargs -I {} curl -sS -X DELETE \
     -H "Authorization: Bearer $TOKEN" \
-    "http://localhost:8000/api/v1/access-policies/assignments/{}"
+    "http://localhost:8000/access-policies/assignments/{}"
 ```
 
 ## Cross-references

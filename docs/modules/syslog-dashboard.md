@@ -24,14 +24,14 @@ A two-tier pipeline:
 
 1. The **radius-syslog** sidecar container listens on UDP 514 for RFC-3164
    syslog from network devices (routers, switches, APs). It batches up to 50
-   messages or 5 s, then `POST`s them to `/api/v1/syslog/ingest`.
+   messages or 5 s, then `POST`s them to `/syslog/ingest`.
 2. The backend persists each event into `syslog_events`; the integrity
    service (`syslog_integrity.py`) maintains a tamper-evident hash chain
    (`previous_hash`, `hash` columns).
 
 ## 2. URL surface
 
-Base path: `/api/v1/syslog`
+Base path: `/syslog`
 
 | Method | Path | Roles | Notes |
 |---|---|---|---|
@@ -41,7 +41,7 @@ Base path: `/api/v1/syslog`
 ### 2.1 `POST /ingest`
 
 ```bash
-curl -sS -X POST http://radius-backend:8000/api/v1/syslog/ingest \
+curl -sS -X POST http://radius-backend:8000/syslog/ingest \
   -H "X-API-Key: $SYSLOG_API_KEY" \
   -H "Content-Type: application/json" \
   -d '[
@@ -85,20 +85,20 @@ for this version but the data is structured to support them.
 ## 4. End-to-end agent run
 
 ```bash
-TOKEN=$(curl -sS -X POST http://localhost:8000/api/v1/auth/token \
+TOKEN=$(curl -sS -X POST http://localhost:8000/auth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin&password=BootStrap\!2026" | jq -r '.access_token')
 
 # Send a fake syslog event for "192.168.10.50"
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-curl -sS -X POST http://localhost:8000/api/v1/syslog/ingest \
+curl -sS -X POST http://localhost:8000/syslog/ingest \
   -H "X-API-Key: syslog-secret-key" \
   -H "Content-Type: application/json" \
   -d "[{\"received_at\":\"$NOW\",\"device_ip\":\"192.168.10.50\",\"facility\":16,\"severity\":6,\"program\":\"sshd\",\"message\":\"agent-smoke-test login from 10.0.0.5\"}]"
 
 # Verify it was ingested
 curl -sS -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/v1/syslog?device_ip=192.168&limit=10" | jq .
+  "http://localhost:8000/syslog?device_ip=192.168&limit=10" | jq .
 ```
 
 **Expected output:** A list with at least one matching entry, total count near `limit`.
