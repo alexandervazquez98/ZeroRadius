@@ -270,9 +270,16 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 
 async def run_pending_migrations() -> None:
-    """Run alembic.command.upgrade('head'), respecting DISABLE_AUTO_MIGRATE.
+    """Run alembic migrations, respecting DISABLE_AUTO_MIGRATE.
 
     Skips migration if DISABLE_AUTO_MIGRATE=true but still runs validation.
+
+    Bootstrap path (issue #75): when the database was created from
+    `database/init.sql` (which seeds every table but never stamps
+    `alembic_version`), `alembic upgrade head` re-runs the whole chain
+    and fails with `Duplicate column`. Detect an empty / missing
+    `alembic_version` and stamp at head instead of upgrading — the
+    schema created by init.sql already matches head.
     """
     if os.getenv("DISABLE_AUTO_MIGRATE", "").lower() == "true":
         logger.info("Auto-migration disabled via DISABLE_AUTO_MIGRATE=true — skipping alembic upgrade")
@@ -280,10 +287,33 @@ async def run_pending_migrations() -> None:
 
     import alembic.config
     import alembic.command
+    from sqlalchemy import text
+    from sqlalchemy.exc import OperationalError, ProgrammingError
 
     cfg = alembic.config.Config("alembic.ini")
+
+    # Detect bootstrap path: alembic_version missing or empty.
+    needs_stamp = False
     try:
-        alembic.command.upgrade(cfg, "head")
+        async with engine.begin() as conn:
+            result = await conn.execute(
+                text("SELECT version_num FROM alembic_version LIMIT 1")
+            )
+            current_version = result.scalar()
+        needs_stamp = current_version is None
+    except (OperationalError, ProgrammingError):
+        # Table doesn't exist — pure init.sql path.
+        needs_stamp = True
+
+    try:
+        if needs_stamp:
+            logger.info(
+                "alembic_version empty or missing — stamping at head "
+                "(fresh DB from init.sql, schema already matches head)"
+            )
+            alembic.command.stamp(cfg, "head")
+        else:
+            alembic.command.upgrade(cfg, "head")
         logger.info("Alembic migrations applied successfully")
     except Exception as exc:
         logger.error("Alembic migration failed: %s", exc)
