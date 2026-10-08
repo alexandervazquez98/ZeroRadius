@@ -7,10 +7,11 @@ prerequisites:
 inputs:
   - .env at the project root
   - certs/ at the project root for TLS
-  - host bind ports: 3009, 443, 1812/udp, 1813/udp, 514/udp
+  - host bind ports: 3009, 443, 1812/udp, 1813/udp, 514/udp, **8000 (backend API, loopback only)**
 outputs:
   - All 5 containers `healthy`
   - GET http://localhost:8000/health → 200
+  - GET http://localhost:8000/docs → 200 (Swagger UI)
 ---
 
 # Deployment
@@ -150,6 +151,11 @@ curl -sS http://localhost:8000/health
 curl -sS http://localhost:8000/health/containers   # admin only
 curl -sS http://localhost:8000/health/resources    # admin only
 ```
+
+> The backend listens on `127.0.0.1:8000` only (loopback). For browser access
+> (Swagger UI at `/docs`, OpenAPI at `/openapi.json`) the operator's shell
+> can reach the API directly; remote hosts must go through the frontend
+> nginx proxy on `:443`.
 
 ### 6.2 Logs
 

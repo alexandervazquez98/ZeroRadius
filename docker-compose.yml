@@ -58,6 +58,11 @@ services:
     build:
       context: ./backend
     container_name: radius-backend
+    # Publish the API on the host loopback so `curl localhost:8000/health`
+    # and the Swagger UI at /docs work from the operator's shell.
+    # Binds to 127.0.0.1 only — not exposed to the network.
+    ports:
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./backend:/app
       - ./radius/certs:/etc/freeradius/certs
