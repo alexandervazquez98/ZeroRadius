@@ -12,9 +12,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+---
+
+## [v1.3.1] - 2026-10-08
+
+The **AI-Ready Documentation** release. Zero code changes; the bump is on
+the docs side per the project's SemVer policy (`docs/` → PATCH). See
+[PR #73](https://github.com/alexandervazquez98/ZeroRadius/pull/73).
+
 ### Added
 - **RADIUS vendor-specific test scenarios** — 16 new scenarios covering Cisco WLC, Dahua CCTV, Proxy-MAC, and generic IP devices. New `send_access_request_vendor()` helper in `radius-tests/conftest.py` supports `Called-Station-Id`, `NAS-Identifier`, `NAS-Port-Type`. Existing VSA tests hardened to work without the Cisco dictionary. (`feat(radius)`, 9e39084)
 - Dahua added to the VSA vendor consistency validation (`backend/app/services/vsa_guard.py`).
+- **AI-agent-ready documentation foundation** ([`docs/00-agent-quickstart.md`](docs/00-agent-quickstart.md)) — clone → env → deploy → smoke-test → full pyramid in <10 minutes, with deterministic commands and expected output patterns. The agent contract is documented in the frontmatter of every foundational doc.
+
+### Changed
+- **Documentation overhaul** ([PR #73](https://github.com/alexandervazquez98/ZeroRadius/pull/73), 44 files, +4712 / −661 lines, 0 code changes):
+  - `README.md` — badge v1.2.0 → v1.3.1; complete docs index; deploy quickstart.
+  - `CHANGELOG.md` — full Keep-a-Changelog format (formerly truncated at v1.1.1).
+  - `AGENTS.md` — removed dead `zero-radius-diagnose` reference; aligned with `.atl/skill-registry.md`.
+  - [`docs/architecture.md`](docs/architecture.md) — five-container topology with Mermaid diagrams, full data model, process-level host layout, symptom→doc lookup table.
+  - [`docs/deployment.md`](docs/deployment.md) — three compose files (main / test / Linux override); canonical env-var catalog (12 vars); secrets generation; TLS cert lifecycle; troubleshooting matrix.
+  - [`docs/testing.md`](docs/testing.md) — AI-ready commands per layer (Vitest + pytest + pyrad + Playwright); markers reference; RADIUS precondition probe env vars.
+  - [`docs/database.md`](docs/database.md) — full schema reference (RADIUS standard + ZeroRadius domain + `nas_cidr_ranges` view); Alembic migration chain; common queries.
+  - [`docs/security-coverage.md`](docs/security-coverage.md) — OWASP Top 10:2021 threat catalog (A01–A10), each mapped to controls and integration tests.
+  - [`docs/api-reference.md`](docs/api-reference.md) — endpoint index grouped by domain, with pagination and error shapes.
+  - **Per-module docs** under `docs/modules/`: `access-policies`, `device-registry`, `network-segments`, `nas-categories`, `circuits`, `dictionaries`, `admin-users`, `syslog-dashboard`, `audit`, `rate-limiting`.
+  - **Simulation recipes** under `docs/simulation/`: `00-overview` (framework) and `01..07` (basic Access-Request, VSA vendor scenarios, Cambium proxy baseline, network segments precedence, Access Policies resolution, circuits & bandwidth, JIT break-glass).
+  - [`docs/06-cir-configuration-manual.md`](docs/06-cir-configuration-manual.md) — rewritten as a **legacy pointer** (HTML-comment-preserved v1.2.0 text inside) because the CIR / Privilege Map content was unified into the Access Policies module in v1.3.0.
+
+### Removed
+- Six tracked one-off debug scripts in `scripts/` (`check_hash.py`, `eapol_test.conf`, `test_mac.sh`, `test_mac_wrong.sh`, `test_mac_user.sql`, `test_groups_modal.py`) — untracked via `git rm --cached` (files retained on disk for historical reuse). New `scripts/` `.gitignore` rule with pointer to [`docs/simulation/00-overview.md` § 5](docs/simulation/00-overview.md#5-local-debug-scripts).
+- Inconsistent terminology: `Privilege Map` → `Access Policies`; `/privilege-map` → `/access-policies`; `user_nas_privilege_map` → `access_policy_assignments` (renamed via Alembic migration `c0123d4`); stale references to the removed IAM module.
 
 ### Fixed
 - Test: removed obsolete `test_category_reassign.py` (covered by the new CIR model tests).
@@ -127,7 +157,8 @@ hydration work and the removal of the obsolete IAM module.
 - [`docs/02-iso27001-privilege-map.md`](docs/02-iso27001-privilege-map.md): security authorization flow for NAS-based Privilege Maps with ISO 27001 constraints.
 - [`docs/03-jit-break-glass.md`](docs/03-jit-break-glass.md): complete sequence diagram defining the JIT Break-Glass operator request, execution, and expiration.
 
-[Unreleased]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.3.1...HEAD
+[v1.3.1]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.3.0...v1.3.1
 [v1.3.0]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.2.0...v1.3.0
 [v1.2.0]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.1.1...v1.2.0
 [v1.1.1]: https://github.com/alexandervazquez98/ZeroRadius/releases/tag/v1.1.1

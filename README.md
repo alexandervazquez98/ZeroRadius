@@ -2,7 +2,7 @@
 
 ZeroRadius is a modern, full-stack, state-driven management interface for the **FreeRADIUS** AAA Server. Built to abstract the severe complexities, flat-file hell, and UX pitfalls of traditional legacy managers (like daloRADIUS), it offers a React-driven frontend and an asynchronous Python/FastAPI backend designed for enterprise networks and ISPs.
 
-![ZeroRadius Version](https://img.shields.io/badge/version-1.3.0-blue)
+![ZeroRadius Version](https://img.shields.io/badge/version-1.3.1-blue)
 ![Architecture](https://img.shields.io/badge/infrastructure-Docker_Compose-blueviolet)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![React](https://img.shields.io/badge/react-19-61dafb)
@@ -89,7 +89,7 @@ For full deployment options (Linux variant, test stack, TLS certs, secret rotati
 
 ## ⚖️ Versioning
 
-This release is **v1.3.0**. See [`CHANGELOG.md`](CHANGELOG.md) for the full history. The current version is also emitted by `GET /system/version` (backend) and shown in the footer (frontend).
+This release is **v1.3.1**. See [`CHANGELOG.md`](CHANGELOG.md) for the full history. The current version is also emitted by `GET /system/version` (backend) and shown in the footer (frontend).
 
 ## 🤝 For AI Agents and Automation
 
