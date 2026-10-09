@@ -1,0 +1,53 @@
+# Huntgroup Enforcement Policy — radgroupcheck enforcement (closes #92)
+# ISO 27001:2022 A.8.3 — Access control based on NAS identity
+#
+# rlm_sql loads radgroupcheck rows into the request's check items list with
+# `==` semantics — "if the request attribute equals this value, apply the
+# corresponding control attribute". It does NOT return fail on a check
+# mismatch; the leading `-` on `-sql` was therefore never what stood
+# between ZeroRadius and the documented behavior — it was the absence of
+# an explicit enforcement step.
+#
+# This policy runs AFTER nas_based_authorization and AFTER the second
+# -sql pass. It loads the expected NAS-IP-Address from radgroupcheck for
+# the resolved SQL-Group and rejects when the request NAS-IP-Address
+# does not match. Groups with no radgroupcheck rows keep current
+# behavior (the regression guard).
+#
+# Distinguishing reject paths (for operator log triage, design.md §D5):
+#   - nas_based_authorization        -> "Access denied: NAS not authorized for this user"
+#   - nas_huntgroup_enforcement      -> "Huntgroup check failed: NAS-IP-Address does not match group rule"
+#
+# Include in authorize {} section:
+#   authorize {
+#     ...
+#     nas_based_authorization
+#     -sql
+#     nas_huntgroup_enforcement
+#     ...
+#   }
+
+nas_huntgroup_enforcement {
+
+    if (&control:SQL-Group) {
+        update control {
+            Tmp-String-0 := "%{sql:SELECT value FROM radgroupcheck \
+                WHERE groupname = '%{control:SQL-Group}' \
+                AND attribute = 'NAS-IP-Address' \
+                AND op = '==' \
+                LIMIT 1}"
+        }
+
+        # Only enforce if the group actually declared a NAS-IP rule.
+        # Groups with no radgroupcheck rows (Tmp-String-0 == "") keep
+        # current behavior — the regression guard.
+        if ("%{control:Tmp-String-0}" != "") {
+            if ("%{NAS-IP-Address}" != "%{control:Tmp-String-0}") {
+                update reply {
+                    Reply-Message := "Huntgroup check failed: NAS-IP-Address does not match group rule"
+                }
+                reject
+            }
+        }
+    }
+}

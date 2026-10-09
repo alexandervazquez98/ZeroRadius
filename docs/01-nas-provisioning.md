@@ -77,6 +77,22 @@ automatic rejection if the credential is used on any device failing the rule.
 For the full targeting + precedence chain, see
 [`docs/modules/access-policies.md`](modules/access-policies.md#4-precedence--priority--fallback-chain).
 
+> **Enforcement semantics (closes
+> [issue #92](https://github.com/alexandervazquez98/ZeroRadius/issues/92)):**
+> A `radgroupcheck` row whose `NAS-IP-Address` value does not match the
+> incoming request MUST cause `Access-Reject`. The enforcement is
+> performed by the explicit unlang policy at
+> [`radius/policy.d/nas_huntgroup_enforcement`](../radius/policy.d/nas_huntgroup_enforcement),
+> wired into the `authorize` section of
+> [`radius/default.conf`](../radius/default.conf) after the second `-sql`
+> pass. The policy is independent of `rlm_sql` because `rlm_sql` only
+> loads check items with `==` semantics — it does not return `fail` on a
+> mismatch. The distinct `Reply-Message`
+> `"Huntgroup check failed: NAS-IP-Address does not match group rule"`
+> distinguishes the reject path in FreeRADIUS debug logs from the
+> `nas_based_authorization` reject (which uses
+> `"Access denied: NAS not authorized for this user"`).
+
 ## 3. Cross-references
 
 - **API:** [`/nas` and `/nas-categories`](api-reference.md)
