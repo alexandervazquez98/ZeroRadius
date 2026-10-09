@@ -14,6 +14,10 @@ certs/
 *.pem
 *.p12
 *.pfx
+# Generated RADIUS container certs — these are seeded by the entrypoint at
+# runtime from the host bind mount. Never tracked: see issue #88.
+radius/certs/*
+!radius/certs/.gitkeep
 
 # ─── Python ───────────────────────────────────────────────────────────────────
 __pycache__/

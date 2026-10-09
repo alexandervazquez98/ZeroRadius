@@ -169,8 +169,12 @@ COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN sed -i 's/\r$//' /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
-# Fix symlink for certificates (some configs reference /etc/freeradius/certs)
-RUN ln -sf /etc/raddb/certs /etc/freeradius/certs
+# No symlink between /etc/freeradius/certs and /etc/raddb/certs.
+# They are now two separate directories:
+#   * /etc/freeradius/certs is the named volume target (NOT a host bind mount).
+#   * /etc/raddb/certs is a container-internal directory owned by freerad.
+# The entrypoint generates the seed certs in the named volume and applies
+# chown to it — the host working tree is never touched. (Fixes #85.)
 
 RUN chown -R freerad:freerad /etc/raddb
 EXPOSE 1812/udp 1813/udp
