@@ -12,7 +12,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Security
+- **Failing `radgroupcheck` now produces `Access-Reject` instead of `Access-Accept` with stripped reply attrs** ([#92](https://github.com/alexandervazquez98/ZeroRadius/issues/92)). The second SQL pass in the FreeRADIUS `authorize` section was invoked as `-sql` (continue on failure), so a `radgroupcheck` row whose check did not match silently stripped reply attributes and returned `Access-Accept` at the device's default privilege level. Switched the invocation to bare `sql` (line 441 of `radius/default.conf`) so the `rlm_sql` `fail` return aborts `authorize` and produces `Access-Reject` — matching the documented contract in [`docs/01-nas-provisioning.md` §2](docs/01-nas-provisioning.md#2-using-huntgroups-for-regional-segmentation). Locked with four new RADIUS protocol scenarios in `radius-tests/test_radius_huntgroup_enforcement.py` (covering: matching NAS, mismatching NAS, group with no `radgroupcheck` rows, user with no `radusergroup`). **BREAKING**: deployments with `radgroupcheck` rows that previously no-op'd silently will start rejecting on upgrade; audit existing `radgroupcheck` rows before rolling out.
 
 ---
 

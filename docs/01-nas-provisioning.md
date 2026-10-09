@@ -77,6 +77,20 @@ automatic rejection if the credential is used on any device failing the rule.
 For the full targeting + precedence chain, see
 [`docs/modules/access-policies.md`](modules/access-policies.md#4-precedence--priority--fallback-chain).
 
+> **Enforcement semantics (v1.3.5+).** The Mermaid diagram above is now
+> runtime-accurate: when `radgroupcheck` defines check items for the resolved
+> `SQL-Group` and the Access-Request fails any of them (e.g. `NAS-IP-Address`
+> does not match the expected value), the `rlm_sql` module returns `fail`
+> and FreeRADIUS aborts `authorize`, producing `Access-Reject`. The
+> `Reply-Message` for the reject path is the same `Access denied` text used by
+> the existing `nas_based_authorization` policy. Groups that have *no*
+> `radgroupcheck` rows, and users that have no `radusergroup` entry, are
+> unaffected by this enforcement — they continue to be governed by
+> `access_policy_assignments` alone. See
+> [`openspec/changes/huntgroup-enforcement/`](https://github.com/alexandervazquez98/ZeroRadius/issues/92)
+> and GitHub issue **#92** for the security finding and the regression tests
+> that lock the contract.
+
 ## 3. Cross-references
 
 - **API:** [`/nas` and `/nas-categories`](api-reference.md)
