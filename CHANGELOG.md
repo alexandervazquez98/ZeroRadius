@@ -16,6 +16,19 @@ _No unreleased changes yet._
 
 ---
 
+## [v1.3.4] - 2026-10-09
+
+The **Radius Cert Cleanup** release. Closes the 2 issues opened in the post-v1.3.3 audit round and removes an embedded RSA private key from the public repo. Both PATCH per the project's SemVer policy.
+
+### Fixed
+- **Container startup chowned the developer's working tree** ([#85](https://github.com/alexandervazquez98/ZeroRadius/issues/85), [PR #90](https://github.com/alexandervazquez98/ZeroRadius/pull/90), 24cd314). The \`radius\` service bind-mounted \`./radius/certs\` into the container, the \`Dockerfile\` symlinked \`/etc/freeradius/certs\` onto \`/etc/raddb/certs\`, and the entrypoint's \`chown -R freerad:freerad \$CERT_DIR\` walked through the symlink onto the host tree. \`git checkout\` / \`git stash\` then failed with \`Permission denied\` on \`radius/certs/server.key\` after every \`docker compose up\`. Fix: replaced the host bind mount with a top-level named volume \`radius_certs\`, removed the \`/etc/freeradius/certs\` symlink in the \`Dockerfile\`, and made the entrypoint generate a self-signed cert pair in the volume when it's empty (the prior \`./radius/certs\` was load-bearing for the \`eap\` module). The backend service mounts the same volume read-only at \`/app/radius-certs\` so it can still serve the CA cert via \`/nas\`. Chown now operates only on container-internal storage — no host tree is touched. End-to-end verified against a Catalyst 3650 switch (\`Current privilege level is 15\` after \`Access-Accept\`).
+- **RSA private key committed to the public repo** ([#88](https://github.com/alexandervazquez98/ZeroRadius/issues/88), same PR). \`radius/certs/{ca,server}.{pem,key}\` were tracked in git, exposing a valid 1679-byte RSA private key downloadable without authentication. \`git rm --cached\` untracks the three files; \`.gitignore\` now lists \`radius/certs/*\` with a \`!radius/certs/.gitkeep\` exception so the directory survives a fresh clone but the certs can never be re-tracked. \`backend/tests/unit/test_cert_init.py\` rewritten to drive the entrypoint's openssl invocation in \`tmp_path\` instead of asserting the working tree, removing the implicit dependency on tracked artifacts.
+
+### Out of scope (tracked in #89)
+- The key is still in git history since \`c0b1625\` — full history rewrite via \`git filter-repo\` is issue #89 and will land in a separate, coordinated PR with announcement to contributors.
+
+---
+
 ## [v1.3.3] - 2026-10-09
 
 The **Issues Triage Part 2** release. Closes the remaining 2 issues from the post-#73 audit. Both are PATCH per the project's SemVer policy.
