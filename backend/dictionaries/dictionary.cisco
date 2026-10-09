@@ -1,0 +1,35 @@
+# Minimal Cisco vendor dictionary for ZeroRadius.
+#
+# This file ships in-repo so Cisco-AVPair based authorisation (e.g.
+# `shell:priv-lvl=15` for CLI admin) works out of the box.  The
+# `radius/Dockerfile` deliberately strips `dictionary.cisco*` from the
+# upstream image so this file is the *only* Cisco dictionary the
+# radius-server container ever sees; it is bind-mounted into
+# `/etc/raddb/custom_dictionaries/` and the entrypoint regenerates the
+# `$INCLUDE` lines at startup.
+#
+# If you need the full official FreeRADIUS Cisco dictionary, you can
+# replace this file via either:
+#   * the upload endpoint:  POST /api/v1/dictionary/upload
+#   * the drop-in path:    replace this file and `docker compose restart radius`
+#
+# See `docs/modules/dictionaries.md` §3.1 and issue #76 for context.
+#
+# Vendor ID 9 (Cisco) is the IANA-assigned SMI Network Management
+# Private Enterprise Code for Cisco Systems, originally registered
+# in RFC 1700.  It is intentionally NOT listed in
+# `_BUILTIN_VENDOR_IDS_FALLBACK` because the Dockerfile removes
+# `dictionary.cisco*` from the image — the validator's
+# `_get_builtin_vendor_ids()` only rejects vendor IDs that the
+# running radius-server container actually ships with.
+
+VENDOR    Cisco    9
+
+BEGIN-VENDOR    Cisco
+
+# Cisco-AVPair (type 1, string) — the canonical "privilege-level" /
+# "shell:priv-lvl=15" attribute used for Cisco IOS / WLC / ASA
+# administrative authorisation.
+ATTRIBUTE    Cisco-AVPair    1    string
+
+END-VENDOR    Cisco

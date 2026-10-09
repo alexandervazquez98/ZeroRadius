@@ -82,7 +82,12 @@ sdd/
 
 # ─── Testing and Dictionaries ────────────────────────────────────────────────
 frontend/coverage/
-dictionaries/
+# Custom vendor dictionaries are operator-specific. Ignore the directory
+# by default but allow the project-shipped `dictionary.cisco` (and any
+# other file explicitly whitelisted here) to be tracked.
+dictionaries/*
+!dictionaries/.gitkeep
+!dictionaries/dictionary.cisco
 
 # ─── Archives / temp ──────────────────────────────────────────────────────────
 .tmp/

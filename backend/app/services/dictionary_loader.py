@@ -5,7 +5,7 @@ import tempfile
 import logging
 from pathlib import Path
 from pyrad.dictionary import Dictionary, ParseError
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -48,28 +48,161 @@ _V4_KEYWORD_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
-# Built-in FreeRADIUS vendor IDs that are already loaded from /usr/share/freeradius/.
-# Uploading a custom dictionary with any of these IDs would cause a collision.
-# Source: freeradius-server 3.2 dictionary files.
-_BUILTIN_VENDOR_IDS: Dict[int, str] = {
-    9: "Cisco",
-    43: "3Com",
-    # 161 intentionally excluded: the Dockerfile disables dictionary.motorola.wimax,
-    # so Cambium custom dictionaries (vendor 161) are allowed without conflict.
+# Static fallback list of built-in FreeRADIUS vendor IDs.
+#
+# The ``radius/Dockerfile`` removes *all* vendor dictionaries from the
+# upstream image (``rm -f dictionary.cisco* dictionary.mikrotik ...``) and
+# then re-includes only ``dictionary.microsoft``.  So at runtime the
+# radius-server container has Microsoft (311) as the only true built-in
+# vendor; every other vendor ID is "free" and a custom dictionary using
+# that ID will not collide with anything in /usr/share/freeradius/.
+#
+# When the radius-server container is reachable we ignore this fallback
+# and ask the container directly via ``_get_builtin_vendor_ids_from_container``
+# — see issue #76.
+_BUILTIN_VENDOR_IDS_FALLBACK: Dict[int, str] = {
     311: "Microsoft",
-    529: "Ascend",
-    562: "USR",
-    1584: "Cosine",
-    2352: "Foundry",
-    2636: "Juniper",
-    3076: "Altiga/Cisco-VPN",
-    4874: "Extreme",
-    5003: "Colubris",
-    6527: "Alcatel",
-    8164: "Starent",
-    10415: "3GPP",
-    25053: "Ruckus",
 }
+
+# Cache for the dynamic built-in vendor list, populated lazily on first
+# upload / content-write.  ``None`` means "not yet resolved".  An empty
+# dict means "Docker is unavailable, use the static fallback".
+_builtin_vendor_ids_cache: Optional[Dict[int, str]] = None
+
+
+def _get_builtin_vendor_ids_from_container() -> Optional[Dict[int, str]]:
+    """Return vendor IDs that are actually present in the radius-server container.
+
+    Returns ``None`` when the Docker socket is not reachable, the
+    ``radius-server`` container is not running, or the exec fails for
+    any reason.  Callers should fall back to the static list in that
+    case — see ``_get_builtin_vendor_ids``.
+    """
+    try:
+        import docker as docker_sdk  # local import keeps unit tests cheap
+
+        client = docker_sdk.from_env()
+        container = client.containers.get("radius-server")
+
+        # 1. List every file in /usr/share/freeradius
+        exit_code, ls_output = container.exec_run(
+            ["ls", "/usr/share/freeradius/"]
+        )
+        if exit_code != 0:
+            return None
+        filenames = [
+            line.strip()
+            for line in ls_output.decode("utf-8", errors="replace").splitlines()
+            if line.strip().startswith("dictionary.")
+            and line.strip() != "dictionary"
+        ]
+        # Drop standard (non-vendor) RFC / IANA / FreeRADIUS bundles — they
+        # do not declare vendor IDs and would just slow the second exec.
+        filenames = [
+            fn
+            for fn in filenames
+            if fn
+            not in (
+                "dictionary.rfc",
+                "dictionary.iana",
+                "dictionary.freeradius.internal",
+                "dictionary.compat",
+            )
+        ]
+
+        if not filenames:
+            return {}
+
+        # 2. Read every remaining dictionary file in a single exec, with
+        #    markers so we can attribute each VENDOR line back to its
+        #    source file.  One round-trip beats one per file.
+        cmd = ["sh", "-c", " && ".join(
+            f"echo '=== {fn} ==='; cat '/usr/share/freeradius/{fn}'; "
+            f"echo '=== END {fn} ==='"
+            for fn in filenames
+        )]
+        exit_code, raw = container.exec_run(cmd)
+        if exit_code != 0:
+            return None
+
+        out: Dict[int, str] = {}
+        decoded = raw.decode("utf-8", errors="replace")
+        current_file: Optional[str] = None
+        for line in decoded.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("=== ") and stripped.endswith(" ==="):
+                tag = stripped[4:-4]
+                if tag.startswith("END "):
+                    current_file = None
+                else:
+                    current_file = tag
+                continue
+            if current_file is None:
+                continue
+            m = _VENDOR_RE.match(line)
+            if m:
+                try:
+                    out[int(m.group(2))] = m.group(1)
+                except ValueError:
+                    pass
+        return out
+    except Exception as exc:
+        logger.debug("Could not query built-in vendor IDs from container: %s", exc)
+        return None
+
+
+def _get_builtin_vendor_ids() -> Dict[int, str]:
+    """Return the set of vendor IDs that are *actually* loaded by the
+    FreeRADIUS image we ship.
+
+    The implementation is a two-tier lookup:
+
+    1. **Dynamic (preferred)** — query the live ``radius-server`` container
+       for the vendor dictionaries that physically exist in
+       ``/usr/share/freeradius/`` and remember the result for the
+       lifetime of the process.  This handles the fact that the
+       ``radius/Dockerfile`` strips out most vendor dictionaries
+       (Cisco, Mikrotik, Ruckus, …) at image build time, so the
+       upstream "built-in vendor ID" list is wrong for our deployment.
+    2. **Static fallback** — when the Docker socket / container is
+       unavailable (unit tests, local dev without Docker) we use
+       ``_BUILTIN_VENDOR_IDS_FALLBACK``, which mirrors the post-Dockerfile
+       reality (only Microsoft is kept).
+    """
+    global _builtin_vendor_ids_cache
+    if _builtin_vendor_ids_cache is not None:
+        return _builtin_vendor_ids_cache
+
+    from_container = _get_builtin_vendor_ids_from_container()
+    if from_container is not None:
+        _builtin_vendor_ids_cache = from_container
+        logger.info(
+            "Resolved %d built-in vendor IDs from radius-server container: %s",
+            len(from_container),
+            sorted(from_container.keys()),
+        )
+        return _builtin_vendor_ids_cache
+
+    _builtin_vendor_ids_cache = dict(_BUILTIN_VENDOR_IDS_FALLBACK)
+    logger.info(
+        "Using static fallback for built-in vendor IDs (Docker unavailable): %s",
+        sorted(_builtin_vendor_ids_cache.keys()),
+    )
+    return _builtin_vendor_ids_cache
+
+
+def reset_builtin_vendor_ids_cache() -> None:
+    """Clear the cached built-in vendor IDs.
+
+    Test-only helper — exposed so unit tests can reset state between
+    cases.  Production code should never need this: the cache is
+    keyed off the running container, which is restarted by the
+    upload endpoint, and a process restart is the cleanest way to
+    re-query.
+    """
+    global _builtin_vendor_ids_cache
+    _builtin_vendor_ids_cache = None
+
 
 # Regex to match VENDOR lines: VENDOR <name> <id>  OR  VENDOR <id> <name>
 _VENDOR_RE = re.compile(
@@ -444,7 +577,11 @@ def _check_vendor_id_collision(
     """Check if new_content declares a vendor ID already in use.
 
     Compares against:
-    1. Built-in FreeRADIUS vendor IDs (_BUILTIN_VENDOR_IDS).
+    1. Built-in FreeRADIUS vendor IDs that are *actually* loaded by the
+       running radius-server container.  This is resolved at runtime via
+       ``_get_builtin_vendor_ids()`` — see issue #76 — because the
+       ``radius/Dockerfile`` strips most vendor dictionaries from the
+       upstream image, so the historical hard-coded list was wrong.
     2. Vendor IDs declared in every existing custom dictionary file
        (skip_filename is excluded to allow overwrites on edit).
 
@@ -456,12 +593,13 @@ def _check_vendor_id_collision(
 
     collisions: List[str] = []
 
-    # Check against built-ins
+    # Check against built-ins (dynamic lookup, with a static fallback).
+    builtin_vendor_ids = _get_builtin_vendor_ids()
     for vid, vname in new_vendors.items():
-        if vid in _BUILTIN_VENDOR_IDS:
+        if vid in builtin_vendor_ids:
             collisions.append(
                 f"Vendor ID {vid} ({vname}) conflicts with built-in "
-                f"FreeRADIUS vendor '{_BUILTIN_VENDOR_IDS[vid]}'. "
+                f"FreeRADIUS vendor '{builtin_vendor_ids[vid]}'. "
                 f"Use this vendor's official dictionary or rename your vendor."
             )
 
