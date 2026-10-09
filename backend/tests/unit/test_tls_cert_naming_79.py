@@ -378,3 +378,117 @@ class TestGeneratedFilenamesMatchNginxConf:
             f"  Missing from certs/: {missing}\n"
             f"  Produced: {sorted((tmp_path / 'certs').iterdir()) if (tmp_path / 'certs').exists() else '(no certs/ dir)'}"
         )
+
+
+class TestEntrypointCertFilenamesMatchNginxConf:
+    """The frontend ``docker-entrypoint.sh`` is the third source of cert names.
+
+    It generates a self-signed cert as a fallback when the mounted ``certs/``
+    dir is empty (the bare ``docker compose up`` flow). After PR #79 round 1,
+    the entrypoint still wrote ``nginx.crt`` / ``nginx.key`` while nginx.conf
+    now requires ``server.crt`` / ``server.key`` — a default deploy crash-looped
+    on the cert mismatch. This class locks the symmetry: the entrypoint must
+    produce exactly the filenames nginx.conf loads.
+    """
+
+    @pytest.fixture
+    def entrypoint_source(self) -> str:
+        repo_root = Path(__file__).resolve().parents[3]  # backend/tests/unit -> repo root
+        return (repo_root / "frontend" / "docker-entrypoint.sh").read_text()
+
+    @pytest.fixture
+    def nginx_conf_text(self) -> str:
+        repo_root = Path(__file__).resolve().parents[3]
+        return (repo_root / "frontend" / "nginx.conf").read_text()
+
+    def test_entrypoint_writes_server_crt_and_server_key(
+        self, entrypoint_source: str
+    ) -> None:
+        """The entrypoint's openssl block must write server.crt and server.key, not nginx.crt/nginx.key.
+
+        Mirrors the round-1 fix on the generator side. Catches the class of
+        bug round-2 of #79 surfaced: a future change to either name would
+        regress a bare ``docker compose up``.
+        """
+        assert "server.crt" in entrypoint_source, (
+            "docker-entrypoint.sh does not reference server.crt — the "
+            "fallback self-signed cert path is broken."
+        )
+        assert "server.key" in entrypoint_source, (
+            "docker-entrypoint.sh does not reference server.key — the "
+            "fallback self-signed cert path is broken."
+        )
+        # The legacy names must not appear (except possibly in a comment
+        # explicitly mentioning the historical bug; we accept that, but
+        # the openssl/if-block must not write them).
+        openssl_block = re.search(
+            r"openssl\s+req.*?(?=\n\S|\Z)", entrypoint_source, re.DOTALL
+        )
+        if openssl_block:
+            assert "nginx.crt" not in openssl_block.group(0), (
+                "openssl block in docker-entrypoint.sh still writes nginx.crt"
+            )
+            assert "nginx.key" not in openssl_block.group(0), (
+                "openssl block in docker-entrypoint.sh still writes nginx.key"
+            )
+
+    def test_entrypoint_conditional_uses_server_names(
+        self, entrypoint_source: str
+    ) -> None:
+        """The ``[ ! -f ... ]`` guard must check server.crt/server.key, not nginx.crt/nginx.key.
+
+        If the guard checks the legacy names, a host that ships server.crt
+        but lacks nginx.crt (e.g. after running generate_certs.py from
+        PR #79) would be misclassified as 'no certs present' and the
+        entrypoint would overwrite the proper cert with a fresh self-signed
+        one in the wrong filename.
+        """
+        guard = re.search(r"if\s+\[.*?\];\s*then", entrypoint_source, re.DOTALL)
+        assert guard, "docker-entrypoint.sh has no '[ ! -f ... ]; then' guard"
+        guard_text = guard.group(0)
+        assert "server.crt" in guard_text and "server.key" in guard_text, (
+            f"Entrypoint guard does not check server.crt/server.key — found:\n{guard_text}"
+        )
+        assert "nginx.crt" not in guard_text and "nginx.key" not in guard_text, (
+            f"Entrypoint guard still references legacy nginx.crt/nginx.key — found:\n{guard_text}"
+        )
+
+    def test_entrypoint_filenames_match_nginx(
+        self, entrypoint_source: str, nginx_conf_text: str
+    ) -> None:
+        """End-to-end symmetry: every filename the entrypoint can produce must be a filename nginx.conf loads.
+
+        Catches the round-2 regression class: a name added in either
+        source without updating the other.
+        """
+        # Filenames nginx.conf references.
+        nginx_files = set(re.findall(r"/etc/nginx/certs/([\w.]+)", nginx_conf_text))
+        # Filenames the entrypoint can produce (both the openssl output and the guard).
+        entrypoint_files = set(re.findall(
+            r'(?:out|keyout)\s+"?\$CERT_DIR/([\w.]+)"?', entrypoint_source
+        ))
+        # Also pick up filenames from the [ ! -f ... ] guard, which use $CERT_DIR.
+        guard_files = set(re.findall(
+            r'"\$CERT_DIR/([\w.]+)"', entrypoint_source
+        ))
+        entrypoint_files |= guard_files
+
+        assert nginx_files, "nginx.conf has no cert references — sanity check failed"
+        assert entrypoint_files, (
+            "docker-entrypoint.sh has no $CERT_DIR/<filename> references — "
+            "regex may have changed; please update this test"
+        )
+
+        missing_from_entrypoint = nginx_files - entrypoint_files
+        extra_in_entrypoint = entrypoint_files - nginx_files
+
+        assert not missing_from_entrypoint, (
+            f"docker-entrypoint.sh does not produce these cert files that nginx.conf loads:\n"
+            f"  nginx.conf needs: {sorted(nginx_files)}\n"
+            f"  entrypoint produces: {sorted(entrypoint_files)}\n"
+            f"  missing: {sorted(missing_from_entrypoint)}"
+        )
+        assert not extra_in_entrypoint, (
+            f"docker-entrypoint.sh produces cert files that nginx.conf does not load:\n"
+            f"  extra: {sorted(extra_in_entrypoint)}"
+        )
