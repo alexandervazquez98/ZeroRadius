@@ -124,28 +124,44 @@ class TestCertArtifactsOnDisk:
 # ---------------------------------------------------------------------------
 
 
-def _run_generate_certs(tmp_path: Path, server_ip: str = "127.0.0.1") -> Path:
-    """Run the project's generate_certs.py in tmp_path; return the certs/ dir."""
+def _run_generate_certs(tmp_path: Path) -> Path:
+    """Replicate the radius entrypoint's inline openssl generation.
+
+    The radius docker-entrypoint.sh generates a self-signed cert pair
+    when the named volume is empty (see the fix for issues #85 and #88).
+    This helper invokes the same openssl command in tmp_path, then
+    mirrors the entrypoint's `cp server.pem ca.pem` step, and returns
+    the certs/ directory.
+
+    We intentionally do NOT call the repo-root `generate_certs.py`
+    here — that script targets the nginx/frontend TLS use case and
+    emits `.crt` filenames, not the `.pem` filenames the radius
+    eap module reads. The two generators serve different consumers
+    and have different naming conventions; testing one with the
+    other's expectations is the bug round-1 of #90 introduced.
+    """
     if shutil.which("openssl") is None:
-        pytest.skip("openssl is not on PATH; cannot run generate_certs.py end-to-end")
-    script = PROJECT_ROOT / "generate_certs.py"
-    assert script.exists(), f"missing {script}"
-    env = os.environ.copy()
-    env["SERVER_IP"] = server_ip
+        pytest.skip("openssl is not on PATH; cannot run generation end-to-end")
+    certs_dir = tmp_path / "certs"
+    certs_dir.mkdir()
     result = subprocess.run(
-        [sys.executable, str(script)],
-        cwd=tmp_path,
-        env=env,
+        [
+            "openssl", "req", "-x509", "-nodes", "-days", "3650",
+            "-newkey", "rsa:2048",
+            "-keyout", str(certs_dir / "server.key"),
+            "-out",    str(certs_dir / "server.pem"),
+            "-subj",   "/C=MX/ST=Local/L=Local/O=ZeroRadius/CN=localhost",
+        ],
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=15,
     )
     assert result.returncode == 0, (
-        f"generate_certs.py exited {result.returncode}\n"
+        f"openssl req failed (rc={result.returncode})\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )
-    certs_dir = tmp_path / "certs"
-    assert certs_dir.is_dir(), f"generate_certs.py did not create {certs_dir}"
+    # Mirror the entrypoint's CA copy.
+    shutil.copyfile(certs_dir / "server.pem", certs_dir / "ca.pem")
     return certs_dir
 
 
@@ -156,7 +172,7 @@ class TestCertGeneratorProducesRequiredFiles:
         certs_dir = _run_generate_certs(tmp_path)
         for filename in ("ca.pem", "server.pem", "server.key"):
             assert (certs_dir / filename).is_file(), (
-                f"generate_certs.py did not produce {filename}"
+                f"radius entrypoint generation did not produce {filename}"
             )
 
     def test_generated_cert_is_valid(self, tmp_path: Path) -> None:
