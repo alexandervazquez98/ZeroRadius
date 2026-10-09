@@ -1,0 +1,494 @@
+"""Regression tests for Issue #79 — TLS cert naming mismatch.
+
+Frontend certs were historically named ``nginx.crt`` / ``nginx.key`` in
+``frontend/nginx.conf`` while the docker-compose mount and the host-side
+``generate_certs.py`` script produced ``server.crt`` / ``server.key``.
+This module locks the corrected contract so the breakage cannot regress.
+
+These tests are intentionally pure-stdlib + ``pytest``: no backend
+imports, no DB, no fixtures from ``backend/tests/conftest.py``. They
+must parse and run on any host that has the dev requirements installed.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import io
+import os
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import tokenize
+from pathlib import Path
+from types import ModuleType
+
+import pytest
+
+# backend/tests/unit/test_tls_cert_naming_79.py  →  parents[3] = repo root
+REPO_ROOT = Path(__file__).resolve().parents[3]
+NGINX_CONF = REPO_ROOT / "frontend" / "nginx.conf"
+GENERATE_CERTS_PY = REPO_ROOT / "generate_certs.py"
+
+
+# --------------------------------------------------------------------------- #
+# helpers
+# --------------------------------------------------------------------------- #
+
+
+def _ssl_directive(conf_text: str, directive: str) -> str:
+    """Extract the path argument from ``directive /path/to/file;`` in nginx.conf."""
+    match = re.search(
+        rf"^\s*{re.escape(directive)}\s+(\S+)\s*;", conf_text, flags=re.MULTILINE
+    )
+    assert match, f"Could not find directive '{directive}' in nginx.conf"
+    return match.group(1)
+
+
+def _code_only_tokens(source: str) -> str:
+    """Return ``source`` with comments and string literals blanked out.
+
+    Lets us assert that a legacy constant is absent from *executable code*
+    rather than from a docstring that merely references the historical bug.
+    """
+    tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
+    cleaned: list[tokenize.TokenInfo] = []
+    for tok in tokens:
+        if tok.type in (tokenize.COMMENT, tokenize.STRING):
+            cleaned.append(
+                tokenize.TokenInfo(tok.type, " ", tok.start, tok.end, tok.line)
+            )
+        else:
+            cleaned.append(tok)
+    return tokenize.untokenize(cleaned)
+
+
+def _load_generate_certs_module() -> ModuleType:
+    """Import ``generate_certs.py`` as an isolated module without running __main__."""
+    spec = importlib.util.spec_from_file_location(
+        "_generate_certs_under_test_79", GENERATE_CERTS_PY
+    )
+    assert spec is not None and spec.loader is not None, (
+        f"Cannot build import spec for {GENERATE_CERTS_PY}"
+    )
+    module = importlib.util.module_from_spec(spec)
+    # Register so internal imports (if any are added later) resolve cleanly.
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
+
+
+# --------------------------------------------------------------------------- #
+# fixture: load each artifact exactly once per test class
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture(scope="module")
+def nginx_conf_text() -> str:
+    assert NGINX_CONF.is_file(), f"nginx.conf missing at {NGINX_CONF}"
+    return NGINX_CONF.read_text(encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
+def generate_certs_source() -> str:
+    assert GENERATE_CERTS_PY.is_file(), f"generate_certs.py missing at {GENERATE_CERTS_PY}"
+    return GENERATE_CERTS_PY.read_text(encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
+def generate_certs_module() -> ModuleType:
+    return _load_generate_certs_module()
+
+
+# --------------------------------------------------------------------------- #
+# nginx.conf contract
+# --------------------------------------------------------------------------- #
+
+
+class TestNginxConfCertFilenames:
+    """Issue #79, AC #1: nginx.conf must reference server.crt / server.key."""
+
+    def test_ssl_certificate_path_ends_with_server_crt(self, nginx_conf_text: str) -> None:
+        cert_path = _ssl_directive(nginx_conf_text, "ssl_certificate")
+        assert cert_path.endswith("/server.crt"), (
+            f"ssl_certificate should end with /server.crt, got {cert_path!r}"
+        )
+
+    def test_ssl_certificate_key_path_ends_with_server_key(self, nginx_conf_text: str) -> None:
+        key_path = _ssl_directive(nginx_conf_text, "ssl_certificate_key")
+        assert key_path.endswith("/server.key"), (
+            f"ssl_certificate_key should end with /server.key, got {key_path!r}"
+        )
+
+    def test_no_legacy_nginx_crt_anywhere(self, nginx_conf_text: str) -> None:
+        """The old broken filename must be gone from the entire config."""
+        assert "nginx.crt" not in nginx_conf_text, (
+            "Issue #79 not fully fixed: 'nginx.crt' still appears in "
+            "frontend/nginx.conf"
+        )
+
+    def test_no_legacy_nginx_key_anywhere(self, nginx_conf_text: str) -> None:
+        """The old broken filename must be gone from the entire config."""
+        assert "nginx.key" not in nginx_conf_text, (
+            "Issue #79 not fully fixed: 'nginx.key' still appears in "
+            "frontend/nginx.conf"
+        )
+
+    def test_cert_paths_live_under_etc_nginx_certs(self, nginx_conf_text: str) -> None:
+        cert_path = _ssl_directive(nginx_conf_text, "ssl_certificate")
+        key_path = _ssl_directive(nginx_conf_text, "ssl_certificate_key")
+        assert cert_path.startswith("/etc/nginx/certs/"), cert_path
+        assert key_path.startswith("/etc/nginx/certs/"), key_path
+
+    def test_directives_use_a_single_path(self, nginx_conf_text: str) -> None:
+        """Each directive must declare exactly one path (no include-indirection traps)."""
+        for directive in ("ssl_certificate", "ssl_certificate_key"):
+            matches = re.findall(
+                rf"^\s*{re.escape(directive)}\s+\S+\s*;",
+                nginx_conf_text,
+                flags=re.MULTILINE,
+            )
+            assert len(matches) == 1, (
+                f"Expected exactly one '{directive}' directive, found {len(matches)}"
+            )
+
+
+# --------------------------------------------------------------------------- #
+# generate_certs.py contract
+# --------------------------------------------------------------------------- #
+
+
+class TestGenerateCertsScript:
+    """Issue #79, AC #2: generate_certs.py must not hardcode 192.168.1.35."""
+
+    def test_no_hardcoded_legacy_ip(self, generate_certs_source: str) -> None:
+        """The literal ``192.168.1.35`` must NOT be reachable from any code path.
+
+        Comments and docstrings are stripped first — those can mention the
+        historical bug as documentation without being a real hardcode.
+        """
+        code_only = _code_only_tokens(generate_certs_source)
+        assert "192.168.1.35" not in code_only, (
+            "Issue #79 not fully fixed: literal '192.168.1.35' is still "
+            "hardcoded as an executable string in generate_certs.py"
+        )
+
+    def test_env_var_override_is_honored(self, generate_certs_source: str) -> None:
+        """``SERVER_IP`` env var must be read from ``os.environ``."""
+        # Scan the original source (strings intact) for any os.environ reference
+        # that names ``SERVER_IP``. Accept both dict-style and ``.get()`` access.
+        pattern = re.compile(
+            r"os\s*\.\s*environ"
+            r"(?:\s*\.\s*get\s*\(\s*[\"'](\w+)[\"']"
+            r"|\s*\[\s*[\"'](\w+)[\"']\s*\])"
+        )
+        keys = {a or b for a, b in pattern.findall(generate_certs_source)}
+        assert "SERVER_IP" in keys, (
+            f"generate_certs.py must read SERVER_IP from os.environ, "
+            f"got keys: {sorted(keys)}"
+        )
+
+    def test_socket_module_is_imported(self, generate_certs_source: str) -> None:
+        assert re.search(
+            r"^\s*import\s+socket\s*$", generate_certs_source, flags=re.MULTILINE
+        ), "generate_certs.py must import socket for IP detection"
+
+    def test_resolution_helper_is_defined(self, generate_certs_source: str) -> None:
+        assert re.search(
+            r"^def\s+_resolve_server_ip\b", generate_certs_source, flags=re.MULTILINE
+        ), (
+            "generate_certs.py must define _resolve_server_ip() for dynamic IP "
+            "detection"
+        )
+
+    def test_module_level_server_ip_uses_the_helper(
+        self, generate_certs_source: str
+    ) -> None:
+        """The module-level ``SERVER_IP`` must be wired through the resolver."""
+        assert re.search(
+            r"^SERVER_IP\s*=\s*_resolve_server_ip\s*\(\s*\)",
+            generate_certs_source,
+            flags=re.MULTILINE,
+        ), "Module-level SERVER_IP must be assigned via _resolve_server_ip()"
+
+
+# --------------------------------------------------------------------------- #
+# behavioral checks (real helper, not just source text)
+# --------------------------------------------------------------------------- #
+
+
+class TestResolveServerIpBehavior:
+    """Behavior-level checks on the actual helper function."""
+
+    def test_env_override_wins_over_detection(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        generate_certs_module: ModuleType,
+    ) -> None:
+        """When SERVER_IP is set, it must be returned verbatim."""
+        monkeypatch.setenv("SERVER_IP", "10.20.30.40")
+        assert generate_certs_module._resolve_server_ip() == "10.20.30.40"
+
+    def test_env_override_supports_ipv6_string(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        generate_certs_module: ModuleType,
+    ) -> None:
+        """The env var is a string pass-through; no parsing, no coercion."""
+        monkeypatch.setenv("SERVER_IP", "::1")
+        assert generate_certs_module._resolve_server_ip() == "::1"
+
+    def test_blank_env_override_is_ignored(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        generate_certs_module: ModuleType,
+    ) -> None:
+        """An empty/whitespace SERVER_IP must NOT win — fall through to detection."""
+        monkeypatch.setenv("SERVER_IP", "   ")
+        # Fake a successful UDP probe to confirm we did NOT short-circuit on the blank env.
+        captured: dict[str, str] = {}
+
+        class FakeSocket:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def connect(self, target):
+                pass
+
+            def getsockname(self):
+                return ("198.51.100.42", 0)
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(socket, "socket", FakeSocket)
+        result = generate_certs_module._resolve_server_ip()
+        captured["ip"] = result
+        assert captured["ip"] == "198.51.100.42", (
+            "Blank SERVER_IP env must be treated as unset and fall through to detection"
+        )
+
+    def test_detection_returns_probe_ip_when_available(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        generate_certs_module: ModuleType,
+    ) -> None:
+        """With no env override and a working UDP probe, return the detected IP."""
+        monkeypatch.delenv("SERVER_IP", raising=False)
+
+        class FakeSocket:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def connect(self, target):
+                pass
+
+            def getsockname(self):
+                return ("203.0.113.7", 0)
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(socket, "socket", FakeSocket)
+        assert generate_certs_module._resolve_server_ip() == "203.0.113.7"
+
+    def test_detection_falls_back_safely(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        generate_certs_module: ModuleType,
+    ) -> None:
+        """If every detection path fails, fall back to 127.0.0.1 without raising."""
+        monkeypatch.delenv("SERVER_IP", raising=False)
+
+        class FailingSocket:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def connect(self, target):
+                raise OSError("network unreachable")
+
+            def getsockname(self):
+                raise AssertionError("should not be called when connect fails")
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(socket, "socket", FailingSocket)
+        monkeypatch.setattr(
+            socket,
+            "gethostbyname",
+            lambda host: (_ for _ in ()).throw(socket.gaierror("no resolution")),
+        )
+        assert generate_certs_module._resolve_server_ip() == "127.0.0.1"
+
+
+class TestGeneratedFilenamesMatchNginxConf:
+    """Symmetry test: every file referenced by nginx.conf must be produced by generate_certs.py.
+
+    Catches the class of bug that #79 originally exposed in the reverse
+    direction — the script writing a different name than nginx loads. The
+    static tests in `TestNginxConfCertFilenames` only check what nginx.conf
+    *references*; this one runs the actual generator and asserts the files
+    it writes match.
+    """
+
+    def test_generated_filenames_match_nginx(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Run generate_certs.py in a temp dir; every cert path nginx.conf references must exist."""
+        # Skip if openssl is not on PATH (the script shells out to it).
+        if shutil.which("openssl") is None:
+            pytest.skip("openssl is not on PATH; cannot run generate_certs.py end-to-end")
+
+        # Run generate_certs.py from the repo root so relative paths
+        # (`certs/server.crt` etc.) resolve as they do in production.
+        repo_root = Path(__file__).resolve().parents[3]  # backend/tests/unit -> repo root
+        generate_certs_py = repo_root / "generate_certs.py"
+        assert generate_certs_py.exists(), f"missing {generate_certs_py}"
+
+        # Isolated cwd so we don't trample any host-side `certs/` directory.
+        monkeypatch.chdir(tmp_path)
+        # Use 127.0.0.1 to avoid any env-var dependency on the dev host.
+        monkeypatch.setenv("SERVER_IP", "127.0.0.1")
+
+        result = subprocess.run(
+            [sys.executable, str(generate_certs_py)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, (
+            f"generate_certs.py exited {result.returncode}\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+        # Extract every cert filename nginx.conf references.
+        nginx_conf = (repo_root / "frontend" / "nginx.conf").read_text()
+        referenced = re.findall(r"/etc/nginx/certs/([\w.]+)", nginx_conf)
+        assert referenced, "nginx.conf has no /etc/nginx/certs/ references — sanity check failed"
+
+        # Every referenced filename must exist in the freshly-generated certs/ dir.
+        missing = [f for f in referenced if not (tmp_path / "certs" / f).exists()]
+        assert not missing, (
+            f"generate_certs.py does not produce the files nginx.conf loads.\n"
+            f"  Referenced by nginx.conf: {referenced}\n"
+            f"  Missing from certs/: {missing}\n"
+            f"  Produced: {sorted((tmp_path / 'certs').iterdir()) if (tmp_path / 'certs').exists() else '(no certs/ dir)'}"
+        )
+
+
+class TestEntrypointCertFilenamesMatchNginxConf:
+    """The frontend ``docker-entrypoint.sh`` is the third source of cert names.
+
+    It generates a self-signed cert as a fallback when the mounted ``certs/``
+    dir is empty (the bare ``docker compose up`` flow). After PR #79 round 1,
+    the entrypoint still wrote ``nginx.crt`` / ``nginx.key`` while nginx.conf
+    now requires ``server.crt`` / ``server.key`` — a default deploy crash-looped
+    on the cert mismatch. This class locks the symmetry: the entrypoint must
+    produce exactly the filenames nginx.conf loads.
+    """
+
+    @pytest.fixture
+    def entrypoint_source(self) -> str:
+        repo_root = Path(__file__).resolve().parents[3]  # backend/tests/unit -> repo root
+        return (repo_root / "frontend" / "docker-entrypoint.sh").read_text()
+
+    @pytest.fixture
+    def nginx_conf_text(self) -> str:
+        repo_root = Path(__file__).resolve().parents[3]
+        return (repo_root / "frontend" / "nginx.conf").read_text()
+
+    def test_entrypoint_writes_server_crt_and_server_key(
+        self, entrypoint_source: str
+    ) -> None:
+        """The entrypoint's openssl block must write server.crt and server.key, not nginx.crt/nginx.key.
+
+        Mirrors the round-1 fix on the generator side. Catches the class of
+        bug round-2 of #79 surfaced: a future change to either name would
+        regress a bare ``docker compose up``.
+        """
+        assert "server.crt" in entrypoint_source, (
+            "docker-entrypoint.sh does not reference server.crt — the "
+            "fallback self-signed cert path is broken."
+        )
+        assert "server.key" in entrypoint_source, (
+            "docker-entrypoint.sh does not reference server.key — the "
+            "fallback self-signed cert path is broken."
+        )
+        # The legacy names must not appear (except possibly in a comment
+        # explicitly mentioning the historical bug; we accept that, but
+        # the openssl/if-block must not write them).
+        openssl_block = re.search(
+            r"openssl\s+req.*?(?=\n\S|\Z)", entrypoint_source, re.DOTALL
+        )
+        if openssl_block:
+            assert "nginx.crt" not in openssl_block.group(0), (
+                "openssl block in docker-entrypoint.sh still writes nginx.crt"
+            )
+            assert "nginx.key" not in openssl_block.group(0), (
+                "openssl block in docker-entrypoint.sh still writes nginx.key"
+            )
+
+    def test_entrypoint_conditional_uses_server_names(
+        self, entrypoint_source: str
+    ) -> None:
+        """The ``[ ! -f ... ]`` guard must check server.crt/server.key, not nginx.crt/nginx.key.
+
+        If the guard checks the legacy names, a host that ships server.crt
+        but lacks nginx.crt (e.g. after running generate_certs.py from
+        PR #79) would be misclassified as 'no certs present' and the
+        entrypoint would overwrite the proper cert with a fresh self-signed
+        one in the wrong filename.
+        """
+        guard = re.search(r"if\s+\[.*?\];\s*then", entrypoint_source, re.DOTALL)
+        assert guard, "docker-entrypoint.sh has no '[ ! -f ... ]; then' guard"
+        guard_text = guard.group(0)
+        assert "server.crt" in guard_text and "server.key" in guard_text, (
+            f"Entrypoint guard does not check server.crt/server.key — found:\n{guard_text}"
+        )
+        assert "nginx.crt" not in guard_text and "nginx.key" not in guard_text, (
+            f"Entrypoint guard still references legacy nginx.crt/nginx.key — found:\n{guard_text}"
+        )
+
+    def test_entrypoint_filenames_match_nginx(
+        self, entrypoint_source: str, nginx_conf_text: str
+    ) -> None:
+        """End-to-end symmetry: every filename the entrypoint can produce must be a filename nginx.conf loads.
+
+        Catches the round-2 regression class: a name added in either
+        source without updating the other.
+        """
+        # Filenames nginx.conf references.
+        nginx_files = set(re.findall(r"/etc/nginx/certs/([\w.]+)", nginx_conf_text))
+        # Filenames the entrypoint can produce (both the openssl output and the guard).
+        entrypoint_files = set(re.findall(
+            r'(?:out|keyout)\s+"?\$CERT_DIR/([\w.]+)"?', entrypoint_source
+        ))
+        # Also pick up filenames from the [ ! -f ... ] guard, which use $CERT_DIR.
+        guard_files = set(re.findall(
+            r'"\$CERT_DIR/([\w.]+)"', entrypoint_source
+        ))
+        entrypoint_files |= guard_files
+
+        assert nginx_files, "nginx.conf has no cert references — sanity check failed"
+        assert entrypoint_files, (
+            "docker-entrypoint.sh has no $CERT_DIR/<filename> references — "
+            "regex may have changed; please update this test"
+        )
+
+        missing_from_entrypoint = nginx_files - entrypoint_files
+        extra_in_entrypoint = entrypoint_files - nginx_files
+
+        assert not missing_from_entrypoint, (
+            f"docker-entrypoint.sh does not produce these cert files that nginx.conf loads:\n"
+            f"  nginx.conf needs: {sorted(nginx_files)}\n"
+            f"  entrypoint produces: {sorted(entrypoint_files)}\n"
+            f"  missing: {sorted(missing_from_entrypoint)}"
+        )
+        assert not extra_in_entrypoint, (
+            f"docker-entrypoint.sh produces cert files that nginx.conf does not load:\n"
+            f"  extra: {sorted(extra_in_entrypoint)}"
+        )

@@ -100,21 +100,42 @@ docker compose down -v              # destroys db_data too
 |---|---|---|
 | `./radius/certs/` → `/etc/freeradius/certs` | in-repo (regenerated on `docker compose up`) | Self-signed CA + server cert + DH params (FreeRADIUS EAP) |
 | `./radius/certs/` → `/app/radius-certs` | same | Backend can serve the CA cert for download (`/nas` shows the CA URL) |
-| `./certs/` → `/etc/nginx/certs` | user-supplied | TLS cert + key for the frontend Nginx |
+| `./certs/` → `/etc/nginx/certs` | user-supplied (see below) | TLS cert + key for the frontend Nginx (loaded as `server.crt` / `server.key` by `frontend/nginx.conf`) |
 
-Frontend certs are **not** generated automatically. To enable HTTPS on
-`https://localhost` and `https://<your-host>`:
+Frontend certs are **generated on the host** (not inside the container)
+into `./certs/server.crt` + `./certs/server.key`, which are then mounted into
+the frontend container. Run the helper before the first `docker compose up`:
+
+```bash
+# Self-signed for dev — auto-detects the host IP for the SAN:
+python generate_certs.py
+```
+
+Or generate them by hand:
 
 ```bash
 mkdir -p certs
-# Self-signed for dev:
 openssl req -x509 -newkey rsa:4096 -nodes -sha256 \
     -keyout certs/server.key -out certs/server.crt \
     -days 365 -subj "/CN=localhost" \
     -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 ```
 
-For production, replace with Let's Encrypt or your CA's certs.
+The filenames are part of the contract: `frontend/nginx.conf` loads
+`server.crt` / `server.key`, so the files in `./certs/` **must** be named
+that way. Do not rename them to `nginx.crt` / `nginx.key` — that is the
+old, broken naming (Issue #79).
+
+To pin a specific SAN IP (e.g. for CI or multi-NIC hosts), set `SERVER_IP`
+in the environment before running `generate_certs.py`:
+
+```bash
+SERVER_IP=10.0.0.5 python generate_certs.py
+```
+
+If the host IP cannot be detected, `generate_certs.py` falls back to
+`127.0.0.1` and prints a warning. For production, replace the self-signed
+pair with Let's Encrypt or your CA's certs.
 
 ## 5. Backend admin bootstrap
 
