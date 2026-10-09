@@ -16,6 +16,19 @@ _No unreleased changes yet._
 
 ---
 
+## [v1.3.3] - 2026-10-09
+
+The **Issues Triage Part 2** release. Closes the remaining 2 issues from the post-#73 audit. Both are PATCH per the project's SemVer policy.
+
+### Fixed
+- **\`/dictionary/upload\` could not install the Cisco dictionary** ([#76](https://github.com/alexandervazquez98/ZeroRadius/issues/76), [PR #86](https://github.com/alexandervazquez98/ZeroRadius/pull/86), 739f340). The vendor-ID collision check in \`dictionary_loader.py\` used a hard-coded list of ~15 "built-in" vendor IDs that approximated the upstream FreeRADIUS image. Because \`radius/Dockerfile\` deliberately removes most vendor dictionaries and keeps only Microsoft, the list was wrong: \`POST /dictionary/upload\` rejected \`dictionary.cisco\` with vendor 9 even though Cisco was not present in the running container. Two contradictory rejection messages pointed at a "built-in FreeRADIUS vendor" that didn't exist in the image. Replaced the static list with a dynamic lookup that asks the \`radius-server\` container which vendor dictionaries are actually loaded (cached for the process lifetime, with an accurate static fallback of just Microsoft 311 for unit-test mode). Also ships \`backend/dictionaries/dictionary.cisco\` (minimal: \`VENDOR Cisco 9\`, \`Cisco-AVPair 1 string\`) so \`shell:priv-lvl=15\` authorization works out of the box. The \`dictionaries/*\` gitignore rule was refined to whitelist the project-shipped file while keeping operator-specific custom dicts ignored.
+- **Frontend TLS cert filenames diverged across three sources** ([#79](https://github.com/alexandervazquez98/ZeroRadius/issues/79), [PR #87](https://github.com/alexandervazquez98/ZeroRadius/pull/87), c794aa1). The names referenced by \`frontend/nginx.conf\` (\`nginx.crt\`/\`nginx.key\`) did not match the names produced by \`generate_certs.py\` (\`server.pem\`) and the entrypoint fallback (\`nginx.crt\`/\`nginx.key\`). Aligned all three sources to \`server.crt\`/\`server.key\`. Also fixed the hardcoded \`SERVER_IP = "192.168.1.35"\` in \`generate_certs.py\` with a 4-tier resolver (\`SERVER_IP\` env var → UDP-socket probe → \`gethostbyname\` → 127.0.0.1 fallback) so the cert SAN matches the actual host. Locked the full \`nginx.conf\` ↔ \`generate_certs.py\` ↔ \`docker-entrypoint.sh\` ↔ \`tests\` symmetry matrix with 20 regression tests (3 of which are run against unmodified \`main\` and fail on the unfixed code).
+
+### Notes
+- The two PRs that were "Queued for v1.3.3" in v1.3.2's release notes are closed with this release.
+
+---
+
 ## [v1.3.2] - 2026-10-08
 
 The **Issues Triage** release. 4 fixes from the post-`#73` audit:
