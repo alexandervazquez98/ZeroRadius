@@ -163,6 +163,8 @@ RUN sed -i 's/#\s*read_groups = yes/read_groups = yes/g' /etc/raddb/mods-availab
 
 # Copy custom policies (nas_based_authorization for ISO 27001 A.8.3)
 COPY policy.d/nas_based_authorization /etc/raddb/policy.d/nas_based_authorization
+# Huntgroup enforcement for radgroupcheck rows (issue #92); invoked from default.conf
+COPY policy.d/nas_huntgroup_enforcement /etc/raddb/policy.d/nas_huntgroup_enforcement
 
 # Copy entrypoint script
 COPY docker-entrypoint.sh /docker-entrypoint.sh
