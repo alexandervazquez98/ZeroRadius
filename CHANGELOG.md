@@ -12,7 +12,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Security
+- **Enforce `radgroupcheck` NAS-IP-Address rules** ([#92](https://github.com/alexandervazquez98/ZeroRadius/issues/92)).
+  `radgroupcheck` rows whose `NAS-IP-Address` value does not match the
+  incoming request now cause `Access-Reject` instead of
+  `Access-Accept` with stripped reply attributes. The enforcement is
+  performed by a new explicit unlang policy at
+  `radius/policy.d/nas_huntgroup_enforcement`, wired into the
+  `authorize` section of `radius/default.conf` after the second `-sql`
+  pass and after `nas_based_authorization`. The first `-sql` pass
+  (line 435) is byte-identical to its pre-change state — only
+  invocation ordering around the second pass is affected. RADIUS
+  protocol tests (`radius-tests/test_radius_huntgroup_enforcement.py`,
+  marked `@pytest.mark.radius`) lock the four spec scenarios. **BREAKING
+  CHANGE**: any production deployment with `radgroupcheck` rows whose
+  check previously evaluated silently will start rejecting those
+  authentications. Operators MUST audit their `radgroupcheck` rows
+  before upgrading and confirm that each row represents real
+  enforcement (not an informational/debug rule). The two reject paths
+  are distinguished by `Reply-Message`:
+  - `nas_based_authorization` → `Access denied: NAS not authorized for this user`
+  - `nas_huntgroup_enforcement` → `Huntgroup check failed: NAS-IP-Address does not match group rule`
 
 ---
 
