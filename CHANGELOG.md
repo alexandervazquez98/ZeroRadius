@@ -13,6 +13,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Security
+- **Sign replies to signed requests with `Message-Authenticator`** (RFC 3579 §3.2).
+  When an `Access-Request` carries `Message-Authenticator`, the
+  `Access-Accept` and `Access-Reject` now carry a valid one too
+  (`radius/default.conf`, `post-auth` and `Post-Auth-Type REJECT`).
+  FreeRADIUS 3.2.3 only did this for EAP. MikroTik RouterOS (v6 and v7)
+  drops unsigned replies to signed requests (`missing message auth,
+  dropping`), so RADIUS login on MikroTik timed out even on
+  `Access-Accept`. This is also the server-side Blast-RADIUS mitigation
+  for NAS that sign their requests. NAS that do not sign (e.g. Cisco IOS
+  PAP) receive unchanged replies. Locked by
+  `radius-tests/test_radius_message_authenticator.py`.
 - **Enforce `radgroupcheck` NAS-IP-Address rules** ([#92](https://github.com/alexandervazquez98/ZeroRadius/issues/92)).
   `radgroupcheck` rows whose `NAS-IP-Address` value does not match the
   incoming request now cause `Access-Reject` instead of
