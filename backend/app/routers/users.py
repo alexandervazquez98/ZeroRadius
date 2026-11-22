@@ -11,6 +11,7 @@ from app.schemas.schemas import (
     RadReplyCreate,
     RadReplyOut,
     RadCheckUpdate,
+    is_password_attribute,
 )
 from app.services.audit import log_audit
 from app.core.security import get_current_active_user
@@ -18,6 +19,15 @@ from app.core.rbac import require_roles, Role
 from app.core.limiter import limiter
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+REDACTED = "***"
+
+
+def _audit_safe(data: dict, attribute: str) -> dict:
+    """Copy of an audit payload with the password value redacted (#101)."""
+    if "value" in data and is_password_attribute(attribute):
+        return {**data, "value": REDACTED}
+    return data
 
 
 @router.get("", response_model=list[RadCheckOut])
@@ -46,7 +56,7 @@ async def create_user_check(
     current_user: AdminUser = Depends(get_current_active_user),
 ):
     # Hash password if using MD5-Password
-    if user.attribute == "MD5-Password":
+    if user.attribute.casefold() == "md5-password":
         user.value = hashlib.md5(user.value.encode()).hexdigest()
 
     new_user = RadCheck(**user.model_dump())
@@ -60,7 +70,7 @@ async def create_user_check(
         "CREATE",
         "radcheck",
         user.username,
-        new_value=user.model_dump(),
+        new_value=_audit_safe(user.model_dump(), user.attribute),
     )
     return new_user
 
@@ -86,14 +96,31 @@ async def update_user_check(
     }
 
     update_data = user_update.model_dump(exclude_unset=True)
+    if update_data.get("value") is None:
+        update_data.pop("value", None)
 
-    # Check if we need to hash the value
+    # Password values are write-only (#101) and a stored hash cannot be
+    # converted to another format (#95): omitting "value" keeps the current
+    # password, and changing the attribute of a password row (or turning a
+    # row into one) requires a new value, so a stored credential never
+    # becomes a readable value of another attribute.
     target_attribute = update_data.get("attribute", user.attribute)
-    if target_attribute == "MD5-Password" and "value" in update_data:
-        # Need to verify if the value is already hashed?
-        # Assuming input is always plaintext for updates for simplicity,
-        # or we could try to detect length. Ideally frontend sends metadata.
-        # For now, always hash if input is provided.
+    involves_password = is_password_attribute(target_attribute) or is_password_attribute(
+        user.attribute
+    )
+    if involves_password:
+        if is_password_attribute(target_attribute) and update_data.get("value") == "":
+            raise HTTPException(status_code=422, detail="Password cannot be empty")
+        if (
+            target_attribute.casefold() != user.attribute.casefold()
+            and "value" not in update_data
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Changing the password type requires a new password",
+            )
+    if target_attribute.casefold() == "md5-password" and "value" in update_data:
+        # Input is always the plaintext password; hash it like create does.
         update_data["value"] = hashlib.md5(update_data["value"].encode()).hexdigest()
 
     for key, value in update_data.items():
@@ -108,8 +135,8 @@ async def update_user_check(
         "UPDATE",
         "radcheck",
         user.username,
-        old_value=old_data,
-        new_value=update_data,
+        old_value=_audit_safe(old_data, old_data["attribute"]),
+        new_value=_audit_safe(update_data, target_attribute),
     )
     return user
 
@@ -141,7 +168,7 @@ async def delete_user_check(
         "DELETE",
         "radcheck",
         user.username,
-        old_value=old_data,
+        old_value=_audit_safe(old_data, old_data["attribute"]),
     )
     return {"ok": True}
 

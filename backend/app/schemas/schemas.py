@@ -86,9 +86,49 @@ class RadCheckUpdate(BaseModel):
     value: Optional[str] = None
 
 
-class RadCheckOut(RadCheckBase):
+# radcheck attributes whose value is a credential (cleartext or hash).
+# Their value is write-only: the API never returns it (issue #101).
+PASSWORD_ATTRIBUTES = frozenset(
+    {
+        "Cleartext-Password",
+        "User-Password",
+        "MD5-Password",
+        "SMD5-Password",
+        "SHA-Password",
+        "SSHA-Password",
+        "SHA2-Password",
+        "SSHA2-256-Password",
+        "SSHA2-512-Password",
+        "Crypt-Password",
+        "NT-Password",
+        "LM-Password",
+        "Password-With-Header",
+    }
+)
+_PASSWORD_ATTRIBUTES_FOLDED = frozenset(a.casefold() for a in PASSWORD_ATTRIBUTES)
+
+
+def is_password_attribute(attribute: Optional[str]) -> bool:
+    """FreeRADIUS matches attribute names case-insensitively, so must we."""
+    return bool(attribute) and attribute.casefold() in _PASSWORD_ATTRIBUTES_FOLDED
+
+
+class RadCheckOut(BaseModel):
     id: int
+    username: str
+    attribute: str
+    op: str = ":="
+    # None for password attributes; see has_password.
+    value: Optional[str] = None
+    has_password: bool = False
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="after")
+    def _hide_credentials(self):
+        if is_password_attribute(self.attribute):
+            self.has_password = True
+            self.value = None
+        return self
 
 
 class RadReplyBase(BaseModel):

@@ -4,6 +4,21 @@ import api from '../api';
 import { Plus, Trash2, Edit, X, Clock, ShieldAlert } from 'lucide-react';
 import UserWizard from '../components/UserWizard';
 import { useToast } from '../context/ToastContext';
+import { PASSWORD_TYPES } from '../constants/passwordTypes';
+
+// Password values are write-only (#101): the API returns has_password instead,
+// and the edit form sends a new password only when the operator types one (#95).
+const startEditing = (user) => ({ ...user, newPassword: '', originalAttribute: user.attribute });
+
+const buildUpdatePayload = (editing) => {
+    const payload = { username: editing.username, attribute: editing.attribute, op: editing.op };
+    if (!editing.has_password) {
+        payload.value = editing.value;
+    } else if (editing.newPassword) {
+        payload.value = editing.newPassword;
+    }
+    return payload;
+};
 
 const UsersPage = () => {
     const queryClient = useQueryClient();
@@ -30,7 +45,7 @@ const UsersPage = () => {
     });
 
     const updateMutation = useMutation({
-        mutationFn: (user) => api.put(`/users/check/${user.id}`, user),
+        mutationFn: (user) => api.put(`/users/check/${user.id}`, buildUpdatePayload(user)),
         onSuccess: () => {
             queryClient.invalidateQueries(['users']);
             setEditingUser(null);
@@ -104,7 +119,9 @@ const UsersPage = () => {
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{user.username}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.attribute}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 border rounded px-2 bg-gray-50">{user.op}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">{user.value}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                                    {user.has_password ? <span className="italic font-sans">(password set)</span> : user.value}
+                                </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex gap-2">
                                     <button
                                         onClick={() => setJitUser(user)}
@@ -114,7 +131,7 @@ const UsersPage = () => {
                                         <Clock size={18} />
                                     </button>
                                     <button
-                                        onClick={() => setEditingUser(user)}
+                                        onClick={() => setEditingUser(startEditing(user))}
                                         className="text-blue-600 hover:text-blue-900"
                                     >
                                         <Edit size={18} />
@@ -205,35 +222,75 @@ const UsersPage = () => {
                         </div>
                         <form onSubmit={handleUpdate} className="p-4 space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Username</label>
+                                <label htmlFor="edit-username" className="block text-sm font-medium text-gray-700">Username</label>
                                 <input
+                                    id="edit-username"
                                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2"
                                     value={editingUser.username}
                                     onChange={e => setEditingUser({ ...editingUser, username: e.target.value })}
                                 />
                             </div>
+                            {editingUser.has_password ? (
+                                <>
+                                    <div>
+                                        <label htmlFor="edit-password-type" className="block text-sm font-medium text-gray-700">Password type</label>
+                                        <select
+                                            id="edit-password-type"
+                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 bg-white"
+                                            value={editingUser.attribute}
+                                            onChange={e => setEditingUser({ ...editingUser, attribute: e.target.value })}
+                                        >
+                                            {/* Keep a stored type that is not offered for new users selectable */}
+                                            {[...new Set([...PASSWORD_TYPES, editingUser.originalAttribute])].map(type => (
+                                                <option key={type} value={type}>{type}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label htmlFor="edit-new-password" className="block text-sm font-medium text-gray-700">New password</label>
+                                        <input
+                                            id="edit-new-password"
+                                            type="password"
+                                            autoComplete="new-password"
+                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2"
+                                            value={editingUser.newPassword}
+                                            required={editingUser.attribute !== editingUser.originalAttribute}
+                                            placeholder={editingUser.attribute !== editingUser.originalAttribute
+                                                ? 'Required when changing the password type'
+                                                : 'Leave blank to keep current password'}
+                                            onChange={e => setEditingUser({ ...editingUser, newPassword: e.target.value })}
+                                        />
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div>
+                                        <label htmlFor="edit-attribute" className="block text-sm font-medium text-gray-700">Attribute</label>
+                                        <input
+                                            id="edit-attribute"
+                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2"
+                                            value={editingUser.attribute}
+                                            onChange={e => setEditingUser({ ...editingUser, attribute: e.target.value })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label htmlFor="edit-value" className="block text-sm font-medium text-gray-700">Value</label>
+                                        <input
+                                            id="edit-value"
+                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2"
+                                            value={editingUser.value ?? ''}
+                                            onChange={e => setEditingUser({ ...editingUser, value: e.target.value })}
+                                        />
+                                    </div>
+                                </>
+                            )}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Attribute</label>
+                                <label htmlFor="edit-op" className="block text-sm font-medium text-gray-700">Op</label>
                                 <input
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2"
-                                    value={editingUser.attribute}
-                                    onChange={e => setEditingUser({ ...editingUser, attribute: e.target.value })}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">Op</label>
-                                <input
+                                    id="edit-op"
                                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2"
                                     value={editingUser.op}
                                     onChange={e => setEditingUser({ ...editingUser, op: e.target.value })}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">Value</label>
-                                <input
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2"
-                                    value={editingUser.value}
-                                    onChange={e => setEditingUser({ ...editingUser, value: e.target.value })}
                                 />
                             </div>
                             <div className="flex justify-end gap-2 mt-4">
