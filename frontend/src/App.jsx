@@ -7,6 +7,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import ChangePassword from './pages/ChangePassword';
+import SetupPassword from './pages/SetupPassword';
 import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
 import NAS from './pages/NAS';
@@ -46,6 +47,7 @@ function App() {
                 <Routes>
                     <Route path="/login" element={<ErrorBoundary><Login /></ErrorBoundary>} />
                     <Route path="/change-password" element={<ErrorBoundary><ChangePassword /></ErrorBoundary>} />
+                    <Route path="/setup-password/:token" element={<ErrorBoundary><SetupPassword /></ErrorBoundary>} />
 
                     <Route path="/" element={
                         <ProtectedRoute>

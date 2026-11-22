@@ -256,3 +256,63 @@ describe('UsersPage — reset defaults to a settable type', () => {
     expect(typeSelect).toHaveValue('NT-Password')
   })
 })
+
+describe('UsersPage — self-service setup link (#101 C)', () => {
+  it('generates a one-time URL from the reset modal', async () => {
+    const posts = []
+    server.use(
+      http.post('/api/users/check/:id/setup-link', async ({ request, params }) => {
+        posts.push({ id: params.id, body: await request.json() })
+        return HttpResponse.json({
+          id: Number(params.id), username: 'mgarcia', attribute: 'NT-Password',
+          token: 'TOKEN-abc_123', expires_at: '2030-01-04T10:00:00',
+        })
+      })
+    )
+    renderUsers('superadmin')
+    let modal = await openReset('MD5-Password')
+    fireEvent.change(within(modal).getByLabelText('Password type'), { target: { value: 'NT-Password' } })
+    fireEvent.click(within(modal).getByRole('button', { name: 'Generate setup link' }))
+
+    await waitFor(() => expect(posts).toHaveLength(1))
+    expect(posts[0]).toEqual({ id: '2', body: { password_type: 'NT-Password' } })
+    const url = `${window.location.origin}/setup-password/TOKEN-abc_123`
+    expect(await within(modal).findByText(url)).toBeInTheDocument()
+    expect(within(modal).getByText(/current password is blocked until the link is used/i)).toBeInTheDocument()
+    expect(within(modal).getByText(/will not be shown again/)).toBeInTheDocument()
+
+    fireEvent.click(within(modal).getByRole('button', { name: 'Done' }))
+    expect(screen.queryByText(url)).toBeNull()
+  })
+
+  it('shows whether each setup link is still valid', async () => {
+    server.use(
+      http.get('/api/users', () =>
+        HttpResponse.json([
+          { id: 1, username: 'pend', attribute: 'NT-Password', op: ':=', value: null, has_password: true,
+            setup_link: { status: 'pending', created_by: 'admin', created_at: '2030-01-01T10:00:00', expires_at: '2030-01-04T10:00:00', used_at: null } },
+          { id: 2, username: 'exp', attribute: 'NT-Password', op: ':=', value: null, has_password: true,
+            setup_link: { status: 'expired', created_by: 'claude', created_at: '2020-01-01T10:00:00', expires_at: '2020-01-04T10:00:00', used_at: null } },
+          { id: 3, username: 'done', attribute: 'NT-Password', op: ':=', value: null, has_password: true,
+            setup_link: { status: 'used', created_by: 'admin', created_at: '2030-01-01T10:00:00', expires_at: '2030-01-04T10:00:00', used_at: '2030-01-02T09:00:00' } },
+          { id: 4, username: 'plain', attribute: 'NT-Password', op: ':=', value: null, has_password: true, setup_link: null },
+        ])
+      )
+    )
+    renderUsers('superadmin')
+    const pending = (await screen.findByText('pend')).closest('tr')
+    expect(within(pending).getByText(/Setup link pending/)).toBeInTheDocument()
+    expect(within(pending).getByText(/by admin/)).toBeInTheDocument()
+    expect(within(pending).getByText(/valid until/)).toBeInTheDocument()
+
+    const expired = screen.getByText('exp').closest('tr')
+    expect(within(expired).getByText(/Setup link expired/)).toBeInTheDocument()
+    expect(within(expired).getByText(/by claude/)).toBeInTheDocument()
+
+    const used = screen.getByText('done').closest('tr')
+    expect(within(used).getByText(/Set via link/)).toBeInTheDocument()
+
+    const plain = screen.getByText('plain').closest('tr')
+    expect(within(plain).queryByText(/Setup link/)).toBeNull()
+  })
+})
