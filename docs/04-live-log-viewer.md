@@ -15,6 +15,28 @@ The log viewer is accessible from the **header toolbar** (next to the NTP
 indicator) for users with `admin` or `superadmin` roles. Click the **Logs**
 button to open the viewer drawer.
 
+### Requires RADIUS debug mode
+
+The viewer parses FreeRADIUS debug (`-X`) output. Production runs
+FreeRADIUS **without** `-X` by default, because debug output includes the
+decrypted `User-Password` of every PAP request (issue #102). When
+`radius-server` runs without debug, the stream replies with an error and
+closes with code `4006`; the viewer shows the message and does not retry.
+
+To use the viewer while troubleshooting:
+
+```bash
+# .env
+RADIUS_DEBUG=yes
+docker compose up -d radius     # recreates radius-server with -X
+# ... troubleshoot ...
+# set RADIUS_DEBUG=no (or remove it) and run the same command again
+```
+
+While debug mode is on, cleartext PAP passwords reach `docker logs
+radius-server`, any log shipper reading it, and every admin who opens the
+viewer. Turn it off as soon as you are done.
+
 ## Architecture
 
 ```mermaid
@@ -23,7 +45,7 @@ sequenceDiagram
     participant NG as Nginx (Reverse Proxy)
     participant BE as Backend (FastAPI)
     participant DK as Docker Daemon
-    participant FR as radius-server (FreeRADIUS -X)
+    participant FR as radius-server (FreeRADIUS -X, RADIUS_DEBUG=yes)
 
     FE->>NG: WSS /api/system/logs/stream
     NG->>BE: WS /system/logs/stream
@@ -105,6 +127,9 @@ Each event arrives as a JSON object:
 - Auto-reconnect with exponential backoff on connection loss.
 - Only the `radius-server` container logs are accessible — no other
   containers are exposed.
+- Only available while `radius-server` runs with `RADIUS_DEBUG=yes`
+  (close code `4006` otherwise). Debug output contains decrypted PAP
+  passwords; see [Requires RADIUS debug mode](#requires-radius-debug-mode).
 
 ### Implications of `/var/run/docker.sock` mount
 

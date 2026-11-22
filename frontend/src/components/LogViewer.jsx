@@ -104,6 +104,11 @@ function LogViewer({ isOpen, onClose }) {
                 return;
             }
 
+            // RADIUS debug mode disabled: keep the server's message, retrying cannot help
+            if (e.code === 4006) {
+                return;
+            }
+
             // Auto-reconnect with exponential backoff
             if (isOpen) {
                 reconnectTimer.current = setTimeout(() => {

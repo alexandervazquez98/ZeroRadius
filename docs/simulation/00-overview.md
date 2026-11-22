@@ -42,7 +42,7 @@ If a recipe deviates, the deviation is explicitly called out at the top.
 | `docker exec radius-server radtest …` | Same, from inside the container | always |
 | `curl + /...` | Provision users, NAS, categories, policies, circuits | always |
 | `mysql -h db -u root …` | Inspect FreeRADIUS tables directly | only with DB shell |
-| `docker logs radius-server` | FreeRADIUS debug (`-X`) output | always |
+| `docker logs radius-server` | FreeRADIUS debug (`-X`) output | only with `RADIUS_DEBUG=yes` (logs PAP passwords) |
 | `/access-policies/preview` | Deterministic preview **before** sending RADIUS | always |
 | `/circuits/resolve` | CIR resolution preview | always |
 | `/audit/access` | Verify the post-auth trail landed | always |

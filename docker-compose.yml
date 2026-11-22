@@ -26,7 +26,6 @@ services:
     build:
       context: ./radius
     container_name: radius-server
-    command: [ "freeradius", "-X" ]
     ports:
       - "1812:1812/udp"
       - "1813:1813/udp"
@@ -39,7 +38,7 @@ services:
       DB_USER: ${MYSQL_USER}
       DB_PASS: ${MYSQL_PASSWORD}
       DB_NAME: ${MYSQL_DATABASE}
-      # Debug mode enabling
+      # yes = run freeradius -X (logs decrypted PAP passwords; troubleshooting only)
       RADIUS_DEBUG: "${RADIUS_DEBUG:-no}"
       TZ: UTC
     volumes:

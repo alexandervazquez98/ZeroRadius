@@ -161,5 +161,13 @@ if [ -d "/etc/raddb/custom_dictionaries" ]; then
     fi
 fi
 
-# Execute the passed command (freeradius -X)
+# --- Start FreeRADIUS ---
+# Production runs without -X: debug mode prints every decoded request,
+# including decrypted PAP passwords, to the container log (issue #102).
+# RADIUS_DEBUG=yes switches the default freeradius command to -X for
+# troubleshooting; any other command is executed unchanged.
+if [ "$1" = "freeradius" ] && [ "${RADIUS_DEBUG:-no}" = "yes" ]; then
+    echo "WARNING: RADIUS_DEBUG=yes - FreeRADIUS runs with -X and logs decrypted passwords. Do not use in production." >&2
+    set -- freeradius -X
+fi
 exec "$@"

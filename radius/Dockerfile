@@ -182,4 +182,6 @@ RUN chown -R freerad:freerad /etc/raddb
 EXPOSE 1812/udp 1813/udp
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
-CMD ["freeradius", "-X"]
+# Foreground, log to stdout, no debug output (issue #102).
+# Set RADIUS_DEBUG=yes to run with -X instead (see docker-entrypoint.sh).
+CMD ["freeradius", "-f", "-l", "stdout"]

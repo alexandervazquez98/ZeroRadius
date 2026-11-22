@@ -35,7 +35,6 @@ services:
     build:
       context: ./radius
     container_name: zeroradius-test-radius
-    command: ["freeradius", "-X"]
     environment:
       DB_HOST: test-db
       DB_PORT: 3306
