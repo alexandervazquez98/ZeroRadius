@@ -350,3 +350,20 @@ def to_out_schema(record: AccessPolicyAssignment) -> AccessPolicyAssignmentOut:
         target_start_ip=record.target_start_ip,
         target_end_ip=record.target_end_ip,
     )
+
+
+async def ensure_single_active_in_category(
+    db: AsyncSession, username: str, nas_category_id: int, exclude_id: Optional[int] = None
+) -> None:
+    """409 if ``username`` already has another active assignment in the category."""
+    stmt = select(AccessPolicyAssignment.id).where(
+        AccessPolicyAssignment.username == username,
+        AccessPolicyAssignment.nas_category_id == nas_category_id,
+        AccessPolicyAssignment.is_active == 1,
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(AccessPolicyAssignment.id != exclude_id)
+    if (await db.execute(stmt)).first() is not None:
+        raise HTTPException(
+            status_code=409, detail="User already has an active assignment in this category"
+        )

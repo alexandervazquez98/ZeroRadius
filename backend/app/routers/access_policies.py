@@ -22,6 +22,7 @@ from app.schemas.access_policies import (
     BandwidthProfilePayload,
 )
 from app.services.access_policies_service import (
+    ensure_single_active_in_category,
     find_existing_assignment,
     raise_assignment_integrity_error,
     raise_nas_conflict,
@@ -325,19 +326,13 @@ async def update_assignment(
 
     old_out = _to_out(row)
 
-    # Check no OTHER active assignment exists for same user in this category
-    existing_other = await db.execute(
-        select(AccessPolicyAssignment).where(
-            and_(
-                AccessPolicyAssignment.username == payload.username,
-                AccessPolicyAssignment.nas_category_id == payload.nas_category_id,
-                AccessPolicyAssignment.id != assignment_id,
-                AccessPolicyAssignment.is_active == True,
-            )
+    # One active assignment per user per category. Only category rows are
+    # subject to it: for IP/MAC/segment rows nas_category_id is NULL, and
+    # comparing NULL == NULL matched every other non-category row (#97).
+    if payload.nas_category_id is not None and payload.is_active:
+        await ensure_single_active_in_category(
+            db, payload.username, payload.nas_category_id, exclude_id=assignment_id
         )
-    )
-    if existing_other.scalars().first() is not None:
-        raise HTTPException(status_code=409, detail="User already has an active assignment in this category")
 
     row.username = payload.username
     row.nas_ip = payload.nas_ip

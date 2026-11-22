@@ -264,6 +264,10 @@ const AssignmentsTab = () => {
         }
 
         if (editItem) {
+            // PUT replaces every column: carry over fields this form does not
+            // edit, or saving would wipe them (#97).
+            payload.cir_id = editItem.cir_id ?? null;
+            payload.nas_identifier = editItem.nas_identifier ?? null;
             updateMutation.mutate({ id: editItem.id, data: payload });
         } else if (form.mapping_mode === 'ip') {
             // Bulk IP creation
