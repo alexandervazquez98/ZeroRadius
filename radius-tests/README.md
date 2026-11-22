@@ -110,6 +110,16 @@ python -m pytest -m radius test_radius_network_segments.py -v
 
 Total: ~70 RADIUS protocol scenarios.
 
+## Seeds and persistent databases
+
+Run the SQL seeds in `radius-tests/fixtures/` against the ephemeral
+`docker-compose.test.yml` database. `seed_huntgroup_enforcement.sql`
+uses TEST-NET-1 NAS addresses (`192.0.2.10`, `192.0.2.50`, RFC 5737) and
+skips any `nas` row whose address already exists, so it never adds a
+second client definition for a real device (#98). If a persistent
+database already has `127.0.0.1` with a different secret, the huntgroup
+tests fail on the shared secret instead of changing that NAS.
+
 ## Deterministic seed for authorization matrix
 
 The matrix of precedence / CIR scenarios uses an explicit seed at:
