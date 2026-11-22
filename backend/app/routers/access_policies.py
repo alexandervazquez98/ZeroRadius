@@ -442,7 +442,7 @@ async def update_assignment(
     # One active assignment per user per category. Only category rows are
     # subject to it: for IP/MAC/segment rows nas_category_id is NULL, and
     # comparing NULL == NULL matched every other non-category row (#97).
-    if payload.nas_category_id is not None and payload.is_active:
+    if payload.nas_category_id is not None:
         await ensure_single_active_in_category(
             db, payload.username, payload.nas_category_id, exclude_id=assignment_id
         )

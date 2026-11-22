@@ -145,6 +145,13 @@ const AssignmentsTab = () => {
         [allMappings, selectedUser]
     );
 
+    // Only ids still listed for the selected user count as selected, so a row
+    // deleted meanwhile (here or by another admin) never reaches a bulk call.
+    const selection = useMemo(() => {
+        const listed = new Set(selectedMappings.map(m => m.id));
+        return selectedIds.filter(id => listed.has(id));
+    }, [selectedIds, selectedMappings]);
+
     const totalOverdue = allMappings.filter(
         m => m.review_date && dayjs(m.review_date).isBefore(dayjs())
     ).length;
@@ -198,7 +205,13 @@ const AssignmentsTab = () => {
 
     const bulkUpdateMutation = useMutation({
         mutationFn: AccessPoliciesService.bulkUpdateAssignments,
-        onSuccess: () => { invalidate(); setSelectedIds([]); },
+        onSuccess: () => {
+            invalidate();
+            setSelectedIds([]);
+            setBulkGroup('');
+            setBulkPriv('');
+            setBulkReview('');
+        },
         onError: bulkError,
     });
 
@@ -208,7 +221,7 @@ const AssignmentsTab = () => {
         onError: bulkError,
     });
 
-    const applyBulk = (change) => bulkUpdateMutation.mutate({ ids: selectedIds, ...change });
+    const applyBulk = (change) => bulkUpdateMutation.mutate({ ids: selection, ...change });
 
     const toggleSelected = (id) =>
         setSelectedIds(ids => (ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]));
@@ -482,9 +495,9 @@ const AssignmentsTab = () => {
                             </div>
 
                             {/* Bulk actions (#97) */}
-                            {canWrite && selectedIds.length > 0 && (
+                            {canWrite && selection.length > 0 && (
                                 <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex flex-wrap items-end gap-3">
-                                    <span className="text-sm font-black text-indigo-800 mr-2">{selectedIds.length} selected</span>
+                                    <span className="text-sm font-black text-indigo-800 mr-2">{selection.length} selected</span>
                                     <div className="flex items-end gap-1">
                                         <select
                                             aria-label="Bulk RADIUS group"
@@ -532,8 +545,8 @@ const AssignmentsTab = () => {
                                     {canDelete && (
                                         <button type="button" disabled={bulkDeleteMutation.isPending}
                                             onClick={() => {
-                                                if (window.confirm(`Delete ${selectedIds.length} policies?`)) {
-                                                    bulkDeleteMutation.mutate(selectedIds);
+                                                if (window.confirm(`Delete ${selection.length} policies?`)) {
+                                                    bulkDeleteMutation.mutate(selection);
                                                 }
                                             }}
                                             className="px-3 py-2 bg-white border border-rose-200 rounded-lg text-xs font-bold text-rose-700 disabled:opacity-50">Delete selected</button>
@@ -567,7 +580,7 @@ const AssignmentsTab = () => {
                                                                 type="checkbox"
                                                                 aria-label="Select all policies"
                                                                 className="w-4 h-4 rounded accent-indigo-600"
-                                                                checked={selectedMappings.length > 0 && selectedIds.length === selectedMappings.length}
+                                                                checked={selectedMappings.length > 0 && selection.length === selectedMappings.length}
                                                                 onChange={e => setSelectedIds(e.target.checked ? selectedMappings.map(m => m.id) : [])}
                                                             />
                                                         </th>

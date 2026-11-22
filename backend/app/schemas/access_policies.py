@@ -278,6 +278,9 @@ class AccessPolicyAssignmentBulkUpdate(BaseModel):
     def _at_least_one_change(self):
         if not self.model_fields_set - {"ids"}:
             raise ValueError("Provide at least one field to change")
+        for field in ("is_active", "radius_group"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
         self.ids = list(dict.fromkeys(self.ids))
         return self
 

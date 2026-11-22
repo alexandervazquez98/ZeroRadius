@@ -199,3 +199,35 @@ describe('AssignmentsTab — category hint (#97 S4)', () => {
     expect(await screen.findByRole('option', { name: 'Switches' })).toBeInTheDocument()
   })
 })
+
+describe('AssignmentsTab — selection stays consistent (verifier B1)', () => {
+  it('drops ids that are no longer listed and clears inputs after applying', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let assignments = ASSIGNMENTS
+    const calls = useApi()
+    server.use(
+      http.get('/api/access-policies/assignments', () => HttpResponse.json(assignments)),
+      http.delete('/api/access-policies/assignments/:id', ({ params }) => {
+        assignments = assignments.filter(a => a.id !== Number(params.id))
+        return HttpResponse.json({ ok: true })
+      })
+    )
+    renderTab('superadmin')
+    await selectUser('alice')
+    fireEvent.click(screen.getByLabelText('Select policy 11'))
+    fireEvent.click(screen.getByLabelText('Select policy 12'))
+    expect(screen.getByText('2 selected')).toBeInTheDocument()
+
+    fireEvent.click(within(screen.getByText('10.0.0.2').closest('tr')).getByTitle('Delete'))
+    expect(await screen.findByText('1 selected')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Bulk privilege level'), { target: { value: '1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply privilege' }))
+    await waitFor(() => expect(calls.patch).toHaveLength(1))
+    expect(calls.patch[0]).toEqual({ ids: [11], privilege_level: '1' })
+
+    fireEvent.click(screen.getByLabelText('Select policy 13'))
+    expect(screen.getByLabelText('Bulk privilege level')).toHaveValue('')
+    confirm.mockRestore()
+  })
+})

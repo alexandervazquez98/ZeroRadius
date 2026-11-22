@@ -313,3 +313,44 @@ class TestBulkDelete:
         )
         assert resp.status_code == 404
         assert set(await _listed(async_client, superadmin_token, user)) == {rows[0]["id"]}
+
+
+class TestVerifierFollowUps:
+    @pytest.mark.parametrize("field", ["is_active", "radius_group"])
+    async def test_explicit_null_is_rejected(self, async_client: AsyncClient, superadmin_token: str, field):
+        user = _user()
+        rows = await _bulk_ip(async_client, superadmin_token, user, ["10.97.10.1"])
+        resp = await async_client.patch(
+            "/access-policies/assignments/bulk",
+            json={"ids": [rows[0]["id"]], field: None},
+            headers=_auth(superadmin_token),
+        )
+        assert resp.status_code == 422
+
+    async def test_put_inactive_category_row_with_active_sibling_still_409(
+        self, async_client: AsyncClient, superadmin_token: str, test_db
+    ):
+        """Previous behavior kept (main returned 409 regardless of is_active)."""
+        from sqlalchemy import text
+
+        user = _user()
+        cat = await _category(async_client, superadmin_token)
+        test_db.add(AccessPolicyAssignment(username=user, nas_category_id=cat["id"], radius_group="g1", is_active=1))
+        await test_db.commit()
+        await test_db.execute(
+            text(
+                "INSERT INTO access_policy_assignments (username, target_key, segment_target_key, nas_category_id, radius_group, is_active) "
+                "VALUES (:u, :k, '', :c, 'g1', 0)"
+            ),
+            {"u": user, "k": uuid.uuid4().hex * 2, "c": cat["id"]},
+        )
+        await test_db.commit()
+        listed = await _listed(async_client, superadmin_token, user)
+        inactive = next(r for r in listed.values() if r["is_active"] == 0)
+        resp = await async_client.put(
+            f"/access-policies/assignments/{inactive['id']}",
+            json=_edit_payload(inactive, privilege_level="3"),
+            headers=_auth(superadmin_token),
+        )
+        assert resp.status_code == 409
+        assert "active assignment in this category" in resp.json()["detail"]
