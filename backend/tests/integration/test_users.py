@@ -92,6 +92,15 @@ from sqlalchemy import select
 from app.models.models import RadCheck
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    """This module creates many radcheck rows; keep each test under the
+    30/minute limit of the users endpoints instead of depending on order."""
+    from app.core.limiter import limiter
+
+    limiter.reset()
+
+
 def _auth(token):
     return {"Authorization": f"Bearer {token}"}
 
@@ -337,3 +346,133 @@ class TestNtPassword:
         )
         assert self.NT_OF_PASSWORD not in resp.text
         assert "password" not in json.dumps([r["new_value"] for r in resp.json()]).replace("NT-Password", "")
+
+
+class TestAdminPasswordReset:
+    """POST /users/check/{id}/reset-password (#101 part B)."""
+
+    async def _reset(self, client, token, row_id, **body):
+        return await client.post(
+            f"/users/check/{row_id}/reset-password", json=body, headers=_auth(token)
+        )
+
+    async def test_reset_with_given_password_keeps_type(self, async_client, superadmin_token, test_db):
+        created = await _create(async_client, superadmin_token, "rst_given", "MD5-Password", "old-pw")
+        resp = await self._reset(async_client, superadmin_token, created["id"], password="new-pw")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body == {"id": created["id"], "username": "rst_given", "attribute": "MD5-Password", "generated_password": None}
+        assert await _stored(test_db, created["id"]) == ("MD5-Password", hashlib.md5(b"new-pw").hexdigest())
+
+    async def test_reset_can_change_type(self, async_client, superadmin_token, test_db):
+        created = await _create(async_client, superadmin_token, "rst_type", "Cleartext-Password", "old-pw")
+        resp = await self._reset(
+            async_client, superadmin_token, created["id"], password="password", password_type="NT-Password"
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["attribute"] == "NT-Password"
+        assert await _stored(test_db, created["id"]) == ("NT-Password", "8846f7eaee8fb117ad06bdd830b7586c")
+
+    async def test_generated_password_is_returned_once_and_stored_hashed(
+        self, async_client, superadmin_token, test_db
+    ):
+        from app.core.radius_passwords import nt_hash
+
+        created = await _create(async_client, superadmin_token, "rst_gen", "NT-Password", "old-pw")
+        resp = await self._reset(async_client, superadmin_token, created["id"], generate=True)
+        assert resp.status_code == 200, resp.text
+        generated = resp.json()["generated_password"]
+        assert isinstance(generated, str) and len(generated) >= 16
+        assert await _stored(test_db, created["id"]) == ("NT-Password", nt_hash(generated))
+
+        listing = await async_client.get("/users", headers=_auth(superadmin_token))
+        assert generated not in listing.text
+
+    async def test_reset_is_audited_without_the_value(self, async_client, superadmin_token, auditor_token):
+        created = await _create(async_client, superadmin_token, "rst_audit", "Cleartext-Password", "old-pw")
+        resp = await self._reset(async_client, superadmin_token, created["id"], generate=True)
+        generated = resp.json()["generated_password"]
+        audit = await async_client.get(
+            "/audit/admin", params={"search": "rst_audit"}, headers=_auth(auditor_token)
+        )
+        rows = [r for r in audit.json() if r["action"] == "PASSWORD_RESET"]
+        assert len(rows) == 1
+        assert rows[0]["admin_user"] == "test_superadmin"
+        assert generated not in audit.text
+        assert "Cleartext-Password" in rows[0]["new_value"]
+
+    @pytest.mark.parametrize(
+        "body, status",
+        [
+            ({}, 422),
+            ({"password": "x", "generate": True}, 422),
+            ({"password": ""}, 422),
+            ({"password": "x", "password_type": "Expiration"}, 422),
+        ],
+    )
+    async def test_invalid_requests_change_nothing(self, async_client, superadmin_token, test_db, body, status):
+        created = await _create(async_client, superadmin_token, "rst_invalid", "Cleartext-Password", "keep-me")
+        resp = await self._reset(async_client, superadmin_token, created["id"], **body)
+        assert resp.status_code == status, resp.text
+        assert await _stored(test_db, created["id"]) == ("Cleartext-Password", "keep-me")
+
+    async def test_non_password_row_is_rejected(self, async_client, superadmin_token):
+        created = await _create(async_client, superadmin_token, "rst_exp", "Expiration", "01 Jan 2030 00:00")
+        resp = await self._reset(async_client, superadmin_token, created["id"], password="x")
+        assert resp.status_code == 422
+
+    async def test_unknown_row_is_404(self, async_client, superadmin_token):
+        resp = await self._reset(async_client, superadmin_token, 999999, password="x")
+        assert resp.status_code == 404
+
+    @pytest.mark.parametrize("token_fixture", ["helpdesk_token", "auditor_token"])
+    async def test_only_admins_can_reset(self, async_client, superadmin_token, token_fixture, request, test_db):
+        created = await _create(async_client, superadmin_token, "rst_rbac", "Cleartext-Password", "keep-me")
+        resp = await self._reset(async_client, request.getfixturevalue(token_fixture), created["id"], password="x")
+        assert resp.status_code == 403
+        assert await _stored(test_db, created["id"]) == ("Cleartext-Password", "keep-me")
+
+
+class TestNonSettablePasswordTypes:
+    """A password is only written under a type the backend can hash (verifier finding)."""
+
+    async def test_regression_reset_of_crypt_row_requires_settable_type(
+        self, async_client, superadmin_token, test_db
+    ):
+        created = await _create(async_client, superadmin_token, "crypt_reset", "Crypt-Password", "$1$abc$legacyhash")
+        resp = await async_client.post(
+            f"/users/check/{created['id']}/reset-password",
+            json={"password": "s3cret"},
+            headers=_auth(superadmin_token),
+        )
+        assert resp.status_code == 422
+        assert "password_type" in resp.json()["detail"]
+        assert await _stored(test_db, created["id"]) == ("Crypt-Password", "$1$abc$legacyhash")
+
+        resp = await async_client.post(
+            f"/users/check/{created['id']}/reset-password",
+            json={"password": "password", "password_type": "NT-Password"},
+            headers=_auth(superadmin_token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert await _stored(test_db, created["id"]) == ("NT-Password", "8846f7eaee8fb117ad06bdd830b7586c")
+
+    async def test_regression_put_value_under_crypt_is_rejected(self, async_client, superadmin_token, test_db):
+        created = await _create(async_client, superadmin_token, "crypt_put", "Crypt-Password", "$1$abc$legacyhash")
+        resp = await async_client.put(
+            f"/users/check/{created['id']}",
+            json={"value": "s3cret"},
+            headers=_auth(superadmin_token),
+        )
+        assert resp.status_code == 422
+        assert await _stored(test_db, created["id"]) == ("Crypt-Password", "$1$abc$legacyhash")
+
+    async def test_put_without_value_on_crypt_row_still_allowed(self, async_client, superadmin_token, test_db):
+        created = await _create(async_client, superadmin_token, "crypt_rename", "Crypt-Password", "$1$abc$legacyhash")
+        resp = await async_client.put(
+            f"/users/check/{created['id']}",
+            json={"username": "crypt_renamed"},
+            headers=_auth(superadmin_token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert await _stored(test_db, created["id"]) == ("Crypt-Password", "$1$abc$legacyhash")
