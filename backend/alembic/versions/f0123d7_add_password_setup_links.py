@@ -10,6 +10,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import mysql
 from sqlalchemy import inspect
 
 
@@ -18,6 +19,10 @@ revision: str = "f0123d7"
 down_revision: Union[str, None] = "e0123d6"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+
+
+# DATETIME(6) on MySQL/MariaDB, matching init.sql on fresh installs.
+_DT = sa.DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql")
 
 
 def upgrade() -> None:
@@ -33,10 +38,10 @@ def upgrade() -> None:
         sa.Column("password_type", sa.String(length=64), nullable=False),
         sa.Column("token_hash", sa.String(length=64), nullable=False),
         sa.Column("created_by", sa.String(length=255), nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=True),
-        sa.Column("expires_at", sa.DateTime(), nullable=False),
-        sa.Column("used_at", sa.DateTime(), nullable=True),
-        sa.Column("revoked_at", sa.DateTime(), nullable=True),
+        sa.Column("created_at", _DT, server_default=sa.text("CURRENT_TIMESTAMP(6)"), nullable=True),
+        sa.Column("expires_at", _DT, nullable=False),
+        sa.Column("used_at", _DT, nullable=True),
+        sa.Column("revoked_at", _DT, nullable=True),
         sa.UniqueConstraint("token_hash", name="uq_password_setup_links_token_hash"),
     )
     op.create_index(
