@@ -41,6 +41,7 @@ Linux variant is auto-selected by `scripts/start.sh` on Linux.
 | `MYSQL_USER` | Application DB user | `db` grants + backend DSN |
 | `MYSQL_PASSWORD` | Application DB password | `db` grants + backend DSN |
 | `RADIUS_SECRET` | Shared secret for the `radius-server` container (used by `clients.conf`) | `radius/clients.conf` template |
+| `RADIUS_DEBUG` | `yes` runs FreeRADIUS with `-X` and enables the Live Log Viewer. **Logs decrypted PAP passwords** — troubleshooting only. Default `no`. | `radius/docker-entrypoint.sh` |
 | `SECRET_KEY` | JWT signing key. **Backend crashes at startup if unset.** Generate with `openssl rand -hex 32`. | `app/core/security.py` |
 | `ALGORITHM` | JWT algorithm (`HS256`/`HS384`/`HS512` default `HS256`) | same |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Access-token TTL (default `30`) | same |

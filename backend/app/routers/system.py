@@ -44,6 +44,11 @@ router = APIRouter(prefix="/system", tags=["system"])
 # Container name for radius service (matches docker-compose.yml)
 # ---------------------------------------------------------------------------
 RADIUS_CONTAINER_NAME = "radius-server"
+RADIUS_DEBUG_REQUIRED_MESSAGE = (
+    "Live log requires RADIUS_DEBUG=yes on radius-server "
+    "(set it in .env and run: docker compose up -d radius). "
+    "Debug mode logs decrypted PAP passwords: enable it only while troubleshooting."
+)
 
 # Max lines per request block to prevent unbounded accumulation
 MAX_BLOCK_LINES = 500
@@ -208,6 +213,14 @@ async def stream_radius_logs(websocket: WebSocket):
     except docker.errors.DockerException as exc:
         await websocket.send_text(json.dumps({"error": f"Docker error: {str(exc)}"}))
         await websocket.close(code=4005, reason="Docker error")
+        return
+
+    # The viewer parses `freeradius -X` output, which production no longer
+    # emits because it includes decrypted PAP passwords (issue #102).
+    container_env = (container.attrs.get("Config") or {}).get("Env") or []
+    if "RADIUS_DEBUG=yes" not in container_env:
+        await websocket.send_text(json.dumps({"error": RADIUS_DEBUG_REQUIRED_MESSAGE}))
+        await websocket.close(code=4006, reason="RADIUS debug mode disabled")
         return
 
     # Stateful accumulator: { request_id: [lines] }
