@@ -14,6 +14,7 @@ from app.schemas.schemas import (
     is_password_attribute,
 )
 from app.services.audit import log_audit
+from app.core.radius_passwords import hash_password_value
 from app.core.security import get_current_active_user
 from app.core.rbac import require_roles, Role
 from app.core.limiter import limiter
@@ -44,9 +45,6 @@ async def get_users(
     return result.scalars().all()
 
 
-import hashlib
-
-
 @router.post("/check", response_model=RadCheckOut)
 @limiter.limit("30/minute")
 async def create_user_check(
@@ -55,9 +53,9 @@ async def create_user_check(
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
 ):
-    # Hash password if using MD5-Password
-    if user.attribute.casefold() == "md5-password":
-        user.value = hashlib.md5(user.value.encode()).hexdigest()
+    # Input is the plaintext password; store it in the attribute's format
+    # (MD5-Password / NT-Password are hashed).
+    user.value = hash_password_value(user.attribute, user.value)
 
     new_user = RadCheck(**user.model_dump())
     db.add(new_user)
@@ -119,9 +117,9 @@ async def update_user_check(
                 status_code=422,
                 detail="Changing the password type requires a new password",
             )
-    if target_attribute.casefold() == "md5-password" and "value" in update_data:
+    if "value" in update_data:
         # Input is always the plaintext password; hash it like create does.
-        update_data["value"] = hashlib.md5(update_data["value"].encode()).hexdigest()
+        update_data["value"] = hash_password_value(target_attribute, update_data["value"])
 
     for key, value in update_data.items():
         setattr(user, key, value)

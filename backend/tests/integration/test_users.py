@@ -307,3 +307,33 @@ class TestAuditLogRedaction:
         await _create(async_client, superadmin_token, "cred_audit_exp", "Expiration", "03 Mar 2032 00:00")
         rows = await self._audit_rows(async_client, auditor_token, "cred_audit_exp")
         assert "03 Mar 2032 00:00" in json.dumps(rows)
+
+
+class TestNtPassword:
+    """NT-Password is hashed as MD4(UTF-16LE) on create and update (#96)."""
+
+    NT_OF_PASSWORD = "8846f7eaee8fb117ad06bdd830b7586c"  # NT hash of "password"
+
+    async def test_create_nt_password_stores_nt_hash(self, async_client, superadmin_token, test_db):
+        created = await _create(async_client, superadmin_token, "nt_create", "NT-Password", "password")
+        assert created["value"] is None
+        assert created["has_password"] is True
+        assert await _stored(test_db, created["id"]) == ("NT-Password", self.NT_OF_PASSWORD)
+
+    async def test_switch_to_nt_password_with_new_password(self, async_client, superadmin_token, test_db):
+        created = await _create(async_client, superadmin_token, "nt_switch", "MD5-Password", "old-pw")
+        resp = await async_client.put(
+            f"/users/check/{created['id']}",
+            json={"attribute": "NT-Password", "value": "password"},
+            headers=_auth(superadmin_token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert await _stored(test_db, created["id"]) == ("NT-Password", self.NT_OF_PASSWORD)
+
+    async def test_audit_redacts_nt_password(self, async_client, superadmin_token, auditor_token):
+        await _create(async_client, superadmin_token, "nt_audit", "NT-Password", "password")
+        resp = await async_client.get(
+            "/audit/admin", params={"search": "nt_audit"}, headers=_auth(auditor_token)
+        )
+        assert self.NT_OF_PASSWORD not in resp.text
+        assert "password" not in json.dumps([r["new_value"] for r in resp.json()]).replace("NT-Password", "")

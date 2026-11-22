@@ -92,6 +92,7 @@ frontend/coverage/
 dictionaries/*
 !dictionaries/.gitkeep
 !dictionaries/dictionary.cisco
+!dictionaries/dictionary.mikrotik
 
 # ─── Archives / temp ──────────────────────────────────────────────────────────
 .tmp/

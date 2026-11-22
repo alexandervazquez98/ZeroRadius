@@ -130,6 +130,14 @@ required.  The file declares the minimal `VENDOR Cisco 9` /
 the drop-in path above if you need the full official Cisco
 dictionary.
 
+`backend/dictionaries/dictionary.mikrotik` (vendor 14988) also ships by
+default (#99). It is the unmodified upstream file from
+`freeradius/freeradius-server:3.2.3` and defines `Mikrotik-Group`, the
+attribute RouterOS uses to pick the login group (`full` / `write` /
+`read`). Without it FreeRADIUS cannot send `Mikrotik-Group` and the router
+falls back to `/user aaa default-group`. See
+[`docs/01-nas-provisioning.md`](../01-nas-provisioning.md#3-vendor-notes).
+
 ### 3.2 Content
 
 The content endpoints return and accept the raw `*.dict` file as a string.
