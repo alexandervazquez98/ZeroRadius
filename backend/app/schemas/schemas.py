@@ -151,6 +151,41 @@ class PasswordResetOut(BaseModel):
     generated_password: Optional[str] = None
 
 
+class SetupLinkRequest(BaseModel):
+    """Generate a self-service password setup link (#101 C)."""
+
+    # Defaults to the row's current password type.
+    password_type: Optional[str] = None
+
+
+class SetupLinkOut(BaseModel):
+    id: int
+    username: str
+    attribute: str
+    # Returned once; the frontend builds the URL from it. Never stored.
+    token: str
+    expires_at: datetime
+
+
+class SetupLinkStatus(BaseModel):
+    """Latest setup link of a radcheck row, as shown in the Users panel."""
+
+    status: str  # pending | expired | used | revoked
+    created_by: str
+    created_at: Optional[datetime] = None
+    expires_at: datetime
+    used_at: Optional[datetime] = None
+
+
+class PasswordSetupInfo(BaseModel):
+    username: str
+    expires_at: datetime
+
+
+class PasswordSetupSubmit(BaseModel):
+    password: str
+
+
 class RadCheckOut(BaseModel):
     id: int
     username: str
@@ -159,6 +194,8 @@ class RadCheckOut(BaseModel):
     # None for password attributes; see has_password.
     value: Optional[str] = None
     has_password: bool = False
+    # Latest self-service setup link for this row, if any (#101 C).
+    setup_link: Optional[SetupLinkStatus] = None
     model_config = ConfigDict(from_attributes=True)
 
     @model_validator(mode="after")
