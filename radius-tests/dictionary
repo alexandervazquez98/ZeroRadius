@@ -28,3 +28,8 @@ ATTRIBUTE	Cambium-Canopy-HPULCIR	223	integer
 ATTRIBUTE	Cambium-Canopy-LPDLCIR	220	integer
 ATTRIBUTE	Cambium-Canopy-LPULCIR	221	integer
 END-VENDOR	Motorola
+
+VENDOR	Mikrotik	14988
+BEGIN-VENDOR	Mikrotik
+ATTRIBUTE	Mikrotik-Group	3	string
+END-VENDOR	Mikrotik

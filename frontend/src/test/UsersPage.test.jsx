@@ -118,6 +118,7 @@ describe('UsersPage — credentials are not exposed (#101, #95)', () => {
     expect(within(typeSelect).getAllByRole('option').map(o => o.value)).toEqual([
       'Cleartext-Password',
       'MD5-Password',
+      'NT-Password',
     ])
 
     const password = within(modal).getByLabelText('New password')
@@ -182,5 +183,18 @@ describe('UsersPage — credentials are not exposed (#101, #95)', () => {
       op: ':=',
       value: '02 Feb 2031 00:00',
     })
+  })
+})
+
+describe('UsersPage — NT-Password support (#96)', () => {
+  it('explains which protocols each password type supports', async () => {
+    renderUsers('superadmin')
+    const modal = await openEdit('MD5-Password')
+    expect(within(modal).getByText(/MD5-Password works with PAP only/)).toBeInTheDocument()
+
+    fireEvent.change(within(modal).getByLabelText('Password type'), {
+      target: { value: 'NT-Password' },
+    })
+    expect(within(modal).getByText(/NT-Password works with PAP and MS-CHAPv2/)).toBeInTheDocument()
   })
 })

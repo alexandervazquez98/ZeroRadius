@@ -4,7 +4,7 @@ import api from '../api';
 import { Plus, Trash2, Edit, X, Clock, ShieldAlert } from 'lucide-react';
 import UserWizard from '../components/UserWizard';
 import { useToast } from '../context/ToastContext';
-import { PASSWORD_TYPES } from '../constants/passwordTypes';
+import { PASSWORD_TYPES, PASSWORD_TYPE_HELP } from '../constants/passwordTypes';
 
 // Password values are write-only (#101): the API returns has_password instead,
 // and the edit form sends a new password only when the operator types one (#95).
@@ -245,6 +245,9 @@ const UsersPage = () => {
                                                 <option key={type} value={type}>{type}</option>
                                             ))}
                                         </select>
+                                        {PASSWORD_TYPE_HELP[editingUser.attribute] && (
+                                            <p className="mt-1 text-xs text-gray-500">{PASSWORD_TYPE_HELP[editingUser.attribute]}</p>
+                                        )}
                                     </div>
                                     <div>
                                         <label htmlFor="edit-new-password" className="block text-sm font-medium text-gray-700">New password</label>

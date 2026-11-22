@@ -97,7 +97,7 @@ cd radius-tests
 python -m pytest -m radius test_radius_network_segments.py -v
 ```
 
-## Test files (six)
+## Test files
 
 | File | Purpose | Count (approx.) |
 |---|---|---|
@@ -107,6 +107,7 @@ python -m pytest -m radius test_radius_network_segments.py -v
 | `test_radius_network_segments.py` | Deterministic segment precedence / CIDR / CIR matrix | ~25 |
 | `test_radius_preconditions.py` | Probe contract (`nas_based_authorization` + seed) | ~5 |
 | `test_radius_vendor_scenarios.py` | Cisco WLC, Dahua CCTV, Proxy-MAC, generic IP (16 scenarios added in `9e39084`) | 16 |
+| `test_radius_mikrotik.py` | MikroTik: NT-Password over PAP + `Mikrotik-Group` reply (seed `fixtures/seed_mikrotik.sql`) | 2 |
 
 Total: ~70 RADIUS protocol scenarios.
 

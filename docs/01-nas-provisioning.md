@@ -93,7 +93,70 @@ For the full targeting + precedence chain, see
 > `nas_based_authorization` reject (which uses
 > `"Access denied: NAS not authorized for this user"`).
 
-## 3. Cross-references
+## 3. Vendor notes
+
+### Password type per authentication protocol
+
+The password type chosen for a RADIUS user decides which NAS can
+authenticate it. The backend hashes `MD5-Password` and `NT-Password` on
+write; no password value is ever returned by the API.
+
+| Password type | PAP | MS-CHAPv2 | Storage |
+|---|---|---|---|
+| `Cleartext-Password` | yes | yes | cleartext |
+| `MD5-Password` | yes | **no** | unsalted MD5 |
+| `NT-Password` | yes | yes | unsalted MD4 of UTF-16LE (#96) |
+
+`NT-Password` covers PAP devices (Cisco IOS, Moxa) and MS-CHAPv2 devices
+(MikroTik) without cleartext storage. It is unsalted and
+password-equivalent for MS-CHAP (pass-the-hash), so treat the `radcheck`
+table as sensitive anyway. A stored hash cannot be converted to another
+type: changing the type requires entering the password again.
+
+To check MS-CHAP against a user by hand (from the radius container or a
+host with `freeradius-utils`; `radtest -t mschap` sends MS-CHAP v1, the
+same stored value serves v2, which the router exercises):
+
+```bash
+radtest -t mschap <user> '<password>' 127.0.0.1 0 <shared-secret>
+```
+
+### MikroTik RouterOS
+
+- `dictionary.mikrotik` ships by default (#99), so groups can reply
+  `Mikrotik-Group := full` (or `write` / `read`).
+- RouterOS management logins use **MS-CHAPv2**: the user must be
+  `NT-Password` or `Cleartext-Password` (`MD5-Password` is rejected with
+  `MS-CHAP-Error ... E=691`).
+- RouterOS 7.15+ requires a `Message-Authenticator` on replies by default
+  (`require-message-auth`); ZeroRadius signs replies to signed requests
+  (#100).
+- Router side:
+
+  ```
+  /radius add service=login address=<zeroradius-ip> secret=<shared-secret> src-address=<router-ip>
+  /user aaa set use-radius=yes default-group=read
+  ```
+
+  `default-group` applies when the reply carries no `Mikrotik-Group`, so
+  keep it least-privileged.
+
+### Moxa
+
+- Uses PAP and standard attributes only; no vendor dictionary is needed.
+- Access level comes from `Service-Type`: `Administrative-User` for
+  admin, `Login-User` for read-only.
+- Observed in the lab: the web GUI silently truncates the shared key to
+  32 characters, so use a secret of at most 32 characters.
+
+### Cisco IOS
+
+- With PAP logins (the usual IOS setup) any password type works; CHAP
+  would need `Cleartext-Password`.
+- Privilege level comes from `Cisco-AVPair = "shell:priv-lvl=N"`
+  (`dictionary.cisco` ships by default, #76).
+
+## 4. Cross-references
 
 - **API:** [`/nas` and `/nas-categories`](api-reference.md)
 - **NAS Categories module:** [`docs/modules/nas-categories.md`](modules/nas-categories.md)
