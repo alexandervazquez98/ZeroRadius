@@ -266,6 +266,37 @@ class LoginAttempt(Base):
     __table_args__ = (Index("idx_username_time", "username", "attempted_at"),)
 
 
+class PasswordSetupLink(Base):
+    """One-time self-service password setup link (#101 part C).
+
+    Only the SHA-256 of the token is stored; the URL is shown once to the
+    admin who generated it. A link is valid while used_at and revoked_at are
+    NULL and expires_at is in the future.
+    """
+
+    __tablename__ = "password_setup_links"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # radcheck row whose password the link sets (no FK: radcheck is the
+    # FreeRADIUS schema; links are deleted with the row by the API).
+    radcheck_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    username: Mapped[str] = mapped_column(String(64), nullable=False)
+    password_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=True
+    )
+    expires_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=False), nullable=False
+    )
+    used_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    revoked_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+
+
 # T05 — RadiusReplyAudit model (ISO 27001 A.5.15, A.8.2, A.5.18)
 class RadiusReplyAudit(Base):
     __tablename__ = "radius_reply_audit"
