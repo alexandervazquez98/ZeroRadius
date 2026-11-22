@@ -18,7 +18,11 @@ from app.schemas.schemas import (
     PasswordResetOut,
     SETTABLE_PASSWORD_TYPES,
     settable_password_type,
+    SetupLinkRequest,
+    SetupLinkOut,
+    SetupLinkStatus,
 )
+from app.services import password_setup
 from app.services.audit import log_audit
 from app.core.radius_passwords import hash_password_value
 from app.core.security import get_current_active_user
@@ -48,7 +52,25 @@ async def get_users(
 ):
     limit = min(limit, 100)
     result = await db.execute(select(RadCheck).offset(skip).limit(limit))
-    return result.scalars().all()
+    rows = result.scalars().all()
+
+    # Attach the latest self-service setup link status (#101 C).
+    links = await password_setup.latest_links(db, [r.id for r in rows])
+    now = password_setup.utcnow()
+    out = []
+    for row in rows:
+        item = RadCheckOut.model_validate(row)
+        link = links.get(row.id)
+        if link is not None:
+            item.setup_link = SetupLinkStatus(
+                status=password_setup.link_status(link, now),
+                created_by=link.created_by,
+                created_at=link.created_at,
+                expires_at=link.expires_at,
+                used_at=link.used_at,
+            )
+        out.append(item)
+    return out
 
 
 @router.post("/check", response_model=RadCheckOut)
@@ -136,6 +158,13 @@ async def update_user_check(
         # Input is always the plaintext password; hash it like create does.
         update_data["value"] = hash_password_value(target_attribute, update_data["value"])
 
+    # A pending self-service link must not outlive an admin edit of the
+    # credential or its owner: it would overwrite the new state when used.
+    if any(update_data.get(k, getattr(user, k)) != getattr(user, k) for k in ("username", "attribute")) or (
+        "value" in update_data
+    ):
+        await password_setup.revoke_active_links(db, user.id)
+
     for key, value in update_data.items():
         setattr(user, key, value)
 
@@ -199,6 +228,8 @@ async def reset_user_password(
     old_attribute = row.attribute
     row.attribute = attribute
     row.value = hash_password_value(attribute, plaintext)
+    # An admin-set password supersedes any pending self-service link.
+    await password_setup.revoke_active_links(db, row.id)
     await db.commit()
 
     await log_audit(
@@ -212,6 +243,54 @@ async def reset_user_password(
     )
     return PasswordResetOut(
         id=row.id, username=row.username, attribute=attribute, generated_password=generated
+    )
+
+
+@router.post("/check/{id}/setup-link", response_model=SetupLinkOut)
+@limiter.limit("30/minute")
+async def create_setup_link(
+    request: Request,
+    id: int,
+    body: SetupLinkRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
+):
+    """Generate a one-time, 72h self-service password setup link (#101 C).
+
+    The current password is blocked immediately; the user regains access by
+    setting a new password through the link. The token is returned once and
+    only its hash is stored; a previous pending link for the row is revoked.
+    """
+    result = await db.execute(select(RadCheck).where(RadCheck.id == id))
+    row = result.scalars().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="User check attribute not found")
+    if not is_password_attribute(row.attribute):
+        raise HTTPException(status_code=422, detail="This attribute is not a password")
+
+    requested = body.password_type if body.password_type is not None else row.attribute
+    attribute = settable_password_type(requested)
+    if attribute is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"password_type must be one of: {', '.join(SETTABLE_PASSWORD_TYPES)}"
+            + ("" if body.password_type is not None else f" (current type {row.attribute} cannot be set)"),
+        )
+
+    old_attribute = row.attribute
+    token, link = await password_setup.create_link(db, row, attribute, current_user.username)
+
+    await log_audit(
+        db,
+        current_user.username,
+        "PASSWORD_SETUP_LINK_CREATED",
+        "radcheck",
+        row.username,
+        old_value={"attribute": old_attribute},
+        new_value={"attribute": attribute, "expires_at": link.expires_at.isoformat()},
+    )
+    return SetupLinkOut(
+        id=row.id, username=row.username, attribute=attribute, token=token, expires_at=link.expires_at
     )
 
 
@@ -234,6 +313,7 @@ async def delete_user_check(
         "value": user.value,
     }
     await db.delete(user)
+    await password_setup.delete_links(db, id)
     await db.commit()
 
     await log_audit(

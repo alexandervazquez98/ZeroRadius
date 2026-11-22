@@ -9,6 +9,7 @@ from app.routers import (
     dictionary,
     admin_users,
     access_policies,
+    password_setup,
 )
 from app.routers import (
     system,
@@ -400,6 +401,7 @@ async def startup():
 
 app.include_router(auth.router)
 app.include_router(users.router)
+app.include_router(password_setup.router)
 app.include_router(nas.router)
 app.include_router(groups.router)
 app.include_router(audit.router)

@@ -16,6 +16,31 @@ const buildUpdatePayload = (editing) => {
     return payload;
 };
 
+// Status of the latest self-service setup link (#101 C).
+const formatDate = (value) => (value ? new Date(value + 'Z').toLocaleString() : '');
+
+const SetupLinkBadge = ({ link }) => {
+    if (!link) return null;
+    const styles = {
+        pending: 'bg-amber-100 text-amber-800',
+        expired: 'bg-red-100 text-red-800',
+        used: 'bg-green-100 text-green-800',
+    };
+    let text;
+    if (link.status === 'pending') {
+        text = `Setup link pending · by ${link.created_by} · valid until ${formatDate(link.expires_at)}`;
+    } else if (link.status === 'expired') {
+        text = `Setup link expired ${formatDate(link.expires_at)} · by ${link.created_by}`;
+    } else if (link.status === 'used') {
+        text = `Set via link ${formatDate(link.used_at)} · by ${link.created_by}`;
+    } else {
+        return null; // revoked: replaced by a reset or a newer link
+    }
+    return (
+        <span className={`block mt-1 w-fit text-xs font-sans rounded px-2 py-0.5 ${styles[link.status]}`}>{text}</span>
+    );
+};
+
 const UsersPage = () => {
     const queryClient = useQueryClient();
     const { showToast } = useToast();
@@ -118,6 +143,7 @@ const UsersPage = () => {
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 border rounded px-2 bg-gray-50">{user.op}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
                                     {user.has_password ? <span className="italic font-sans">(password set)</span> : user.value}
+                                    <SetupLinkBadge link={user.setup_link} />
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex gap-2">
                                     <button

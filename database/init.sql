@@ -161,6 +161,24 @@ CREATE TABLE IF NOT EXISTS login_attempts (
     INDEX idx_username_time (username, attempted_at)
 ) ENGINE=InnoDB;
 
+-- password_setup_links: one-time self-service password setup URLs (#101 part C).
+-- Only the SHA-256 of the token is stored. Valid while used_at/revoked_at are
+-- NULL and expires_at is in the future (72h).
+CREATE TABLE IF NOT EXISTS password_setup_links (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    radcheck_id     INT          NOT NULL,
+    username        VARCHAR(64)  NOT NULL,
+    password_type   VARCHAR(64)  NOT NULL,
+    token_hash      VARCHAR(64)  NOT NULL,
+    created_by      VARCHAR(255) NOT NULL,
+    created_at      DATETIME(6)  DEFAULT CURRENT_TIMESTAMP(6),
+    expires_at      DATETIME(6)  NOT NULL,
+    used_at         DATETIME(6)  NULL,
+    revoked_at      DATETIME(6)  NULL,
+    UNIQUE KEY uq_password_setup_links_token_hash (token_hash),
+    INDEX ix_password_setup_links_radcheck_id (radcheck_id)
+) ENGINE=InnoDB;
+
 -- T05: radius_reply_audit — extended audit table (ISO 27001 A.5.15, A.8.2, A.5.18)
 CREATE TABLE IF NOT EXISTS radius_reply_audit (
     id              INT AUTO_INCREMENT PRIMARY KEY,

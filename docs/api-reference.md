@@ -26,7 +26,10 @@ outputs:
 | `POST` | `/auth/change-password` | active user | Body: `{"current_password", "new_password"}` |
 | `GET` | `/users` | active | List RADIUS user check attributes (`radcheck`). Password values are never returned: password rows have `value: null` and `has_password: true` |
 | `PUT` | `/users/check/{id}` | `admin` / `superadmin` | Omit `value` to keep the current password; changing a password attribute requires a new `value` (422 otherwise); a password `value` is accepted only for `Cleartext-Password` / `MD5-Password` / `NT-Password` (422 for `Crypt-Password`, `SSHA-Password`, …). The UI changes passwords only through reset-password |
-| `POST` | `/users/check/{id}/reset-password` | `admin` / `superadmin` | Body: `{"password": "..."}` or `{"generate": true}`, optional `password_type` (`Cleartext-Password` / `MD5-Password` / `NT-Password`, default: current). Returns `generated_password` only when generated (shown once). Audited as `PASSWORD_RESET` without the value |
+| `POST` | `/users/check/{id}/reset-password` | `admin` / `superadmin` | Body: `{"password": "..."}` or `{"generate": true}`, optional `password_type` (`Cleartext-Password` / `MD5-Password` / `NT-Password`, default: current). Returns `generated_password` only when generated (shown once). Audited as `PASSWORD_RESET` without the value. Revokes a pending setup link |
+| `POST` | `/users/check/{id}/setup-link` | `admin` / `superadmin` | Body: optional `password_type` (default: current). Returns a one-time `token` (shown once; the UI builds `<origin>/setup-password/<token>`) valid 72 h. **Blocks the current password immediately**; revokes a previous pending link. `GET /users` shows `setup_link.status` (`pending` / `expired` / `used` / `revoked`), `created_by`, `expires_at`. Audited as `PASSWORD_SETUP_LINK_CREATED` |
+| `GET` | `/password-setup/{token}` | none (token) | `{"username", "expires_at"}` while valid; 404 unknown token, 410 used / expired / replaced |
+| `POST` | `/password-setup/{token}` | none (token) | Body: `{"password"}`. Sets the password with the type chosen by the admin and consumes the link (single use, atomic). Audited as `PASSWORD_SETUP_LINK_USED` |
 | `GET` | `/system/version` | none | Returns `{"version": "x.y.z"}` |
 | `GET` | `/system/health` | none | `{"status": "ok"}` |
 | `GET` | `/health/containers` | `admin` / `superadmin` | Per-container resource snapshot |
@@ -49,6 +52,7 @@ For each domain, deep documentation lives under `docs/modules/<name>.md`.
 | Audit | [`docs/modules/audit.md`](modules/audit.md) | `/audit/admin`, `/audit/access`, `/audit/export` |
 | Dictionaries | [`docs/modules/dictionaries.md`](modules/dictionaries.md) | `/dictionary/files`, `/upload`, `/rename`, `/content/{fn}`, `/builtin`, `/attributes`, `/values/{attr}`, `/radius-logs` |
 | Admin users | [`docs/modules/admin-users.md`](modules/admin-users.md) | `/admin-users`, `/admin-users/{id}`, `/admin-users/{id}/unlock` |
+| RADIUS user passwords | [`docs/modules/radius-users.md`](modules/radius-users.md) | `/users/check/{id}/reset-password`, `/users/check/{id}/setup-link`, `/password-setup/{token}` |
 | Syslog | [`docs/modules/syslog-dashboard.md`](modules/syslog-dashboard.md) | `/syslog/ingest`, `/syslog` |
 | Network Segments | [`docs/modules/network-segments.md`](modules/network-segments.md) | `/network-segments`, `/network-segments/{id}` |
 | Access Policies | [`docs/modules/access-policies.md`](modules/access-policies.md) | `/access-policies/assignments` (CRUD + bulk + preview); `/access-policies/bandwidth-profiles` |
