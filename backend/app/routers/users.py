@@ -158,6 +158,13 @@ async def update_user_check(
         # Input is always the plaintext password; hash it like create does.
         update_data["value"] = hash_password_value(target_attribute, update_data["value"])
 
+    # A pending self-service link must not outlive an admin edit of the
+    # credential or its owner: it would overwrite the new state when used.
+    if any(update_data.get(k, getattr(user, k)) != getattr(user, k) for k in ("username", "attribute")) or (
+        "value" in update_data
+    ):
+        await password_setup.revoke_active_links(db, user.id)
+
     for key, value in update_data.items():
         setattr(user, key, value)
 

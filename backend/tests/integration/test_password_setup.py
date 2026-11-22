@@ -216,3 +216,63 @@ class TestUseLink:
         resp = await async_client.delete(f"/users/check/{user['id']}", headers=_auth(superadmin_token))
         assert resp.status_code == 200
         assert (await async_client.get(f"/password-setup/{token}")).status_code == 404
+
+
+class TestLinkInvalidatedByEdit:
+    """Verifier finding: an admin edit of the row must invalidate a pending link."""
+
+    async def test_regression_attribute_change_revokes_link(self, async_client, superadmin_token, test_db):
+        user = await _create_user(async_client, superadmin_token, "sl_edit_attr")
+        token = (await _generate(async_client, superadmin_token, user["id"])).json()["token"]
+        resp = await async_client.put(
+            f"/users/check/{user['id']}",
+            json={"attribute": "Simultaneous-Use", "value": "1"},
+            headers=_auth(superadmin_token),
+        )
+        assert resp.status_code == 200, resp.text
+
+        assert (await async_client.post(f"/password-setup/{token}", json={"password": "pw"})).status_code == 410
+        row = await _row(test_db, user["id"])
+        assert (row.attribute, row.value) == ("Simultaneous-Use", "1")
+        status = (await _listing_row(async_client, superadmin_token, user["id"]))["setup_link"]
+        assert status["status"] == "revoked"
+
+    async def test_regression_admin_password_via_put_revokes_link(self, async_client, superadmin_token, test_db):
+        user = await _create_user(async_client, superadmin_token, "sl_edit_pw")
+        token = (await _generate(async_client, superadmin_token, user["id"])).json()["token"]
+        resp = await async_client.put(
+            f"/users/check/{user['id']}", json={"value": "admin-pw"}, headers=_auth(superadmin_token)
+        )
+        assert resp.status_code == 200, resp.text
+        assert (await async_client.post(f"/password-setup/{token}", json={"password": "user-pw"})).status_code == 410
+        assert (await _row(test_db, user["id"])).value == "admin-pw"
+
+    async def test_regression_rename_revokes_link(self, async_client, superadmin_token):
+        user = await _create_user(async_client, superadmin_token, "sl_edit_name")
+        token = (await _generate(async_client, superadmin_token, user["id"])).json()["token"]
+        resp = await async_client.put(
+            f"/users/check/{user['id']}", json={"username": "sl_edit_name2"}, headers=_auth(superadmin_token)
+        )
+        assert resp.status_code == 200, resp.text
+        assert (await async_client.get(f"/password-setup/{token}")).status_code == 410
+
+    async def test_op_only_edit_keeps_link(self, async_client, superadmin_token):
+        user = await _create_user(async_client, superadmin_token, "sl_edit_op")
+        token = (await _generate(async_client, superadmin_token, user["id"])).json()["token"]
+        resp = await async_client.put(
+            f"/users/check/{user['id']}", json={"op": ":="}, headers=_auth(superadmin_token)
+        )
+        assert resp.status_code == 200, resp.text
+        assert (await async_client.get(f"/password-setup/{token}")).status_code == 200
+
+    async def test_regression_link_refuses_non_password_row(self, async_client, superadmin_token, test_db):
+        """Defense in depth: even if a link stayed pending, never overwrite a non-password row."""
+        user = await _create_user(async_client, superadmin_token, "sl_direct")
+        token = (await _generate(async_client, superadmin_token, user["id"])).json()["token"]
+        await test_db.execute(
+            update(RadCheck).where(RadCheck.id == user["id"]).values(attribute="Simultaneous-Use", value="1")
+        )
+        await test_db.commit()
+        assert (await async_client.post(f"/password-setup/{token}", json={"password": "pw"})).status_code == 410
+        row = await _row(test_db, user["id"])
+        assert (row.attribute, row.value) == ("Simultaneous-Use", "1")

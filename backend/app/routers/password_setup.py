@@ -13,7 +13,7 @@ from app.core.limiter import limiter
 from app.core.radius_passwords import hash_password_value
 from app.db.session import get_db
 from app.models.models import RadCheck
-from app.schemas.schemas import PasswordSetupInfo, PasswordSetupSubmit
+from app.schemas.schemas import PasswordSetupInfo, PasswordSetupSubmit, is_password_attribute
 from app.services import password_setup
 from app.services.audit import log_audit
 
@@ -55,6 +55,10 @@ async def use_setup_link(
     row = (await db.execute(select(RadCheck).where(RadCheck.id == link.radcheck_id))).scalars().first()
     if row is None:
         raise HTTPException(status_code=404, detail="Invalid link")
+    # Defense in depth: never turn a row that is no longer a password (or no
+    # longer belongs to this user) into one.
+    if not is_password_attribute(row.attribute) or row.username != link.username:
+        raise HTTPException(status_code=410, detail=_GONE["revoked"])
 
     # Consume first, atomically: a concurrent request cannot use it twice.
     if not await password_setup.mark_used(db, link):
