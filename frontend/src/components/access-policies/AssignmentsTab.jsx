@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     Shield, Plus, Trash2, Edit2, X, AlertTriangle, Clock,
-    Server, User, CheckCircle, ChevronRight, Search, Tag, Map, HelpCircle
+    Server, User, CheckCircle, ChevronRight, Search, Tag, Map
 } from 'lucide-react';
 import dayjs from 'dayjs';
 import api from '../../api';
@@ -80,7 +80,13 @@ const AssignmentsTab = () => {
     const [form,          setForm]          = useState(EMPTY_FORM);
     const [deleteTarget,  setDeleteTarget]  = useState(null);
     const [nasSearchTerm, setNasSearchTerm] = useState('');
-    const [showAdvanced,  setShowAdvanced]  = useState(false);
+    // Bulk actions (#97): selection is scoped to the selected user.
+    const [selectedIds,   setSelectedIds]   = useState([]);
+    const [bulkGroup,     setBulkGroup]     = useState('');
+    const [bulkPriv,      setBulkPriv]      = useState('');
+    const [bulkReview,    setBulkReview]    = useState('');
+
+    useEffect(() => { setSelectedIds([]); }, [selectedUser]);
 
     // ── Data ──────────────────────────────────────────────────────────────────
 
@@ -139,6 +145,13 @@ const AssignmentsTab = () => {
         [allMappings, selectedUser]
     );
 
+    // Only ids still listed for the selected user count as selected, so a row
+    // deleted meanwhile (here or by another admin) never reaches a bulk call.
+    const selection = useMemo(() => {
+        const listed = new Set(selectedMappings.map(m => m.id));
+        return selectedIds.filter(id => listed.has(id));
+    }, [selectedIds, selectedMappings]);
+
     const totalOverdue = allMappings.filter(
         m => m.review_date && dayjs(m.review_date).isBefore(dayjs())
     ).length;
@@ -188,12 +201,36 @@ const AssignmentsTab = () => {
         onSuccess: () => { invalidate(); setDeleteTarget(null); },
     });
 
+    const bulkError = (error) => toast.error(error.response?.data?.detail || 'Bulk action failed');
+
+    const bulkUpdateMutation = useMutation({
+        mutationFn: AccessPoliciesService.bulkUpdateAssignments,
+        onSuccess: () => {
+            invalidate();
+            setSelectedIds([]);
+            setBulkGroup('');
+            setBulkPriv('');
+            setBulkReview('');
+        },
+        onError: bulkError,
+    });
+
+    const bulkDeleteMutation = useMutation({
+        mutationFn: AccessPoliciesService.bulkDeleteAssignments,
+        onSuccess: () => { invalidate(); setSelectedIds([]); },
+        onError: bulkError,
+    });
+
+    const applyBulk = (change) => bulkUpdateMutation.mutate({ ids: selection, ...change });
+
+    const toggleSelected = (id) =>
+        setSelectedIds(ids => (ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]));
+
     // ── Modal helpers ─────────────────────────────────────────────────────────
 
     const openCreate = (preselectedUser = null) => {
         setEditItem(null);
         setNasSearchTerm('');
-        setShowAdvanced(false);
         setForm({ ...EMPTY_FORM, nas_ips: [], username: preselectedUser || '', approved_by: user?.sub || '' });
         setShowModal(true);
     };
@@ -207,7 +244,6 @@ const AssignmentsTab = () => {
         else if (item.calling_station_id && item.nas_ip) mode = 'mac_plus_ip';
         else if (item.calling_station_id) mode = 'mac';
         
-        setShowAdvanced(mode === 'category' || mode === 'mac' || mode === 'mac_plus_ip');
         
         setForm({
             username: item.username,
@@ -264,6 +300,10 @@ const AssignmentsTab = () => {
         }
 
         if (editItem) {
+            // PUT replaces every column: carry over fields this form does not
+            // edit, or saving would wipe them (#97).
+            payload.cir_id = editItem.cir_id ?? null;
+            payload.nas_identifier = editItem.nas_identifier ?? null;
             updateMutation.mutate({ id: editItem.id, data: payload });
         } else if (form.mapping_mode === 'ip') {
             // Bulk IP creation
@@ -454,6 +494,66 @@ const AssignmentsTab = () => {
                                 )}
                             </div>
 
+                            {/* Bulk actions (#97) */}
+                            {canWrite && selection.length > 0 && (
+                                <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex flex-wrap items-end gap-3">
+                                    <span className="text-sm font-black text-indigo-800 mr-2">{selection.length} selected</span>
+                                    <div className="flex items-end gap-1">
+                                        <select
+                                            aria-label="Bulk RADIUS group"
+                                            className="px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white"
+                                            value={bulkGroup}
+                                            onChange={e => setBulkGroup(e.target.value)}
+                                        >
+                                            <option value="">RADIUS group…</option>
+                                            {groupsList.map(g => <option key={g} value={g}>{g}</option>)}
+                                        </select>
+                                        <button type="button" disabled={!bulkGroup || bulkUpdateMutation.isPending}
+                                            onClick={() => applyBulk({ radius_group: bulkGroup })}
+                                            className="px-3 py-2 bg-white border border-indigo-200 rounded-lg text-xs font-bold text-indigo-700 disabled:opacity-50">Apply group</button>
+                                    </div>
+                                    <div className="flex items-end gap-1">
+                                        <input
+                                            aria-label="Bulk privilege level"
+                                            placeholder="Priv level"
+                                            className="w-24 px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white"
+                                            value={bulkPriv}
+                                            onChange={e => setBulkPriv(e.target.value)}
+                                        />
+                                        <button type="button" disabled={!bulkPriv || bulkUpdateMutation.isPending}
+                                            onClick={() => applyBulk({ privilege_level: bulkPriv })}
+                                            className="px-3 py-2 bg-white border border-indigo-200 rounded-lg text-xs font-bold text-indigo-700 disabled:opacity-50">Apply privilege</button>
+                                    </div>
+                                    <div className="flex items-end gap-1">
+                                        <input
+                                            type="date"
+                                            aria-label="Bulk review date"
+                                            className="px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white"
+                                            value={bulkReview}
+                                            onChange={e => setBulkReview(e.target.value)}
+                                        />
+                                        <button type="button" disabled={!bulkReview || bulkUpdateMutation.isPending}
+                                            onClick={() => applyBulk({ review_date: bulkReview })}
+                                            className="px-3 py-2 bg-white border border-indigo-200 rounded-lg text-xs font-bold text-indigo-700 disabled:opacity-50">Apply review date</button>
+                                    </div>
+                                    <button type="button" disabled={bulkUpdateMutation.isPending}
+                                        onClick={() => applyBulk({ is_active: 1 })}
+                                        className="px-3 py-2 bg-white border border-emerald-200 rounded-lg text-xs font-bold text-emerald-700 disabled:opacity-50">Activate</button>
+                                    <button type="button" disabled={bulkUpdateMutation.isPending}
+                                        onClick={() => applyBulk({ is_active: 0 })}
+                                        className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 disabled:opacity-50">Deactivate</button>
+                                    {canDelete && (
+                                        <button type="button" disabled={bulkDeleteMutation.isPending}
+                                            onClick={() => {
+                                                if (window.confirm(`Delete ${selection.length} policies?`)) {
+                                                    bulkDeleteMutation.mutate(selection);
+                                                }
+                                            }}
+                                            className="px-3 py-2 bg-white border border-rose-200 rounded-lg text-xs font-bold text-rose-700 disabled:opacity-50">Delete selected</button>
+                                    )}
+                                </div>
+                            )}
+
                             {/* NAS mappings table */}
                             <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
                                 {selectedMappings.length === 0 ? (
@@ -474,6 +574,17 @@ const AssignmentsTab = () => {
                                         <table className="min-w-full divide-y divide-slate-100">
                                             <thead className="bg-slate-50">
                                                 <tr>
+                                                    {canWrite && (
+                                                        <th className="pl-6 py-4 w-8">
+                                                            <input
+                                                                type="checkbox"
+                                                                aria-label="Select all policies"
+                                                                className="w-4 h-4 rounded accent-indigo-600"
+                                                                checked={selectedMappings.length > 0 && selection.length === selectedMappings.length}
+                                                                onChange={e => setSelectedIds(e.target.checked ? selectedMappings.map(m => m.id) : [])}
+                                                            />
+                                                        </th>
+                                                    )}
                                                     <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Target</th>
                                                     <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Vendor</th>
                                                     <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">RADIUS Group</th>
@@ -488,6 +599,17 @@ const AssignmentsTab = () => {
                                             <tbody className="divide-y divide-slate-100">
                                                 {selectedMappings.map(item => (
                                                     <tr key={item.id} className="hover:bg-slate-50/70 transition-colors group">
+                                                        {canWrite && (
+                                                            <td className="pl-6 py-4 w-8">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    aria-label={`Select policy ${item.id}`}
+                                                                    className="w-4 h-4 rounded accent-indigo-600"
+                                                                    checked={selectedIds.includes(item.id)}
+                                                                    onChange={() => toggleSelected(item.id)}
+                                                                />
+                                                            </td>
+                                                        )}
                                                          <td className="px-6 py-4 whitespace-nowrap">
                                                              <div className="flex flex-col gap-1">
                                                                  {item.segment_id ? (
@@ -700,6 +822,15 @@ const AssignmentsTab = () => {
                                                 </button>
                                                 <button
                                                     type="button"
+                                                    onClick={() => setForm(f => ({ ...f, mapping_mode: 'category', nas_ips: [] }))}
+                                                    className={`col-span-2 px-3 py-2 border rounded-xl text-xs font-bold transition-colors ${
+                                                        form.mapping_mode === 'category' ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-50'
+                                                    }`}
+                                                >
+                                                    NAS Category
+                                                </button>
+                                                <button
+                                                    type="button"
                                                     onClick={() => setForm(f => ({ ...f, mapping_mode: 'ip', nas_category_id: null }))}
                                                     className={`col-span-2 px-3 py-2 border rounded-xl text-xs font-bold transition-colors ${
                                                         form.mapping_mode === 'ip' ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-50'
@@ -836,6 +967,23 @@ const AssignmentsTab = () => {
                                                     </div>
                                                 )}
                                                 
+                                                {form.mapping_mode === 'ip' && form.nas_ips.length >= 3 && (
+                                                    <div className="mt-2 p-3 border border-amber-200 bg-amber-50 rounded-xl text-xs text-amber-800 space-y-2">
+                                                        <p>
+                                                            {form.nas_ips.length} NAS selected one by one creates one policy per NAS. A NAS category
+                                                            or network segment target covers them with a single policy that is easier to maintain.
+                                                        </p>
+                                                        <div className="flex gap-2">
+                                                            <button type="button"
+                                                                onClick={() => setForm(f => ({ ...f, mapping_mode: 'category', nas_ips: [] }))}
+                                                                className="px-3 py-1.5 bg-white border border-amber-300 rounded-lg font-bold">Use a NAS category</button>
+                                                            <button type="button"
+                                                                onClick={() => setForm(f => ({ ...f, mapping_mode: 'segment', nas_ips: [] }))}
+                                                                className="px-3 py-1.5 bg-white border border-amber-300 rounded-lg font-bold">Use a network segment</button>
+                                                        </div>
+                                                    </div>
+                                                )}
+
                                                 {form.mapping_mode === 'category' && (
                                                     <select
                                                         required
@@ -894,31 +1042,6 @@ const AssignmentsTab = () => {
                                         )}
                                     </div>
 
-                                    {!editItem && (
-                                        <div className="pt-2">
-                                            <button 
-                                                type="button" 
-                                                onClick={() => setShowAdvanced(!showAdvanced)}
-                                                className="text-xs font-bold text-slate-400 hover:text-slate-600 flex items-center gap-1"
-                                            >
-                                                <HelpCircle size={12} /> 
-                                                {showAdvanced ? 'Hide advanced targets' : 'Advanced / Legacy Compatibility'}
-                                            </button>
-                                            
-                                            {showAdvanced && form.mapping_mode !== 'category' && (
-                                                <div className="mt-3 p-3 border border-dashed border-slate-300 rounded-xl bg-slate-50">
-                                                    <p className="text-xs text-slate-500 mb-2">Targeting by Legacy Categories</p>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setForm(f => ({ ...f, mapping_mode: 'category', nas_ips: [] }))}
-                                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-bold bg-white text-slate-600 hover:bg-slate-100"
-                                                    >
-                                                        Switch to Category Target
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
                                 </div>
 
                                 {/* Right: Policy Rules & Metadata */}

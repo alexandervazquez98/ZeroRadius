@@ -11,17 +11,20 @@ from starlette.requests import Request
 from app.core.limiter import limiter
 from app.core.rbac import Role, require_roles
 from app.db.session import get_db
-from app.models.models import AdminUser, AccessPolicyAssignment
+from app.models.models import AdminUser, AccessPolicyAssignment, RadGroupCheck, RadGroupReply
 from app.schemas.access_policies import (
     AccessPolicyAssignmentOut,
     AccessPolicyAssignmentCreate,
     AccessPolicyAssignmentBulkCreate,
+    AccessPolicyAssignmentBulkUpdate,
+    AccessPolicyAssignmentBulkDelete,
     AccessPolicyPreviewRequest,
     AccessPolicyPreviewResponse,
     BandwidthProfileOut,
     BandwidthProfilePayload,
 )
 from app.services.access_policies_service import (
+    ensure_single_active_in_category,
     find_existing_assignment,
     raise_assignment_integrity_error,
     raise_nas_conflict,
@@ -293,6 +296,117 @@ async def create_assignments_bulk(
     return [_to_out(r) for r in records]
 
 
+async def _load_assignments(db: AsyncSession, ids: list[int]) -> list[AccessPolicyAssignment]:
+    """Load all ``ids`` (with category/segment for snapshots) or 404 listing the missing ones."""
+    result = await db.execute(
+        select(AccessPolicyAssignment)
+        .options(
+            selectinload(AccessPolicyAssignment.category),
+            selectinload(AccessPolicyAssignment.segment),
+        )
+        .where(AccessPolicyAssignment.id.in_(ids))
+    )
+    rows = result.scalars().all()
+    missing = sorted(set(ids) - {r.id for r in rows})
+    if missing:
+        raise HTTPException(status_code=404, detail=f"Access policy entries not found: {missing}")
+    return rows
+
+
+@router.patch("/assignments/bulk", response_model=list[AccessPolicyAssignmentOut])
+@limiter.limit("30/minute")
+async def bulk_update_assignments(
+    request: Request,
+    payload: AccessPolicyAssignmentBulkUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
+):
+    """Change group / privilege / review date / active flag of many rows (#97).
+
+    All-or-nothing: every row is validated before any change. Targets are not
+    editable here, so target_key uniqueness cannot be violated. One audit
+    entry per row, committed in the same transaction as the changes.
+    """
+    changes = payload.model_dump(exclude_unset=True, exclude={"ids"})
+
+    if "radius_group" in changes:
+        group = changes["radius_group"]
+        known = (
+            await db.execute(select(RadGroupReply.id).where(RadGroupReply.groupname == group).limit(1))
+        ).first() or (
+            await db.execute(select(RadGroupCheck.id).where(RadGroupCheck.groupname == group).limit(1))
+        ).first()
+        if not known:
+            raise HTTPException(status_code=422, detail=f"RADIUS group '{group}' does not exist")
+
+    rows = await _load_assignments(db, payload.ids)
+
+    if changes.get("is_active") == 1:
+        reactivated = [r for r in rows if r.nas_category_id is not None and not r.is_active]
+        seen: set[tuple[str, int]] = set()
+        for r in reactivated:
+            key = (r.username, r.nas_category_id)
+            if key in seen:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"{r.username} would have two active assignments in the same category",
+                )
+            seen.add(key)
+            await ensure_single_active_in_category(db, r.username, r.nas_category_id, exclude_id=r.id)
+
+    now = datetime.utcnow()
+    for row in rows:
+        old = _to_out(row).model_dump(mode="json")
+        for field, value in changes.items():
+            if field == "review_date":
+                value = datetime.combine(value, datetime.min.time()) if value else None
+            setattr(row, field, value)
+        row.updated_at = now
+        new = {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in changes.items()}
+        await log_audit(
+            db,
+            current_user.username,
+            "BULK_UPDATE",
+            "access_policy_assignments",
+            row.username,
+            old_value=old,
+            new_value={"id": row.id, **new},
+            event_code=EventCode.ADMIN_002,
+            commit=False,
+        )
+    await db.commit()
+
+    return [_to_out(r) for r in await _load_assignments(db, payload.ids)]
+
+
+@router.post("/assignments/bulk-delete")
+@limiter.limit("30/minute")
+async def bulk_delete_assignments(
+    request: Request,
+    payload: AccessPolicyAssignmentBulkDelete,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.SUPERADMIN),
+):
+    """Delete many rows (superadmin only, like single delete). All-or-nothing,
+    one audit entry per row in the same transaction (#97)."""
+    ids = list(dict.fromkeys(payload.ids))
+    rows = await _load_assignments(db, ids)
+    for row in rows:
+        await log_audit(
+            db,
+            current_user.username,
+            "BULK_DELETE",
+            "access_policy_assignments",
+            row.username,
+            old_value=_to_out(row).model_dump(mode="json"),
+            event_code=EventCode.ADMIN_002,
+            commit=False,
+        )
+        await db.delete(row)
+    await db.commit()
+    return {"deleted": len(rows)}
+
+
 @router.put("/assignments/{assignment_id}", response_model=AccessPolicyAssignmentOut)
 @limiter.limit("120/minute")
 async def update_assignment(
@@ -325,19 +439,13 @@ async def update_assignment(
 
     old_out = _to_out(row)
 
-    # Check no OTHER active assignment exists for same user in this category
-    existing_other = await db.execute(
-        select(AccessPolicyAssignment).where(
-            and_(
-                AccessPolicyAssignment.username == payload.username,
-                AccessPolicyAssignment.nas_category_id == payload.nas_category_id,
-                AccessPolicyAssignment.id != assignment_id,
-                AccessPolicyAssignment.is_active == True,
-            )
+    # One active assignment per user per category. Only category rows are
+    # subject to it: for IP/MAC/segment rows nas_category_id is NULL, and
+    # comparing NULL == NULL matched every other non-category row (#97).
+    if payload.nas_category_id is not None:
+        await ensure_single_active_in_category(
+            db, payload.username, payload.nas_category_id, exclude_id=assignment_id
         )
-    )
-    if existing_other.scalars().first() is not None:
-        raise HTTPException(status_code=409, detail="User already has an active assignment in this category")
 
     row.username = payload.username
     row.nas_ip = payload.nas_ip

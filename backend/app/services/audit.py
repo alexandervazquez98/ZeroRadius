@@ -47,9 +47,13 @@ async def log_audit(
     old_value: Optional[dict] = None,
     new_value: Optional[dict] = None,
     event_code: Optional[EventCode] = None,
+    commit: bool = True,
 ):
     """
     Logs an administrative action to the app_audit_log table.
+
+    With ``commit=False`` the entry is only added to the session, so callers
+    can write several changes and their audit entries in one transaction.
 
     If event_code is provided, it is prepended to the action string as
     '[EVENT_CODE] action' so existing queries still work while the event
@@ -84,6 +88,7 @@ async def log_audit(
         new_value=json.dumps(new_value) if new_value else None,
     )
     db.add(log_entry)
-    await db.commit()
-    await db.refresh(log_entry)
+    if commit:
+        await db.commit()
+        await db.refresh(log_entry)
     return log_entry

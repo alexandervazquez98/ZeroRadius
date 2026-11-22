@@ -3,7 +3,7 @@ import re
 from datetime import date, datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 _MAC_ACCEPTED_FORMATS = (
@@ -263,3 +263,27 @@ class AccessPolicyPreviewResponse(BaseModel):
     mapping: Optional[AccessPolicyAssignmentOut] = None
     profile: Optional[BandwidthProfileOut] = None
     trace: List[AccessPolicyResolutionTraceItem]
+
+
+class AccessPolicyAssignmentBulkUpdate(BaseModel):
+    """Bulk edit of non-target fields (#97). Targets are never changed in bulk."""
+
+    ids: List[int] = Field(..., min_length=1, max_length=1000)
+    radius_group: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    privilege_level: Optional[str] = Field(default=None, max_length=32)
+    review_date: Optional[date] = None
+    is_active: Optional[int] = Field(default=None, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def _at_least_one_change(self):
+        if not self.model_fields_set - {"ids"}:
+            raise ValueError("Provide at least one field to change")
+        for field in ("is_active", "radius_group"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
+        self.ids = list(dict.fromkeys(self.ids))
+        return self
+
+
+class AccessPolicyAssignmentBulkDelete(BaseModel):
+    ids: List[int] = Field(..., min_length=1, max_length=1000)

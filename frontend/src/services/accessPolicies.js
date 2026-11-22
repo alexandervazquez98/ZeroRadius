@@ -64,6 +64,18 @@ const AccessPoliciesService = {
     return response.data
   },
 
+  // Bulk edit of group / privilege / review date / active flag (#97)
+  async bulkUpdateAssignments(payload) {
+    const response = await api.patch('/access-policies/assignments/bulk', payload)
+    return response.data
+  },
+
+  // Bulk delete, superadmin only (#97)
+  async bulkDeleteAssignments(ids) {
+    const response = await api.post('/access-policies/assignments/bulk-delete', { ids })
+    return response.data
+  },
+
   // Bandwidth Profiles
   async listProfiles() {
     const response = await api.get('/access-policies/bandwidth-profiles')
