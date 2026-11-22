@@ -55,8 +55,10 @@ Base path: `/access-policies`
 | `GET` | `/assignments` | `auditor` / `admin` / `superadmin` | List assignments (filters: `username`, `nas_ip`, `is_active`, `overdue_review`) |
 | `POST` | `/assignments` | `admin` / `superadmin` | Create or replace an assignment (idempotent on `(username, target)`) |
 | `POST` | `/assignments/bulk` | `admin` / `superadmin` | Bulk create by `nas_ips` list (no category, no segment) |
-| `PUT` | `/assignments/{assignment_id}` | `admin` / `superadmin` | Update specific row |
+| `PUT` | `/assignments/{assignment_id}` | `admin` / `superadmin` | Update specific row (full replace: send every field, including `cir_id` and `nas_identifier`) |
+| `PATCH` | `/assignments/bulk` | `admin` / `superadmin` | Bulk edit (#97): `{"ids": [...], "radius_group"?, "privilege_level"?, "review_date"?, "is_active"?}`. Only those fields; targets never change. All-or-nothing: unknown id → 404, unknown RADIUS group → 422, reactivating a second row in a category → 409. One `BULK_UPDATE` audit entry per row |
 | `DELETE` | `/assignments/{assignment_id}` | `superadmin` | Delete specific row |
+| `POST` | `/assignments/bulk-delete` | `superadmin` | `{"ids": [...]}`; all-or-nothing (unknown id → 404). One `BULK_DELETE` audit entry per row |
 | `POST` | `/preview` | `auditor` / `admin` / `superadmin` | Dry-run the resolver for `(username, nas_ip, calling_station_id)` |
 
 Source: `backend/app/routers/access_policies.py`.
@@ -114,7 +116,11 @@ this deterministic order:
   range exceptions (`target_start_ip`/`target_end_ip`) must lie inside the
   declared `segment_id` CIDR.
 - **One active per (user, category)**: at most one active assignment per user
-  per category is allowed (`PUT` returns 409 on duplicate).
+  per category is allowed (`PUT` and bulk reactivation return 409). It only
+  applies to category rows: editing IP / MAC / segment rows of a user with
+  several such rows is allowed (#97).
+- **Bulk edit `radius_group`**: must exist in `radgroupreply` or
+  `radgroupcheck` (a missing group would break bandwidth resolution).
 - **Audit**: every CREATE / UPDATE / DELETE is logged to `app_audit_log` with
   `EventCode.ADMIN_002`, capturing old_value + new_value.
 
@@ -182,7 +188,7 @@ with three tabs (each a separate component under
 
 | Tab | Component | Purpose |
 |---|---|---|
-| Assignments | `AssignmentsTab.jsx` | CRUD on the assignment list |
+| Assignments | `AssignmentsTab.jsx` | Per-user view: CRUD plus multi-select bulk actions (group, privilege, review date, activate/deactivate, delete for superadmin) |
 | Bandwidth Profiles | `BandwidthProfilesTab.jsx` | CRUD on bandwidth profiles |
 | Preview | `PreviewTab.jsx` | Live resolve against username + NAS IP |
 

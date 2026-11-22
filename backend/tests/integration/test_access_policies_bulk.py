@@ -118,3 +118,198 @@ class TestSingleEditFixes:
             headers=_auth(superadmin_token),
         )
         assert resp.json()["nas_identifier"] == "sw-core-97"
+
+
+async def _group(test_db, name: str) -> str:
+    from app.models.models import RadGroupReply
+
+    test_db.add(RadGroupReply(groupname=name, attribute="Reply-Message", op=":=", value=name))
+    await test_db.commit()
+    return name
+
+
+async def _listed(client, token, username):
+    resp = await client.get("/access-policies/assignments", params={"username": username}, headers=_auth(token))
+    return {r["id"]: r for r in resp.json()}
+
+
+async def _audit_rows(test_db, username, action):
+    test_db.expire_all()
+    rows = (
+        await test_db.execute(select(AppAuditLog).where(AppAuditLog.target_user == username))
+    ).scalars().all()
+    return [r for r in rows if r.action.endswith(action)]
+
+
+class TestBulkUpdate:
+    async def test_bulk_update_changes_only_requested_fields(
+        self, async_client: AsyncClient, superadmin_token: str, test_db
+    ):
+        user = _user()
+        group = await _group(test_db, f"grp_{uuid.uuid4().hex[:6]}")
+        rows = await _bulk_ip(async_client, superadmin_token, user, ["10.97.2.1", "10.97.2.2", "10.97.2.3"])
+        ids = [r["id"] for r in rows[:2]]
+        resp = await async_client.patch(
+            "/access-policies/assignments/bulk",
+            json={"ids": ids, "radius_group": group, "privilege_level": "1", "review_date": "2031-03-15"},
+            headers=_auth(superadmin_token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert sorted(r["id"] for r in resp.json()) == sorted(ids)
+
+        listed = await _listed(async_client, superadmin_token, user)
+        for i in ids:
+            assert listed[i]["radius_group"] == group
+            assert listed[i]["privilege_level"] == "1"
+            assert listed[i]["review_date"] == "2031-03-15"
+            assert listed[i]["nas_ip"] == next(r["nas_ip"] for r in rows if r["id"] == i)
+            assert listed[i]["is_active"] == 1
+        untouched = listed[rows[2]["id"]]
+        assert (untouched["radius_group"], untouched["privilege_level"]) == ("network_admins", "15")
+
+    async def test_bulk_update_writes_one_audit_entry_per_row(
+        self, async_client: AsyncClient, superadmin_token: str, test_db
+    ):
+        user = _user()
+        rows = await _bulk_ip(async_client, superadmin_token, user, ["10.97.3.1", "10.97.3.2"])
+        resp = await async_client.patch(
+            "/access-policies/assignments/bulk",
+            json={"ids": [r["id"] for r in rows], "is_active": 0},
+            headers=_auth(superadmin_token),
+        )
+        assert resp.status_code == 200, resp.text
+        entries = await _audit_rows(test_db, user, "BULK_UPDATE")
+        assert len(entries) == 2
+        assert all(e.admin_user == "test_superadmin" for e in entries)
+        assert all('"is_active": 1' in e.old_value and '"is_active": 0' in e.new_value for e in entries)
+
+    async def test_unknown_group_rejects_whole_batch(self, async_client: AsyncClient, superadmin_token: str):
+        user = _user()
+        rows = await _bulk_ip(async_client, superadmin_token, user, ["10.97.4.1"])
+        resp = await async_client.patch(
+            "/access-policies/assignments/bulk",
+            json={"ids": [rows[0]["id"]], "radius_group": "does-not-exist-97"},
+            headers=_auth(superadmin_token),
+        )
+        assert resp.status_code == 422
+        assert "does-not-exist-97" in resp.json()["detail"]
+        listed = await _listed(async_client, superadmin_token, user)
+        assert listed[rows[0]["id"]]["radius_group"] == "network_admins"
+
+    async def test_unknown_id_rejects_whole_batch(self, async_client: AsyncClient, superadmin_token: str):
+        user = _user()
+        rows = await _bulk_ip(async_client, superadmin_token, user, ["10.97.5.1"])
+        resp = await async_client.patch(
+            "/access-policies/assignments/bulk",
+            json={"ids": [rows[0]["id"], 99999999], "privilege_level": "1"},
+            headers=_auth(superadmin_token),
+        )
+        assert resp.status_code == 404
+        listed = await _listed(async_client, superadmin_token, user)
+        assert listed[rows[0]["id"]]["privilege_level"] == "15"
+
+    @pytest.mark.parametrize("body", [{"ids": []}, {"ids": [1]}, {"ids": [1], "is_active": 5}])
+    async def test_invalid_payload_is_422(self, async_client: AsyncClient, superadmin_token: str, body):
+        resp = await async_client.patch(
+            "/access-policies/assignments/bulk", json=body, headers=_auth(superadmin_token)
+        )
+        assert resp.status_code == 422
+
+    async def test_reactivating_category_rows_respects_single_active_rule(
+        self, async_client: AsyncClient, superadmin_token: str, test_db
+    ):
+        user = _user()
+        cat = await _category(async_client, superadmin_token)
+        cat2 = await _category(async_client, superadmin_token)
+        test_db.add_all(
+            [
+                AccessPolicyAssignment(username=user, nas_category_id=cat["id"], radius_group="g1", is_active=1),
+                AccessPolicyAssignment(username=user, nas_category_id=cat2["id"], radius_group="g1", is_active=0),
+            ]
+        )
+        await test_db.commit()
+        listed = await _listed(async_client, superadmin_token, user)
+        inactive_id = next(i for i, r in listed.items() if r["is_active"] == 0)
+        # Reactivating a row whose category has no other active row is fine.
+        resp = await async_client.patch(
+            "/access-policies/assignments/bulk",
+            json={"ids": [inactive_id], "is_active": 1},
+            headers=_auth(superadmin_token),
+        )
+        assert resp.status_code == 200, resp.text
+
+    async def test_reactivation_conflict_rejects_batch(self, async_client: AsyncClient, superadmin_token: str, test_db):
+        user = _user()
+        cat = await _category(async_client, superadmin_token)
+        test_db.add(AccessPolicyAssignment(username=user, nas_category_id=cat["id"], radius_group="g1", is_active=1))
+        await test_db.commit()
+        # A second, inactive row in the same category can only exist as legacy
+        # data (the ORM target_key prevents it), so insert it with raw SQL.
+        from sqlalchemy import text
+
+        await test_db.execute(
+            text(
+                "INSERT INTO access_policy_assignments (username, target_key, segment_target_key, nas_category_id, radius_group, is_active) "
+                "VALUES (:u, :k, '', :c, 'g1', 0)"
+            ),
+            {"u": user, "k": uuid.uuid4().hex * 2, "c": cat["id"]},
+        )
+        await test_db.commit()
+        listed = await _listed(async_client, superadmin_token, user)
+        dup_id = next(i for i, r in listed.items() if r["is_active"] == 0)
+        resp = await async_client.patch(
+            "/access-policies/assignments/bulk",
+            json={"ids": [dup_id], "is_active": 1},
+            headers=_auth(superadmin_token),
+        )
+        assert resp.status_code == 409
+
+    @pytest.mark.parametrize("token_fixture", ["helpdesk_token", "auditor_token"])
+    async def test_only_admins_can_bulk_update(
+        self, async_client: AsyncClient, superadmin_token: str, token_fixture, request
+    ):
+        user = _user()
+        rows = await _bulk_ip(async_client, superadmin_token, user, ["10.97.6.1"])
+        resp = await async_client.patch(
+            "/access-policies/assignments/bulk",
+            json={"ids": [rows[0]["id"]], "privilege_level": "1"},
+            headers=_auth(request.getfixturevalue(token_fixture)),
+        )
+        assert resp.status_code == 403
+
+
+class TestBulkDelete:
+    async def test_superadmin_bulk_delete_with_per_row_audit(
+        self, async_client: AsyncClient, superadmin_token: str, test_db
+    ):
+        user = _user()
+        rows = await _bulk_ip(async_client, superadmin_token, user, ["10.97.7.1", "10.97.7.2", "10.97.7.3"])
+        ids = [r["id"] for r in rows[:2]]
+        resp = await async_client.post(
+            "/access-policies/assignments/bulk-delete", json={"ids": ids}, headers=_auth(superadmin_token)
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {"deleted": 2}
+        listed = await _listed(async_client, superadmin_token, user)
+        assert set(listed) == {rows[2]["id"]}
+        assert len(await _audit_rows(test_db, user, "BULK_DELETE")) == 2
+
+    async def test_admin_cannot_bulk_delete(self, async_client: AsyncClient, superadmin_token: str, admin_token: str):
+        user = _user()
+        rows = await _bulk_ip(async_client, superadmin_token, user, ["10.97.8.1"])
+        resp = await async_client.post(
+            "/access-policies/assignments/bulk-delete", json={"ids": [rows[0]["id"]]}, headers=_auth(admin_token)
+        )
+        assert resp.status_code == 403
+        assert set(await _listed(async_client, superadmin_token, user)) == {rows[0]["id"]}
+
+    async def test_unknown_id_deletes_nothing(self, async_client: AsyncClient, superadmin_token: str):
+        user = _user()
+        rows = await _bulk_ip(async_client, superadmin_token, user, ["10.97.9.1"])
+        resp = await async_client.post(
+            "/access-policies/assignments/bulk-delete",
+            json={"ids": [rows[0]["id"], 99999999]},
+            headers=_auth(superadmin_token),
+        )
+        assert resp.status_code == 404
+        assert set(await _listed(async_client, superadmin_token, user)) == {rows[0]["id"]}
