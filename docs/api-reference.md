@@ -24,7 +24,8 @@ outputs:
 |---|---|---|---|
 | `POST` | `/auth/token` | none | Form-encoded (`username`, `password`) → JWT |
 | `POST` | `/auth/change-password` | active user | Body: `{"current_password", "new_password"}` |
-| `GET` | `/users` | active | List /admin users (read-only route mapping) |
+| `GET` | `/users` | active | List RADIUS user check attributes (`radcheck`). Password values are never returned: password rows have `value: null` and `has_password: true` |
+| `PUT` | `/users/check/{id}` | `admin` / `superadmin` | Omit `value` to keep the current password; changing a password attribute requires a new `value` (422 otherwise) |
 | `GET` | `/system/version` | none | Returns `{"version": "x.y.z"}` |
 | `GET` | `/system/health` | none | `{"status": "ok"}` |
 | `GET` | `/health/containers` | `admin` / `superadmin` | Per-container resource snapshot |

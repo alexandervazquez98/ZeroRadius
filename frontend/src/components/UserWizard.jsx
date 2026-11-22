@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
+import { PASSWORD_TYPES } from '../constants/passwordTypes';
 import { Check, User, Shield, Activity, Save, Plus, Trash2 } from 'lucide-react';
 
 const UserWizard = ({ onComplete, onCancel }) => {
@@ -99,8 +100,9 @@ const UserWizard = ({ onComplete, onCancel }) => {
                                 value={userData.passwordType}
                                 onChange={e => setUserData({ ...userData, passwordType: e.target.value })}
                             >
-                                <option value="Cleartext-Password">Cleartext-Password</option>
-                                <option value="MD5-Password">MD5-Password</option>
+                                {PASSWORD_TYPES.map(type => (
+                                    <option key={type} value={type}>{type}</option>
+                                ))}
                             </select>
                         </div>
                         <div>

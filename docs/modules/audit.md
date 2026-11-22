@@ -43,6 +43,11 @@ Base path: `/audit`
 | `limit` | 50 (max 100) | page size |
 | `search` | None | Partial match across `admin_user`, `action`, `table_affected`, `target_user` |
 
+`radcheck` entries for password attributes (`Cleartext-Password`,
+`MD5-Password`, …) store `"value": "***"` in `old_value` / `new_value`;
+the password or its hash is never written to the audit log (issue #101).
+Entries created before this change may still contain the original value.
+
 ### 2.2 `GET /audit/access`
 
 | Param | Default | Notes |

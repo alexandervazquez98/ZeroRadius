@@ -40,8 +40,10 @@ export const handlers = [
   // -------------------------------------------------------------------------
   http.get('/api/users', () => {
     return HttpResponse.json([
-      { id: 1, username: 'jperez', attribute: 'Cleartext-Password', op: ':=', value: '***' },
-      { id: 2, username: 'mgarcia', attribute: 'Cleartext-Password', op: ':=', value: '***' },
+      // Password values are never returned by the API (issue #101)
+      { id: 1, username: 'jperez', attribute: 'Cleartext-Password', op: ':=', value: null, has_password: true },
+      { id: 2, username: 'mgarcia', attribute: 'MD5-Password', op: ':=', value: null, has_password: true },
+      { id: 3, username: 'lruiz', attribute: 'Expiration', op: ':=', value: '01 Jan 2030 00:00', has_password: false },
     ])
   }),
 
