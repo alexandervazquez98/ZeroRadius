@@ -56,6 +56,33 @@ The Users table shows the latest link of each password row:
 - **Setup link expired `<date>` · by `<admin>`**: the URL no longer works.
 - **Set via link `<date>` · by `<admin>`**: the user already set the password.
 
+### Email template (Spanish)
+
+ZeroRadius does not send the link. Copy the URL from the modal into an
+email like this one, replacing the `<...>` placeholders:
+
+```text
+Asunto: Configura tu contraseña de acceso a la red
+
+Hola <nombre>:
+
+Se generó un enlace para que configures tu contraseña de acceso a los
+equipos de red con el usuario <usuario>.
+
+Enlace: <URL copiada de ZeroRadius>
+
+- El enlace es personal y funciona una sola vez.
+- Vence el <fecha y hora de "valid until">. Si vence sin usarse, pide uno nuevo.
+- Tu contraseña anterior ya no funciona: podrás acceder de nuevo cuando
+  configures la nueva desde el enlace.
+- Nadie del equipo de soporte conocerá tu contraseña ni te la pedirá.
+
+Si no solicitaste este cambio, avísanos respondiendo a este correo.
+
+Saludos,
+<equipo / firma>
+```
+
 Audit: `PASSWORD_SETUP_LINK_CREATED` (admin, type, expiry) and
 `PASSWORD_SETUP_LINK_USED` (user, type, who created the link). Neither
 records the token or the password.

@@ -53,6 +53,7 @@ For a detailed component view, see [`docs/architecture.md`](docs/architecture.md
 - [**Device Registry**](docs/modules/device-registry.md) *(Phase 2)*
 - [**Network Segments**](docs/modules/network-segments.md) *(Phase 2)*
 - [**NAS Categories**](docs/modules/nas-categories.md) *(Phase 2)*
+- [**RADIUS user passwords**](docs/modules/radius-users.md) — write-only passwords, admin reset, self-service setup link
 - **Other modules** *(Phase 2)*
 
 ### Simulation Recipes for NACs registered in the system
