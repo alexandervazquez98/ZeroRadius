@@ -94,9 +94,7 @@ function captureUpdates() {
 async function openEdit(rowText) {
   const cell = await screen.findByText(rowText)
   const row = cell.closest('tr')
-  const buttons = within(row).getAllByRole('button')
-  // Actions: JIT, Edit, Delete
-  fireEvent.click(buttons[1])
+  fireEvent.click(within(row).getByTitle('Edit'))
   return screen.getByText('Edit User Attribute').closest('div').parentElement
 }
 
@@ -106,48 +104,6 @@ describe('UsersPage — credentials are not exposed (#101, #95)', () => {
     await screen.findByText('mgarcia')
     expect(screen.getAllByText('(password set)')).toHaveLength(2)
     expect(screen.getByText('01 Jan 2030 00:00')).toBeInTheDocument()
-  })
-
-  it('edit modal offers a password type selector and an empty password field', async () => {
-    renderUsers('superadmin')
-    const modal = await openEdit('MD5-Password')
-
-    const typeSelect = within(modal).getByLabelText('Password type')
-    expect(typeSelect.tagName).toBe('SELECT')
-    expect(typeSelect).toHaveValue('MD5-Password')
-    expect(within(typeSelect).getAllByRole('option').map(o => o.value)).toEqual([
-      'Cleartext-Password',
-      'MD5-Password',
-      'NT-Password',
-    ])
-
-    const password = within(modal).getByLabelText('New password')
-    expect(password).toHaveValue('')
-    expect(password).toHaveAttribute('type', 'password')
-    expect(password).not.toBeRequired()
-  })
-
-  it('requires a new password when the password type changes', async () => {
-    const updates = captureUpdates()
-    renderUsers('superadmin')
-    const modal = await openEdit('MD5-Password')
-
-    fireEvent.change(within(modal).getByLabelText('Password type'), {
-      target: { value: 'Cleartext-Password' },
-    })
-    const password = within(modal).getByLabelText('New password')
-    expect(password).toBeRequired()
-
-    fireEvent.change(password, { target: { value: 'new-pw' } })
-    fireEvent.click(within(modal).getByText('Save Changes'))
-
-    await waitFor(() => expect(updates).toHaveLength(1))
-    expect(updates[0].body).toEqual({
-      username: 'mgarcia',
-      attribute: 'Cleartext-Password',
-      op: ':=',
-      value: 'new-pw',
-    })
   })
 
   it('keeps the current password when the field is left blank', async () => {
@@ -186,15 +142,117 @@ describe('UsersPage — credentials are not exposed (#101, #95)', () => {
   })
 })
 
-describe('UsersPage — NT-Password support (#96)', () => {
-  it('explains which protocols each password type supports', async () => {
+function captureResets(response = {}) {
+  const bodies = []
+  server.use(
+    http.post('/api/users/check/:id/reset-password', async ({ request, params }) => {
+      const body = await request.json()
+      bodies.push({ id: params.id, body })
+      return HttpResponse.json({
+        id: Number(params.id),
+        username: 'mgarcia',
+        attribute: body.password_type,
+        generated_password: null,
+        ...response,
+      })
+    })
+  )
+  return bodies
+}
+
+async function openReset(rowText) {
+  const cell = await screen.findByText(rowText)
+  const row = cell.closest('tr')
+  fireEvent.click(within(row).getByTitle('Reset password'))
+  return screen.getByText('Reset password', { selector: 'h3' }).closest('div').parentElement
+}
+
+describe('UsersPage — admin password reset (#101 B)', () => {
+  it('edit modal no longer edits the password or its type', async () => {
     renderUsers('superadmin')
     const modal = await openEdit('MD5-Password')
-    expect(within(modal).getByText(/MD5-Password works with PAP only/)).toBeInTheDocument()
+    expect(within(modal).queryByLabelText('New password')).toBeNull()
+    expect(within(modal).queryByLabelText('Password type')).toBeNull()
+    expect(within(modal).getByText(/Use Reset password to change it/)).toBeInTheDocument()
+  })
 
-    fireEvent.change(within(modal).getByLabelText('Password type'), {
-      target: { value: 'NT-Password' },
-    })
+  it('offers reset only on password rows', async () => {
+    renderUsers('superadmin')
+    await screen.findByText('lruiz')
+    expect(screen.getAllByTitle('Reset password')).toHaveLength(2)
+    const expirationRow = screen.getByText('Expiration').closest('tr')
+    expect(within(expirationRow).queryByTitle('Reset password')).toBeNull()
+  })
+
+  it('sets a typed password with the chosen type', async () => {
+    const resets = captureResets()
+    renderUsers('superadmin')
+    const modal = await openReset('MD5-Password')
+
+    const typeSelect = within(modal).getByLabelText('Password type')
+    expect(typeSelect).toHaveValue('MD5-Password')
+    expect(within(typeSelect).getAllByRole('option').map(o => o.value)).toEqual([
+      'Cleartext-Password',
+      'MD5-Password',
+      'NT-Password',
+    ])
+    fireEvent.change(typeSelect, { target: { value: 'NT-Password' } })
     expect(within(modal).getByText(/NT-Password works with PAP and MS-CHAPv2/)).toBeInTheDocument()
+
+    const password = within(modal).getByLabelText('New password')
+    expect(password).toHaveAttribute('type', 'password')
+    fireEvent.change(password, { target: { value: 'new-pw' } })
+    fireEvent.click(within(modal).getByRole('button', { name: 'Set password' }))
+
+    await waitFor(() => expect(resets).toHaveLength(1))
+    expect(resets[0]).toEqual({ id: '2', body: { password: 'new-pw', password_type: 'NT-Password' } })
+    await waitFor(() => expect(screen.queryByText('Reset password', { selector: 'h3' })).toBeNull())
+  })
+
+  it('shows a generated password once', async () => {
+    const resets = captureResets({ attribute: 'MD5-Password', generated_password: 'Gen-Once-123456789' })
+    renderUsers('superadmin')
+    let modal = await openReset('MD5-Password')
+
+    fireEvent.click(within(modal).getByRole('button', { name: 'Generate password' }))
+    await waitFor(() => expect(resets).toHaveLength(1))
+    expect(resets[0].body).toEqual({ generate: true, password_type: 'MD5-Password' })
+    expect(await within(modal).findByText('Gen-Once-123456789')).toBeInTheDocument()
+    expect(within(modal).getByText(/will not be shown again/)).toBeInTheDocument()
+
+    fireEvent.click(within(modal).getByRole('button', { name: 'Done' }))
+    expect(screen.queryByText('Gen-Once-123456789')).toBeNull()
+
+    modal = await openReset('MD5-Password')
+    expect(within(modal).queryByText('Gen-Once-123456789')).toBeNull()
+  })
+})
+
+describe('UsersPage — reset defaults to a settable type', () => {
+  it('offers only settable types and defaults legacy or lowercase types sensibly', async () => {
+    server.use(
+      http.get('/api/users', () =>
+        HttpResponse.json([
+          { id: 7, username: 'legacy', attribute: 'Crypt-Password', op: ':=', value: null, has_password: true },
+          { id: 8, username: 'lower', attribute: 'nt-password', op: ':=', value: null, has_password: true },
+        ])
+      )
+    )
+    renderUsers('superadmin')
+
+    let modal = await openReset('Crypt-Password')
+    let typeSelect = within(modal).getByLabelText('Password type')
+    expect(within(typeSelect).getAllByRole('option').map(o => o.value)).toEqual([
+      'Cleartext-Password',
+      'MD5-Password',
+      'NT-Password',
+    ])
+    expect(typeSelect).toHaveValue('NT-Password')
+    fireEvent.click(within(modal).getByLabelText('Close'))
+
+    modal = await openReset('nt-password')
+    typeSelect = within(modal).getByLabelText('Password type')
+    expect(within(typeSelect).getAllByRole('option')).toHaveLength(3)
+    expect(typeSelect).toHaveValue('NT-Password')
   })
 })

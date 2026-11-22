@@ -25,7 +25,8 @@ outputs:
 | `POST` | `/auth/token` | none | Form-encoded (`username`, `password`) → JWT |
 | `POST` | `/auth/change-password` | active user | Body: `{"current_password", "new_password"}` |
 | `GET` | `/users` | active | List RADIUS user check attributes (`radcheck`). Password values are never returned: password rows have `value: null` and `has_password: true` |
-| `PUT` | `/users/check/{id}` | `admin` / `superadmin` | Omit `value` to keep the current password; changing a password attribute requires a new `value` (422 otherwise) |
+| `PUT` | `/users/check/{id}` | `admin` / `superadmin` | Omit `value` to keep the current password; changing a password attribute requires a new `value` (422 otherwise); a password `value` is accepted only for `Cleartext-Password` / `MD5-Password` / `NT-Password` (422 for `Crypt-Password`, `SSHA-Password`, …). The UI changes passwords only through reset-password |
+| `POST` | `/users/check/{id}/reset-password` | `admin` / `superadmin` | Body: `{"password": "..."}` or `{"generate": true}`, optional `password_type` (`Cleartext-Password` / `MD5-Password` / `NT-Password`, default: current). Returns `generated_password` only when generated (shown once). Audited as `PASSWORD_RESET` without the value |
 | `GET` | `/system/version` | none | Returns `{"version": "x.y.z"}` |
 | `GET` | `/system/health` | none | `{"status": "ok"}` |
 | `GET` | `/health/containers` | `admin` / `superadmin` | Per-container resource snapshot |

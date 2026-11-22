@@ -1,21 +1,17 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
-import { Plus, Trash2, Edit, X, Clock, ShieldAlert } from 'lucide-react';
+import { Plus, Trash2, Edit, X, Clock, ShieldAlert, KeyRound } from 'lucide-react';
 import UserWizard from '../components/UserWizard';
 import { useToast } from '../context/ToastContext';
-import { PASSWORD_TYPES, PASSWORD_TYPE_HELP } from '../constants/passwordTypes';
+import PasswordResetModal from '../components/PasswordResetModal';
 
-// Password values are write-only (#101): the API returns has_password instead,
-// and the edit form sends a new password only when the operator types one (#95).
-const startEditing = (user) => ({ ...user, newPassword: '', originalAttribute: user.attribute });
-
+// Password values are write-only (#101): the API returns has_password instead.
+// The edit form never sends a password; it is changed with Reset password (#101 B).
 const buildUpdatePayload = (editing) => {
     const payload = { username: editing.username, attribute: editing.attribute, op: editing.op };
     if (!editing.has_password) {
         payload.value = editing.value;
-    } else if (editing.newPassword) {
-        payload.value = editing.newPassword;
     }
     return payload;
 };
@@ -27,6 +23,7 @@ const UsersPage = () => {
     const [newUser, setNewUser] = useState({ username: '', attribute: 'Cleartext-Password', op: ':=', value: '' });
 
     const [editingUser, setEditingUser] = useState(null);
+    const [resettingUser, setResettingUser] = useState(null);
     const [jitUser, setJitUser] = useState(null);
     const [jitData, setJitData] = useState({ hours: 1, reason: '' });
 
@@ -130,9 +127,19 @@ const UsersPage = () => {
                                     >
                                         <Clock size={18} />
                                     </button>
+                                    {user.has_password && (
+                                        <button
+                                            onClick={() => setResettingUser(user)}
+                                            className="text-amber-600 hover:text-amber-800"
+                                            title="Reset password"
+                                        >
+                                            <KeyRound size={18} />
+                                        </button>
+                                    )}
                                     <button
-                                        onClick={() => setEditingUser(startEditing(user))}
+                                        onClick={() => setEditingUser({ ...user })}
                                         className="text-blue-600 hover:text-blue-900"
+                                        title="Edit"
                                     >
                                         <Edit size={18} />
                                     </button>
@@ -210,6 +217,11 @@ const UsersPage = () => {
                 </div>
             )}
 
+            {/* Password Reset Modal */}
+            {resettingUser && (
+                <PasswordResetModal user={resettingUser} onClose={() => setResettingUser(null)} />
+            )}
+
             {/* Edit Modal */}
             {editingUser && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -231,40 +243,9 @@ const UsersPage = () => {
                                 />
                             </div>
                             {editingUser.has_password ? (
-                                <>
-                                    <div>
-                                        <label htmlFor="edit-password-type" className="block text-sm font-medium text-gray-700">Password type</label>
-                                        <select
-                                            id="edit-password-type"
-                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 bg-white"
-                                            value={editingUser.attribute}
-                                            onChange={e => setEditingUser({ ...editingUser, attribute: e.target.value })}
-                                        >
-                                            {/* Keep a stored type that is not offered for new users selectable */}
-                                            {[...new Set([...PASSWORD_TYPES, editingUser.originalAttribute])].map(type => (
-                                                <option key={type} value={type}>{type}</option>
-                                            ))}
-                                        </select>
-                                        {PASSWORD_TYPE_HELP[editingUser.attribute] && (
-                                            <p className="mt-1 text-xs text-gray-500">{PASSWORD_TYPE_HELP[editingUser.attribute]}</p>
-                                        )}
-                                    </div>
-                                    <div>
-                                        <label htmlFor="edit-new-password" className="block text-sm font-medium text-gray-700">New password</label>
-                                        <input
-                                            id="edit-new-password"
-                                            type="password"
-                                            autoComplete="new-password"
-                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2"
-                                            value={editingUser.newPassword}
-                                            required={editingUser.attribute !== editingUser.originalAttribute}
-                                            placeholder={editingUser.attribute !== editingUser.originalAttribute
-                                                ? 'Required when changing the password type'
-                                                : 'Leave blank to keep current password'}
-                                            onChange={e => setEditingUser({ ...editingUser, newPassword: e.target.value })}
-                                        />
-                                    </div>
-                                </>
+                                <p className="text-sm text-gray-600">
+                                    Password type: <span className="font-mono">{editingUser.attribute}</span>. Use Reset password to change it.
+                                </p>
                             ) : (
                                 <>
                                     <div>

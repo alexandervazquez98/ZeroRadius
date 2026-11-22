@@ -1,3 +1,5 @@
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
@@ -12,6 +14,10 @@ from app.schemas.schemas import (
     RadReplyOut,
     RadCheckUpdate,
     is_password_attribute,
+    PasswordResetRequest,
+    PasswordResetOut,
+    SETTABLE_PASSWORD_TYPES,
+    settable_password_type,
 )
 from app.services.audit import log_audit
 from app.core.radius_passwords import hash_password_value
@@ -110,6 +116,15 @@ async def update_user_check(
         if is_password_attribute(target_attribute) and update_data.get("value") == "":
             raise HTTPException(status_code=422, detail="Password cannot be empty")
         if (
+            is_password_attribute(target_attribute)
+            and "value" in update_data
+            and settable_password_type(target_attribute) is None
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Passwords can only be set as: {', '.join(SETTABLE_PASSWORD_TYPES)}",
+            )
+        if (
             target_attribute.casefold() != user.attribute.casefold()
             and "value" not in update_data
         ):
@@ -137,6 +152,67 @@ async def update_user_check(
         new_value=_audit_safe(update_data, target_attribute),
     )
     return user
+
+
+@router.post("/check/{id}/reset-password", response_model=PasswordResetOut)
+@limiter.limit("30/minute")
+async def reset_user_password(
+    request: Request,
+    id: int,
+    body: PasswordResetRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
+):
+    """Set a new password for a password row (#101 B).
+
+    Either ``password`` or ``generate=true``. A generated password is
+    returned once in the response and never stored or logged in cleartext
+    (unless the row uses Cleartext-Password).
+    """
+    if (body.password is None) == (not body.generate):
+        raise HTTPException(
+            status_code=422, detail="Provide either a password or generate=true"
+        )
+    if body.password == "":
+        raise HTTPException(status_code=422, detail="Password cannot be empty")
+
+    result = await db.execute(select(RadCheck).where(RadCheck.id == id))
+    row = result.scalars().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="User check attribute not found")
+    if not is_password_attribute(row.attribute):
+        raise HTTPException(status_code=422, detail="This attribute is not a password")
+
+    # Default to the row's current type, but only types the backend can hash.
+    requested = body.password_type if body.password_type is not None else row.attribute
+    attribute = settable_password_type(requested)
+    if attribute is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"password_type must be one of: {', '.join(SETTABLE_PASSWORD_TYPES)}"
+            + ("" if body.password_type is not None else f" (current type {row.attribute} cannot be set)"),
+        )
+
+    generated = secrets.token_urlsafe(15) if body.generate else None
+    plaintext = generated or body.password
+
+    old_attribute = row.attribute
+    row.attribute = attribute
+    row.value = hash_password_value(attribute, plaintext)
+    await db.commit()
+
+    await log_audit(
+        db,
+        current_user.username,
+        "PASSWORD_RESET",
+        "radcheck",
+        row.username,
+        old_value={"attribute": old_attribute},
+        new_value={"attribute": attribute, "generated": body.generate},
+    )
+    return PasswordResetOut(
+        id=row.id, username=row.username, attribute=attribute, generated_password=generated
+    )
 
 
 @router.delete("/check/{id}")

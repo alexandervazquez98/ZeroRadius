@@ -113,6 +113,44 @@ def is_password_attribute(attribute: Optional[str]) -> bool:
     return bool(attribute) and attribute.casefold() in _PASSWORD_ATTRIBUTES_FOLDED
 
 
+# Password types an admin can choose when creating or resetting a password.
+# Must match frontend/src/constants/passwordTypes.js.
+SETTABLE_PASSWORD_TYPES = ("Cleartext-Password", "MD5-Password", "NT-Password")
+
+
+def settable_password_type(attribute: Optional[str]) -> Optional[str]:
+    """Canonical settable type matching ``attribute`` (case-insensitive), or None.
+
+    A plaintext password can only be written under these types: the backend
+    hashes MD5/NT and stores Cleartext as is. Writing it under any other
+    password attribute (Crypt-Password, SSHA-Password, ...) would store the
+    plaintext where FreeRADIUS expects a hash.
+    """
+    if not attribute:
+        return None
+    for candidate in SETTABLE_PASSWORD_TYPES:
+        if candidate.casefold() == attribute.casefold():
+            return candidate
+    return None
+
+
+class PasswordResetRequest(BaseModel):
+    """Admin password reset (#101 B): give a password or ask for one."""
+
+    password: Optional[str] = None
+    generate: bool = False
+    # Defaults to the row's current password type.
+    password_type: Optional[str] = None
+
+
+class PasswordResetOut(BaseModel):
+    id: int
+    username: str
+    attribute: str
+    # Only set when the server generated the password; shown once, never stored.
+    generated_password: Optional[str] = None
+
+
 class RadCheckOut(BaseModel):
     id: int
     username: str
