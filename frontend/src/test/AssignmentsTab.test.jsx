@@ -96,3 +96,106 @@ describe('AssignmentsTab — single edit (#97 S6)', () => {
     expect(calls.put[0].body).toMatchObject({ cir_id: 5, nas_identifier: 'sw-core-1', nas_ip: '10.0.0.1' })
   })
 })
+
+import { vi } from 'vitest'
+
+async function selectAll() {
+  fireEvent.click(await screen.findByLabelText('Select all policies'))
+}
+
+describe('AssignmentsTab — bulk actions (#97 S1-S3)', () => {
+  it('selects all policies of the user and shows the bulk bar', async () => {
+    useApi()
+    renderTab()
+    await selectUser('alice')
+    expect(screen.queryByText(/selected/)).toBeNull()
+    await selectAll()
+    expect(screen.getByText('3 selected')).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('Select policy 12'))
+    expect(screen.getByText('2 selected')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['group', () => {
+      fireEvent.change(screen.getByLabelText('Bulk RADIUS group'), { target: { value: 'net-read' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Apply group' }))
+    }, { radius_group: 'net-read' }],
+    ['privilege', () => {
+      fireEvent.change(screen.getByLabelText('Bulk privilege level'), { target: { value: '1' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Apply privilege' }))
+    }, { privilege_level: '1' }],
+    ['review date', () => {
+      fireEvent.change(screen.getByLabelText('Bulk review date'), { target: { value: '2031-03-15' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Apply review date' }))
+    }, { review_date: '2031-03-15' }],
+    ['deactivate', () => fireEvent.click(screen.getByRole('button', { name: 'Deactivate' })), { is_active: 0 }],
+    ['activate', () => fireEvent.click(screen.getByRole('button', { name: 'Activate' })), { is_active: 1 }],
+  ])('applies %s to the selected policies', async (_name, act, change) => {
+    const calls = useApi()
+    renderTab('admin')
+    await selectUser('alice')
+    await selectAll()
+    act()
+    await waitFor(() => expect(calls.patch).toHaveLength(1))
+    expect(calls.patch[0]).toEqual({ ids: [11, 12, 13], ...change })
+    await waitFor(() => expect(screen.queryByText(/selected/)).toBeNull())
+  })
+
+  it('lets only superadmin delete the selection', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const calls = useApi()
+    renderTab('superadmin')
+    await selectUser('alice')
+    await selectAll()
+    fireEvent.click(screen.getByRole('button', { name: 'Delete selected' }))
+    await waitFor(() => expect(calls.bulkDelete).toHaveLength(1))
+    expect(calls.bulkDelete[0]).toEqual({ ids: [11, 12, 13] })
+    confirm.mockRestore()
+  })
+
+  it('hides bulk delete for admin', async () => {
+    useApi()
+    renderTab('admin')
+    await selectUser('alice')
+    await selectAll()
+    expect(screen.queryByRole('button', { name: 'Delete selected' })).toBeNull()
+  })
+
+  it('clears the selection when switching user', async () => {
+    useApi()
+    renderTab()
+    await selectUser('alice')
+    await selectAll()
+    await selectUser('bob')
+    expect(screen.queryByText(/selected/)).toBeNull()
+  })
+})
+
+describe('AssignmentsTab — category hint (#97 S4)', () => {
+  it('offers a category target when many NAS are picked one by one', async () => {
+    useApi()
+    server.use(
+      http.get('/api/nas', () =>
+        HttpResponse.json([
+          { id: 1, nasname: '10.0.1.1', shortname: 'a', type: 'cisco' },
+          { id: 2, nasname: '10.0.1.2', shortname: 'b', type: 'cisco' },
+          { id: 3, nasname: '10.0.1.3', shortname: 'c', type: 'cisco' },
+        ])
+      )
+    )
+    renderTab()
+    await selectUser('alice')
+    const addButtons = screen.getAllByRole('button', { name: /Add Policy/ })
+    fireEvent.click(addButtons[addButtons.length - 1])
+    expect(screen.getByRole('button', { name: 'NAS Category' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Specific NAS / IPs (Legacy)' }))
+    for (const ip of ['10.0.1.1', '10.0.1.2']) fireEvent.click(await screen.findByText(ip))
+    expect(screen.queryByText(/one policy per NAS/)).toBeNull()
+    fireEvent.click(screen.getByText('10.0.1.3'))
+    expect(screen.getByText(/one policy per NAS/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use a NAS category' }))
+    expect(await screen.findByRole('option', { name: 'Switches' })).toBeInTheDocument()
+  })
+})
