@@ -34,8 +34,8 @@ Convention notes:
   silent-green bug that caused Round 1 to merge a no-op fix).
 - Tests rely on the seed fixture
   `radius-tests/fixtures/seed_huntgroup_enforcement.sql` which includes
-  the three `nas` table entries (127.0.0.1, 192.168.1.10,
-  192.168.1.50) so FreeRADIUS does not drop the request before
+  the three `nas` table entries (127.0.0.1, 192.0.2.10,
+  192.0.2.50) so FreeRADIUS does not drop the request before
   reaching `nas_based_authorization`.
 """
 
@@ -59,8 +59,8 @@ class TestHuntgroupEnforcement:
     def test_matching_nas_returns_accept_with_reply_attrs(
         self, radius_client, skip_if_no_radius
     ):
-        """Scenario 1: juan.perez + oficina-admin (radgroupcheck NAS-IP=192.168.1.10)
-        + request from 192.168.1.10 -> Access-Accept with Cisco-AVPair reply.
+        """Scenario 1: juan.perez + oficina-admin (radgroupcheck NAS-IP=192.0.2.10)
+        + request from 192.0.2.10 -> Access-Accept with Cisco-AVPair reply.
 
         GREEN on `main` and GREEN after the fix (the hydration order test).
         If the new policy is wired BEFORE the second -sql, this test will
@@ -70,7 +70,7 @@ class TestHuntgroupEnforcement:
             radius_client,
             username="juan.perez",
             password="testpassword",
-            nas_ip="192.168.1.10",
+            nas_ip="192.0.2.10",
         )
 
         assert reply.code == packet.AccessAccept, (
@@ -92,8 +92,8 @@ class TestHuntgroupEnforcement:
     def test_mismatching_nas_returns_reject(
         self, radius_client, skip_if_no_radius
     ):
-        """Scenario 2: juan.perez + oficina-admin (radgroupcheck NAS-IP=192.168.1.10)
-        + request from 192.168.1.50 -> Access-Reject, no Cisco-AVPair.
+        """Scenario 2: juan.perez + oficina-admin (radgroupcheck NAS-IP=192.0.2.10)
+        + request from 192.0.2.50 -> Access-Reject, no Cisco-AVPair.
 
         RED on `main` (the bug — current behavior is Access-Accept with
         stripped reply attrs).
@@ -104,7 +104,7 @@ class TestHuntgroupEnforcement:
             radius_client,
             username="juan.perez",
             password="testpassword",
-            nas_ip="192.168.1.50",
+            nas_ip="192.0.2.50",
         )
 
         assert reply.code == packet.AccessReject, (
@@ -127,7 +127,7 @@ class TestHuntgroupEnforcement:
         self, radius_client, skip_if_no_radius
     ):
         """Scenario 3: maria.lopez + branch-read (no radgroupcheck rows)
-        + request from 192.168.1.50 -> Access-Accept (regression guard).
+        + request from 192.0.2.50 -> Access-Accept (regression guard).
 
         GREEN on `main` and GREEN after the fix — the policy must skip
         enforcement when the resolved group has no radgroupcheck rows.
@@ -136,7 +136,7 @@ class TestHuntgroupEnforcement:
             radius_client,
             username="maria.lopez",
             password="testpassword",
-            nas_ip="192.168.1.50",
+            nas_ip="192.0.2.50",
         )
 
         assert reply.code == packet.AccessAccept, (
@@ -156,7 +156,7 @@ class TestHuntgroupEnforcement:
     ):
         """Scenario 4: carlos.ruiz has NO radusergroup row but is assigned to
         branch-read via access_policy_assignments. branch-read has no
-        radgroupcheck rows. Request from 192.168.1.50 -> Access-Accept.
+        radgroupcheck rows. Request from 192.0.2.50 -> Access-Accept.
 
         GREEN on `main` and GREEN after the fix — the
         access_policy_assignments path resolves SQL-Group to
@@ -171,7 +171,7 @@ class TestHuntgroupEnforcement:
             radius_client,
             username="carlos.ruiz",
             password="testpassword",
-            nas_ip="192.168.1.50",
+            nas_ip="192.0.2.50",
         )
 
         assert reply.code == packet.AccessAccept, (
