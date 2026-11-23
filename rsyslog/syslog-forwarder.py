@@ -48,6 +48,23 @@ _TIMESTAMP_RE = re.compile(
 _TAG_RE = re.compile(r"^([^\s:\[]+)(?:\[\d+\])?:\s*(.*)$", re.S)
 # MikroTik remote logging: "system,info,account user admin logged in ..."
 _MIKROTIK_TOPICS_RE = re.compile(r"^([a-z]+(?:,[a-z]+)+)\s+(.*)$", re.S)
+# RouterOS severity topics; the most severe one wins when several are present.
+_MIKROTIK_SEVERITY = {"critical": 2, "error": 3, "warning": 4, "info": 6, "debug": 7}
+
+
+def _mikrotik_without_pri(message: str):
+    """RouterOS with bsd-syslog=no sends "topics message" and no <PRI>.
+
+    Return (program, text, severity), or None when the line does not carry a
+    RouterOS severity topic.
+    """
+    topics = _MIKROTIK_TOPICS_RE.match(message)
+    if not topics:
+        return None
+    levels = [_MIKROTIK_SEVERITY[t] for t in topics.group(1).split(",") if t in _MIKROTIK_SEVERITY]
+    if not levels:
+        return None
+    return topics.group(1), topics.group(2), min(levels)
 
 
 def _utc_now() -> str:
@@ -98,6 +115,10 @@ def parse_syslog(message: str, source_ip: str) -> dict:
                 text = sd.group(1) if sd else after_header
             else:
                 program, text = _split_rfc3164(rest)
+        else:
+            mikrotik = _mikrotik_without_pri(message)
+            if mikrotik:
+                program, text, severity = mikrotik
     except Exception as e:
         logger.warning(f"Failed to parse syslog: {e}")
         program, text = None, message

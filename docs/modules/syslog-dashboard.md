@@ -29,6 +29,10 @@ A two-tier pipeline:
    the real source for LAN devices). The forwarder parses RFC 3164, RFC 5424,
    Cisco IOS (`45: *Nov 23 17:52:31.123: %SYS-5-CONFIG_I: ...`) and MikroTik
    (`system,info,account user ...`) bodies into `program` and `message`.
+   RouterOS remote logging (default `bsd-syslog=no`) sends no `<PRI>`; then the
+   severity comes from the most severe topic (`critical`=2, `error`=3,
+   `warning`=4, `info`=6, `debug`=7). Lines without `<PRI>` or a severity topic
+   are stored as-is with severity 6.
    Tests: `python -m pytest rsyslog/tests` (needs `requests`).
 2. The backend persists each event into `syslog_events`; the integrity
    service (`syslog_integrity.py`) maintains a tamper-evident hash chain

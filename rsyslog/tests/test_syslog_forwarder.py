@@ -127,3 +127,28 @@ def test_handle_client_ignores_empty(monkeypatch, raw):
     fwd.message_buffer.clear()
     fwd.handle_client(raw.encode(), ("192.168.1.190", 40000))
     assert fwd.message_buffer == []
+
+
+# RouterOS remote logging (bsd-syslog=no) sends no <PRI>: "system,info log rule added by admin".
+@pytest.mark.parametrize(
+    "raw, program, severity",
+    [
+        ("system,info log rule added by admin", "system,info", 6),
+        ("system,error,critical login failure for user admin via ssh", "system,error,critical", 2),
+        ("interface,warning ether2 link down", "interface,warning", 4),
+        ("dhcp,debug,packet dhcp1 received discover", "dhcp,debug,packet", 7),
+    ],
+)
+def test_mikrotik_without_priority_uses_topics(raw, program, severity):
+    e = fwd.parse_syslog(raw, SRC)
+    assert e["device_ip"] == SRC
+    assert e["program"] == program
+    assert e["message"] == raw.split(" ", 1)[1]
+    assert e["severity"] == severity
+
+
+def test_comma_words_without_severity_topic_stay_unparsed():
+    e = fwd.parse_syslog("foo,bar baz qux", SRC)
+    assert e["program"] is None
+    assert e["message"] == "foo,bar baz qux"
+    assert e["severity"] == 6
