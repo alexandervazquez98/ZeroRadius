@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
+import { useAuth } from '../context/AuthContext';
+
+// Writing a dictionary restarts RADIUS: same roles as the API
+// (backend/app/routers/dictionary.py). Every role can read.
+const WRITE_ROLES = ['superadmin', 'admin'];
 import {
     Upload, FileText, CheckCircle, AlertTriangle,
     Edit2, X, Save, Trash2, Eye, ArrowLeft,
@@ -245,6 +250,8 @@ const RadiusLogPanel = () => {
 /* ------------------------------------------------------------------ */
 const DictionariesPage = () => {
     const queryClient = useQueryClient();
+    const { hasRole } = useAuth();
+    const canWrite = hasRole(WRITE_ROLES);
     const [uploadError, setUploadError] = useState(null);
     const [uploadSuccess, setUploadSuccess] = useState(null);
     const [renamingFile, setRenamingFile] = useState(null);
@@ -329,7 +336,7 @@ const DictionariesPage = () => {
             <div className="max-w-7xl mx-auto space-y-6">
                 <DictionaryEditor
                     filename={editingFile.name}
-                    readonly={editingFile.builtin}
+                    readonly={editingFile.builtin || !canWrite}
                     builtinPath={editingFile.builtin ? true : null}
                     onClose={() => setEditingFile(null)}
                 />
@@ -347,6 +354,7 @@ const DictionariesPage = () => {
             </div>
 
             {/* Upload card */}
+            {canWrite && (
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
@@ -381,8 +389,10 @@ const DictionariesPage = () => {
                 )}
             </div>
 
-            {/* FreeRADIUS Log Panel */}
-            <RadiusLogPanel />
+            )}
+
+            {/* FreeRADIUS Log Panel (API: admin/superadmin only) */}
+            {canWrite && <RadiusLogPanel />}
 
             {/* Custom dictionaries grid */}
             {files && files.length > 0 && (
@@ -433,6 +443,7 @@ const DictionariesPage = () => {
                                             className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all">
                                             <Eye size={18} />
                                         </button>
+                                        {canWrite && (<>
                                         <button onClick={() => { setRenamingFile(file); setNewName(file); }} title="Rename"
                                             className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all">
                                             <Edit2 size={18} />
@@ -441,6 +452,7 @@ const DictionariesPage = () => {
                                             className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
                                             <Trash2 size={18} />
                                         </button>
+                                        </>)}
                                     </div>
                                 )}
                                 {confirmDelete === file && (

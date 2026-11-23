@@ -34,16 +34,20 @@ Base path: `/dictionary`
 | Method | Path | Roles | Notes |
 |---|---|---|---|
 | `GET` | `/files` | any active user | List custom dictionary filenames |
-| `POST` | `/upload` | any active user | Upload (multipart/form-data); auto-converts v4 types; restarts radius |
-| `POST` | `/rename?old_name=…&new_name=…` | any active user | Rename + restart radius |
-| `DELETE` | `/{filename}` | any active user | Delete + restart radius |
+| `POST` | `/upload` | `admin` / `superadmin` | Upload (multipart/form-data); auto-converts v4 types; restarts radius |
+| `POST` | `/rename?old_name=…&new_name=…` | `admin` / `superadmin` | Rename + restart radius |
+| `DELETE` | `/{filename}` | `admin` / `superadmin` | Delete + restart radius |
 | `GET` | `/content/{filename}` | any active user | Read raw content |
-| `PUT` | `/content/{filename}` | any active user | Overwrite content + restart radius |
+| `PUT` | `/content/{filename}` | `admin` / `superadmin` | Overwrite content + restart radius |
 | `GET` | `/builtin` | any active user | List built-in dictionary files (skipping Motorola — replaced by custom Cambium) |
 | `GET` | `/builtin/{filename}` | any active user | Read built-in content (filename pattern-enforced) |
 | `GET` | `/attributes` | any active user | Merged custom + built-in attribute list |
 | `GET` | `/values/{attribute_name}` | any active user | Enum values for a given attribute |
 | `GET` | `/radius-logs?lines=N` | `admin` / `superadmin` | Filtered FreeRADIUS logs for diagnosis |
+
+Writes restart RADIUS, so they need the same roles as NAS management. The
+UI hides upload, rename, delete, save and the log panel for other roles; they
+can still open a dictionary read-only.
 
 ## 3. Custom dictionary CRUD
 
