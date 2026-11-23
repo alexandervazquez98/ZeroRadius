@@ -33,9 +33,11 @@ def _reset_rate_limits():
 
 @pytest.fixture(autouse=True)
 def _no_radius_restart(monkeypatch):
-    """The bulk endpoint must never restart FreeRADIUS."""
+    """The bulk endpoint must never restart FreeRADIUS (no Docker access at all)."""
+    import docker
+
     calls: list[int] = []
-    monkeypatch.setattr("app.routers.nas._reload_radius", lambda: calls.append(1))
+    monkeypatch.setattr(docker, "from_env", lambda *a, **k: calls.append(1))
     yield calls
 
 
