@@ -49,7 +49,7 @@ For each domain, deep documentation lives under `docs/modules/<name>.md`.
 
 | Domain | Module doc | Router paths |
 |---|---|---|
-| NAS / RADIUS clients | (no doc — see `routers/nas.py`) | `/nas` (CRUD) ; `/nas-categories` (CRUD) — see [`docs/modules/nas-categories.md`](modules/nas-categories.md) |
+| NAS / RADIUS clients | [`docs/01-nas-provisioning.md`](01-nas-provisioning.md) | `/nas` (CRUD), `/nas/bulk/csv`, `/nas/bulk/template` ; `/nas-categories` (CRUD) — see [`docs/modules/nas-categories.md`](modules/nas-categories.md) |
 | Groups (RADIUS groups) | (no doc — see `routers/groups.py`) | `/groups` ; `/groups/{id}` |
 | Sessions | (no doc — see `routers/sessions.py`) | `/sessions` |
 | Audit | [`docs/modules/audit.md`](modules/audit.md) | `/audit/admin`, `/audit/access`, `/audit/export` |
@@ -61,6 +61,13 @@ For each domain, deep documentation lives under `docs/modules/<name>.md`.
 | Access Policies | [`docs/modules/access-policies.md`](modules/access-policies.md) | `/access-policies/assignments` (CRUD + bulk + preview); `/access-policies/bandwidth-profiles` |
 | Circuits (CIR) | [`docs/modules/circuits.md`](modules/circuits.md) | `/circuits`, `/circuits/resolve`, `/circuits/{id}` |
 | Device Registry | [`docs/modules/device-registry.md`](modules/device-registry.md) | `/device-registry`, `/device-registry/{id}`, `/device-registry/bulk`, `/device-registry/bulk/csv`, `/device-registry/bulk/template`, `/device-registry/stats` |
+
+### NAS bulk import
+
+| Method | Path | Roles | Notes |
+|---|---|---|---|
+| `POST` | `/nas/bulk/csv` | `admin` / `superadmin` | Multipart field `file` (UTF-8 CSV, BOM allowed, ≤ 1 MB → 413, ≤ 5000 data rows → 422). Columns `nasname, shortname, secret, category, type, description`; `nasname` and `secret` headers are required (422 otherwise). Query: `default_category_id` (used when a row's `category` is empty; 422 if unknown), `dry_run=true` (validate only, write nothing). Rows are validated like `POST /nas`, plus `secret` ≤ 60 chars and `category` must be an existing category name. A nasname matching one existing row updates it; matching several rows or repeating inside the file is a row error. Returns `{"created", "updated", "errors": [{"row", "nasname", "error"}], "dry_run"}` (`row` is the 1-based data row). Valid rows are committed together with one `BULK_CSV` audit entry (counts only, no secrets). Does not restart FreeRADIUS. Rate limit 10/minute |
+| `GET` | `/nas/bulk/template` | `admin` / `superadmin` | CSV template with the header and two sample rows (documentation addresses, placeholder secrets) |
 
 ## 2. Endpoint shapes (request / response)
 

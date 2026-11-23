@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
-import { Plus, Trash2, Tag, ChevronDown, ChevronUp, Settings2, Download } from 'lucide-react';
+import { Plus, Trash2, Tag, ChevronDown, ChevronUp, Settings2, Download, Upload } from 'lucide-react';
 import NasCategoriesService from '../services/nasCategoriesService';
+import NasService from '../services/nas';
 import { useToast } from '../context/ToastContext';
+import { useAuth } from '../context/AuthContext';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -35,6 +37,16 @@ const NasPage = () => {
     const [catForm, setCatForm] = useState(EMPTY_CAT_FORM);
     const [catError, setCatError] = useState('');
 
+    // Bulk import (CSV) state — admin/superadmin only. useAuth() may be
+    // undefined when the page is rendered without an AuthProvider (tests).
+    const auth = useAuth();
+    const canBulkImport = auth?.hasRole?.(['superadmin', 'admin']) ?? false;
+    const [showBulk, setShowBulk] = useState(false);
+    const [bulkFile, setBulkFile] = useState(null);
+    const [bulkDryRun, setBulkDryRun] = useState(false);
+    const [bulkCategoryId, setBulkCategoryId] = useState('');
+    const [bulkResult, setBulkResult] = useState(null);
+
     // ── Queries ──────────────────────────────────────────────────────────────
 
     const { data: nasList = [], isLoading } = useQuery({
@@ -63,6 +75,44 @@ const NasPage = () => {
         mutationFn: (id) => api.delete(`/nas/${id}`),
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['nas'] }),
     });
+
+    const bulkMutation = useMutation({
+        mutationFn: ({ file, dryRun, categoryId }) =>
+            NasService.bulkCsv(file, { dryRun, defaultCategoryId: categoryId }),
+        onSuccess: (result) => {
+            setBulkResult(result);
+            if (!result.dry_run) {
+                queryClient.invalidateQueries({ queryKey: ['nas'] });
+            }
+        },
+        onError: (err) => showToast(err?.response?.data?.detail || 'CSV import failed', 'error'),
+    });
+
+    const handleBulkTemplate = async () => {
+        try {
+            const blob = await NasService.downloadBulkTemplate();
+            const url = window.URL.createObjectURL(new Blob([blob], { type: 'text/csv;charset=utf-8;' }));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', 'nas_bulk_template.csv');
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            showToast(err?.response?.data?.detail || 'Template download failed', 'error');
+        }
+    };
+
+    const handleBulkSubmit = () => {
+        if (!bulkFile) return;
+        setBulkResult(null);
+        bulkMutation.mutate({
+            file: bulkFile,
+            dryRun: bulkDryRun,
+            categoryId: bulkCategoryId ? parseInt(bulkCategoryId, 10) : null,
+        });
+    };
 
     // ── Category Mutations ───────────────────────────────────────────────────
 
@@ -177,6 +227,15 @@ const NasPage = () => {
                         Categories
                         {showCatManager ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                     </button>
+                    {canBulkImport && (
+                        <button
+                            onClick={() => { setShowBulk(b => !b); setBulkResult(null); }}
+                            className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+                        >
+                            <Upload size={15} className="text-indigo-500" />
+                            Bulk import (CSV)
+                        </button>
+                    )}
                     <button
                         onClick={() => { setEditingId(null); setIsOpen(true); }}
                         className="bg-indigo-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-colors"
@@ -186,6 +245,92 @@ const NasPage = () => {
                     </button>
                 </div>
             </div>
+
+            {/* ── Bulk Import Panel (admin/superadmin) ───────────────────────────── */}
+            {canBulkImport && showBulk && (
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                    <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
+                        <Upload size={15} className="text-slate-400" />
+                        <h3 className="text-xs font-black text-slate-600 uppercase tracking-widest">Bulk import (CSV)</h3>
+                        <button
+                            type="button"
+                            onClick={handleBulkTemplate}
+                            className="ml-auto inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-800"
+                        >
+                            <Download size={12} /> Download template
+                        </button>
+                    </div>
+                    <div className="px-6 py-5 space-y-4">
+                        <p className="text-xs text-slate-500">
+                            Columns: <code>nasname, shortname, secret, category, type, description</code>.
+                            An existing nasname is updated; empty optional cells keep the current value.
+                        </p>
+                        <div className="flex gap-3 items-end flex-wrap">
+                            <div className="flex-1 min-w-48">
+                                <label htmlFor="nas-bulk-file" className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">CSV file</label>
+                                <input
+                                    id="nas-bulk-file"
+                                    data-testid="nas-bulk-file"
+                                    type="file"
+                                    accept=".csv,text/csv"
+                                    className="w-full text-sm"
+                                    onChange={e => { setBulkFile(e.target.files?.[0] || null); setBulkResult(null); }}
+                                />
+                            </div>
+                            <div className="w-56">
+                                <label htmlFor="nas-bulk-category" className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Default category</label>
+                                <select
+                                    id="nas-bulk-category"
+                                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm"
+                                    value={bulkCategoryId}
+                                    onChange={e => setBulkCategoryId(e.target.value)}
+                                >
+                                    <option value="">None (use CSV category)</option>
+                                    {categories.map(cat => (
+                                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <label className="flex items-center gap-2 text-sm text-slate-600 py-2">
+                                <input
+                                    type="checkbox"
+                                    checked={bulkDryRun}
+                                    onChange={e => setBulkDryRun(e.target.checked)}
+                                />
+                                Validate only (dry run)
+                            </label>
+                            <button
+                                type="button"
+                                onClick={handleBulkSubmit}
+                                disabled={!bulkFile || bulkMutation.isPending}
+                                className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 disabled:opacity-50"
+                            >
+                                {bulkMutation.isPending ? 'Processing…' : (bulkDryRun ? 'Validate' : 'Import')}
+                            </button>
+                        </div>
+
+                        {bulkResult && (
+                            <div className={`p-3 rounded-xl text-xs font-bold ${bulkResult.errors.length > 0 ? 'bg-amber-50 border border-amber-200 text-amber-800' : 'bg-emerald-50 border border-emerald-200 text-emerald-800'}`}>
+                                <div>
+                                    {bulkResult.dry_run
+                                        ? `Dry run — would create: ${bulkResult.created} · would update: ${bulkResult.updated}`
+                                        : `Created: ${bulkResult.created} · Updated: ${bulkResult.updated}`}
+                                    {` · Errors: ${bulkResult.errors.length}`}
+                                </div>
+                                {bulkResult.errors.length > 0 && (
+                                    <ul className="mt-2 space-y-0.5 font-medium max-h-48 overflow-y-auto">
+                                        {bulkResult.errors.map(err => (
+                                            <li key={`${err.row}-${err.error}`}>
+                                                {`Row ${err.row}${err.nasname ? ` (${err.nasname})` : ''}: ${err.error}`}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* ── Category Manager Panel ─────────────────────────────────────────── */}
             {showCatManager && (

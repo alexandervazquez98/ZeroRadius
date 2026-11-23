@@ -90,6 +90,18 @@ export const handlers = [
     return HttpResponse.json({ ok: true })
   }),
 
+  http.post('/api/nas/bulk/csv', ({ request }) => {
+    const dryRun = new URL(request.url).searchParams.get('dry_run') === 'true'
+    return HttpResponse.json({ created: 1, updated: 0, errors: [], dry_run: dryRun })
+  }),
+
+  http.get('/api/nas/bulk/template', () => {
+    return new HttpResponse(
+      'nasname,shortname,secret,category,type,description\n',
+      { headers: { 'Content-Type': 'text/csv' } },
+    )
+  }),
+
   // -------------------------------------------------------------------------
   // NAS Categories
   // -------------------------------------------------------------------------

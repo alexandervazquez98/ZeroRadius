@@ -459,6 +459,21 @@ class NasOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class NasBulkRowError(BaseModel):
+    """One rejected CSV row. ``row`` is the 1-based data row number (header excluded)."""
+
+    row: int
+    nasname: Optional[str] = None
+    error: str
+
+
+class NasBulkResult(BaseModel):
+    created: int
+    updated: int
+    errors: list[NasBulkRowError]
+    dry_run: bool
+
+
 # --- Privilege Map Schemas ---
 
 

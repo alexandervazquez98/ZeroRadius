@@ -33,6 +33,43 @@ Allowing `nasname = "my-switch.local"` produces ambiguous RADIUS sources
 absolutely need a logical name, register the **shortname** in the dictionary
 field and let the IP do the work.
 
+### Bulk import (CSV)
+
+To onboard many devices at once (for example every AP of several branches),
+admins and superadmins can use **Bulk import (CSV)** on the NAS Devices page,
+or call `POST /nas/bulk/csv` directly. **Download template** (`GET
+/nas/bulk/template`) gives a ready-to-edit file.
+
+| Column | Required | Notes |
+|---|---|---|
+| `nasname` | yes | IP, CIDR or hostname, same rules as the single NAS form |
+| `secret` | yes | 32 to 60 characters |
+| `shortname` | no | Up to 32 characters |
+| `category` | no | Name of an existing NAS category. When empty, the optional **Default category** (`default_category_id`) is used |
+| `type` | no | Defaults to `other` for new rows |
+| `description` | no | Up to 200 characters |
+
+Rules:
+
+- Each row is validated on its own. Invalid rows are listed in the result with
+  their data row number (1 = first row after the header) and are skipped; the
+  valid rows are saved together.
+- A `nasname` that already exists once is **updated** (secret plus any
+  non-empty optional cell; empty cells keep the current value, except an empty
+  `category` cell, which takes `default_category_id` when one is given).
+- Header names ignore case and surrounding spaces (`Category` = `category`).
+  Lines whose cells are all empty (`,,,,,`) are skipped; they still count for
+  row numbers.
+- A `nasname` that already exists on several rows, or that appears more than
+  once in the file, is reported as an error (later repetitions only).
+- Unknown category names are errors. Files over 1 MB or 5000 data rows are
+  rejected as a whole.
+- Tick **Validate only (dry run)** (`dry_run=true`) to see how many rows would
+  be created or updated and which rows fail, without writing anything.
+- Secrets never appear in the result or in the audit log; the import writes one
+  `BULK_CSV` audit entry with the counts. The import does not restart
+  FreeRADIUS.
+
 ## 2. Using Huntgroups for Regional Segmentation
 
 In FreeRADIUS, a Huntgroup allows you to bundle several NAS devices under a

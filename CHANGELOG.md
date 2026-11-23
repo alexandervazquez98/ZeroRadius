@@ -21,6 +21,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   over CIDR rows, then the most specific CIDR. Hostname `nasname` rows are no
   longer matched. `RADIUS_DYNAMIC_CLIENT_NETWORK` limits which source networks
   are looked up.
+- Bulk NAS import: `POST /nas/bulk/csv` (columns `nasname, shortname, secret,
+  category, type, description`; category by name or `default_category_id`;
+  `dry_run=true` validates without writing) and `GET /nas/bulk/template`,
+  admin/superadmin only. An existing single `nasname` is updated; duplicates
+  in the file or several existing rows with that `nasname` are row errors.
+  Secrets never appear in errors or the audit entry. The NAS page has a
+  "Bulk import (CSV)" section.
 - Syslog partition maintenance: a daily backend job creates upcoming monthly
   `syslog_events` partitions and drops those older than
   `SYSLOG_RETENTION_MONTHS` (default 3).
