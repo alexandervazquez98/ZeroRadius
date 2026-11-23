@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../api';
 import dayjs from 'dayjs';
 import { Search, Filter, CheckCircle, Clock, AlertCircle } from 'lucide-react';
+import NasSyslogStatusCard from '../components/NasSyslogStatusCard';
 
 const SEVERITY_LABELS = {
     0: 'Emergency',
@@ -85,6 +86,8 @@ const SyslogDashboard = () => {
                     {total.toLocaleString()} total events
                 </span>
             </div>
+
+            <NasSyslogStatusCard />
 
             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4">
                 <div className="flex items-center gap-2 mb-4">
