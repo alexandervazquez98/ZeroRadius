@@ -28,6 +28,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and MikroTik messages into `program` and `message`.
 - MikroTik messages sent without `<PRI>` (RouterOS default) were stored with an
   empty `program` and severity 6. Topics now become `program` and set severity.
+- Frontend nginx resolved the backend address only at startup. After the
+  backend container was recreated (new IP), every `/api` call, login included,
+  failed with 502 until the frontend was restarted. It now resolves `backend`
+  at request time.
 
 ### Security
 - **Sign replies to signed requests with `Message-Authenticator`** (RFC 3579 §3.2).
