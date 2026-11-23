@@ -112,3 +112,9 @@ scripts/test_mac.sh
 scripts/test_mac_wrong.sh
 scripts/test_mac_user.sql
 scripts/test_groups_modal.py
+
+# ─── Local tracking (per-machine, not shared) ─────────────────────────────────
+# ODD feature logbooks, local backups and the auto-generated skill registry. Files already tracked stay tracked.
+_local_backup/
+odd/tasks/
+.atl/skill-registry.md
