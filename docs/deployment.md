@@ -179,6 +179,13 @@ curl -sS http://localhost:8000/health/resources    # admin only
 > can reach the API directly; remote hosts must go through the frontend
 > nginx proxy on `:443`.
 
+> The frontend nginx resolves `backend` through Docker's embedded DNS
+> (`resolver 127.0.0.11`, cached 10 s) on each request, so recreating or
+> rebuilding the backend container does not require restarting the frontend.
+> This needs the frontend on a user-defined Docker network (the compose default
+> network is one). Running `frontend/nginx.conf` outside Docker needs a
+> different `resolver` address.
+
 ### 6.2 Logs
 
 ```bash
