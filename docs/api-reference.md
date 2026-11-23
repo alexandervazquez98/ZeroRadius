@@ -53,7 +53,7 @@ For each domain, deep documentation lives under `docs/modules/<name>.md`.
 | Dictionaries | [`docs/modules/dictionaries.md`](modules/dictionaries.md) | `/dictionary/files`, `/upload`, `/rename`, `/content/{fn}`, `/builtin`, `/attributes`, `/values/{attr}`, `/radius-logs` |
 | Admin users | [`docs/modules/admin-users.md`](modules/admin-users.md) | `/admin-users`, `/admin-users/{id}`, `/admin-users/{id}/unlock` |
 | RADIUS user passwords | [`docs/modules/radius-users.md`](modules/radius-users.md) | `/users/check/{id}/reset-password`, `/users/check/{id}/setup-link`, `/password-setup/{token}` |
-| Syslog | [`docs/modules/syslog-dashboard.md`](modules/syslog-dashboard.md) | `/syslog/ingest`, `/syslog` |
+| Syslog | [`docs/modules/syslog-dashboard.md`](modules/syslog-dashboard.md) | `/syslog/ingest`, `/syslog`, `/syslog/nas-status` |
 | Network Segments | [`docs/modules/network-segments.md`](modules/network-segments.md) | `/network-segments`, `/network-segments/{id}` |
 | Access Policies | [`docs/modules/access-policies.md`](modules/access-policies.md) | `/access-policies/assignments` (CRUD + bulk + preview); `/access-policies/bandwidth-profiles` |
 | Circuits (CIR) | [`docs/modules/circuits.md`](modules/circuits.md) | `/circuits`, `/circuits/resolve`, `/circuits/{id}` |
