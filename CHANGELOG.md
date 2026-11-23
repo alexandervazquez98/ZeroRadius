@@ -34,6 +34,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   at request time.
 
 ### Security
+- Dictionary upload, rename, edit and delete accepted any active session,
+  including `readonly`, and each one restarts RADIUS. They now require
+  `admin` or `superadmin` (same as NAS management); the Dictionaries page
+  hides those actions and the log panel for other roles.
 - `POST /users/check`, `POST /users/reply` and `DELETE /users/reply/{id}` only
   required an active session, so `readonly` and `auditor` accounts could
   create RADIUS users and grant reply attributes (privileges). They now

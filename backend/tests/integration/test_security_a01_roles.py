@@ -197,3 +197,73 @@ class TestDictionaryLogsRoles:
         )
         # 200 OK (logs vacíos o unavailable) — lo importante es que NO sea 403
         assert resp.status_code != 403
+
+
+class TestDictionaryWriteRoles:
+    """Uploading, renaming, editing or deleting a dictionary restarts RADIUS and
+    changes which attributes exist, so it is limited to admin/superadmin (same
+    as NAS management). Reading stays open to every active user."""
+
+    WRITES = [
+        ("post", "/dictionary/upload", "upload"),
+        ("post", "/dictionary/rename?old_name=dictionary.a&new_name=dictionary.b", "rename"),
+        ("put", "/dictionary/content/dictionary.a", "content"),
+        ("delete", "/dictionary/dictionary.a", "delete"),
+    ]
+
+    @pytest.fixture
+    def fake_dicts(self, monkeypatch):
+        from unittest.mock import MagicMock
+        import app.routers.dictionary as router
+
+        svc = MagicMock()
+        svc.validate_and_save.return_value = {"filename": "dictionary.a", "conversions": 0}
+        svc.write_content.return_value = {"conversions": 0}
+        reload = MagicMock()
+        monkeypatch.setattr(router, "dictionary_service", svc)
+        monkeypatch.setattr(router, "_reload_radius", reload)
+        return svc, reload
+
+    async def _call(self, client, method, url, kind, token):
+        headers = {"Authorization": f"Bearer {token}"}
+        if kind == "upload":
+            return await client.post(
+                url, headers=headers,
+                files={"file": ("dictionary.a", b"VENDOR Test 99999\n", "text/plain")},
+            )
+        if kind == "content":
+            return await client.put(url, headers=headers, json={"content": "# x\n"})
+        return await getattr(client, method)(url, headers=headers)
+
+    @pytest.mark.parametrize("role", ["readonly", "auditor", "helpdesk"])
+    @pytest.mark.parametrize("method,url,kind", WRITES)
+    async def test_write_forbidden(
+        self, async_client, request, fake_dicts, role, method, url, kind
+    ):
+        svc, reload = fake_dicts
+        token = request.getfixturevalue(f"{role}_token")
+        resp = await self._call(async_client, method, url, kind, token)
+        assert resp.status_code == 403
+        assert svc.method_calls == []
+        reload.assert_not_called()
+
+    @pytest.mark.parametrize("role", ["admin", "superadmin"])
+    @pytest.mark.parametrize("method,url,kind", WRITES)
+    async def test_write_still_allowed(
+        self, async_client, request, fake_dicts, role, method, url, kind
+    ):
+        svc, reload = fake_dicts
+        token = request.getfixturevalue(f"{role}_token")
+        resp = await self._call(async_client, method, url, kind, token)
+        assert resp.status_code == 200, resp.text
+        reload.assert_called_once()
+
+    @pytest.mark.parametrize("role", ["readonly", "auditor", "helpdesk"])
+    async def test_read_still_open(self, async_client, request, fake_dicts, role):
+        svc, _ = fake_dicts
+        svc.list_files.return_value = ["dictionary.a"]
+        svc.read_content.return_value = "# x\n"
+        token = request.getfixturevalue(f"{role}_token")
+        headers = {"Authorization": f"Bearer {token}"}
+        assert (await async_client.get("/dictionary/files", headers=headers)).status_code == 200
+        assert (await async_client.get("/dictionary/content/dictionary.a", headers=headers)).status_code == 200

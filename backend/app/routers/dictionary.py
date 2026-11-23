@@ -63,6 +63,10 @@ def _get_builtin_attributes_cached() -> List:
     return _builtin_attr_cache
 
 
+# Writing a dictionary restarts RADIUS and changes which attributes exist:
+# same roles as NAS management. Reading stays open to every active user.
+_DICTIONARY_WRITERS = require_roles(Role.SUPERADMIN, Role.ADMIN)
+
 def _reload_radius() -> None:
     """Restart the radius-server container so it re-reads custom dictionaries.
 
@@ -118,7 +122,7 @@ async def upload_dictionary(
     request: Request,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = Depends(get_current_active_user),
+    current_user: AdminUser = _DICTIONARY_WRITERS,
 ):
     """Upload and validate a new dictionary file (auto-converts v4 types)."""
     content = await file.read()
@@ -165,7 +169,7 @@ async def rename_dictionary(
     old_name: str,
     new_name: str,
     db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = Depends(get_current_active_user),
+    current_user: AdminUser = _DICTIONARY_WRITERS,
 ):
     """Rename a dictionary file."""
     try:
@@ -194,7 +198,7 @@ async def delete_dictionary(
     request: Request,
     filename: str,
     db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = Depends(get_current_active_user),
+    current_user: AdminUser = _DICTIONARY_WRITERS,
 ):
     """Delete a dictionary file."""
     try:
@@ -239,7 +243,7 @@ async def update_dictionary_content(
     filename: str,
     body: ContentBody,
     db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = Depends(get_current_active_user),
+    current_user: AdminUser = _DICTIONARY_WRITERS,
 ):
     """Overwrite a dictionary file with new content (auto-converts v4 types)."""
     try:
