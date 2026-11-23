@@ -8,8 +8,9 @@ import json
 import os
 import threading
 import logging
+import re
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -30,59 +31,85 @@ buffer_lock = threading.Lock()
 last_flush = datetime.now()
 
 
-def parse_syslog(message: str) -> dict:
-    """Parse syslog message and extract fields."""
+PROGRAM_MAX_LEN = 64  # syslog_events.program is VARCHAR(64)
+
+_PRI_RE = re.compile(r"^<(\d{1,3})>")
+# RFC 5424: VERSION TIMESTAMP HOSTNAME APP-NAME PROCID MSGID SD [MSG]
+_RFC5424_RE = re.compile(r"^\d{1,2} \S+ \S+ (\S+) \S+ \S+ (.*)$", re.S)
+_SD_RE = re.compile(r'^(?:-|(?:\[(?:[^\]\\]|\\.)*\])+)\s?(.*)$', re.S)
+# Optional Cisco sequence number ("45: ") and origin hostname ("sw-oficina: ").
+_CISCO_SEQ_RE = re.compile(r"^\d+:\s+")
+_CISCO_HOST_RE = re.compile(r"^[A-Za-z0-9][\w.\-]*:\s+(?=[*.]?[A-Z][a-z]{2}\s)")
+# RFC 3164 / Cisco timestamp: "Nov 23 17:52:31", "*Nov 23 2026 17:52:31.123 UTC:"
+_TIMESTAMP_RE = re.compile(
+    r"^[*.]?[A-Z][a-z]{2}\s+\d{1,2}\s+(?:\d{4}\s+)?\d{2}:\d{2}:\d{2}(?:\.\d+)?"
+    r"(?:\s+[A-Z]{2,5})?:?\s+"
+)
+_TAG_RE = re.compile(r"^([^\s:\[]+)(?:\[\d+\])?:\s*(.*)$", re.S)
+# MikroTik remote logging: "system,info,account user admin logged in ..."
+_MIKROTIK_TOPICS_RE = re.compile(r"^([a-z]+(?:,[a-z]+)+)\s+(.*)$", re.S)
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
+
+
+def _split_rfc3164(rest: str):
+    """Return (program, message) from an RFC 3164 / vendor syslog body."""
+    body = _CISCO_SEQ_RE.sub("", rest, count=1)
+    body = _CISCO_HOST_RE.sub("", body, count=1)
+    stamped = _TIMESTAMP_RE.match(body)
+    if stamped:
+        body = body[stamped.end():]
+        # RFC 3164 puts HOSTNAME after the timestamp; Cisco goes straight to "%TAG:".
+        first, _, remainder = body.partition(" ")
+        if remainder and not first.endswith(":") and not first.startswith("%"):
+            body = remainder
+
+    tag = _TAG_RE.match(body)
+    if tag:
+        return tag.group(1), tag.group(2)
+    topics = _MIKROTIK_TOPICS_RE.match(body)
+    if topics:
+        return topics.group(1), topics.group(2)
+    return None, body
+
+
+def parse_syslog(message: str, source_ip: str) -> dict:
+    """Parse one syslog datagram.
+
+    device_ip is always the UDP source address: the message text cannot be
+    trusted to carry it (RFC 3164 headers hold a timestamp and a hostname).
+    """
+    facility, severity = 1, 6  # user-level / informational when PRI is missing
+    program, text = None, message
+
     try:
-        # Try to parse as RFC 3164 or RFC 5424
-        # Format: <priority>version hostname app-name pid msg
-
-        parts = message.split(None, 4)  # Split into max 5 parts
-
-        if len(parts) >= 1 and parts[0].startswith("<"):
-            priority = int(parts[0][1:].split(">")[0])
-            facility = priority >> 3
-            severity = priority & 7
-
-            if len(parts) >= 5:
-                # RFC 5424 format
-                return {
-                    "device_ip": parts[2] if len(parts) > 2 else "unknown",
-                    "program": parts[3] if len(parts) > 3 else "syslog",
-                    "message": parts[4],
-                    "facility": facility,
-                    "severity": severity,
-                    "received_at": datetime.utcnow().isoformat() + "Z",
-                }
-            elif len(parts) >= 2:
-                # Likely RFC 3164
-                return {
-                    "device_ip": parts[1] if len(parts) > 1 else "unknown",
-                    "program": parts[0],
-                    "message": message,
-                    "facility": facility,
-                    "severity": severity,
-                    "received_at": datetime.utcnow().isoformat() + "Z",
-                }
-
-        # Fallback - treat whole message
-        return {
-            "device_ip": "unknown",
-            "program": "syslog",
-            "message": message,
-            "facility": 1,  # user-level
-            "severity": 6,  # informational
-            "received_at": datetime.utcnow().isoformat() + "Z",
-        }
+        pri = _PRI_RE.match(message)
+        if pri:
+            priority = int(pri.group(1))
+            facility, severity = priority >> 3, priority & 7
+            rest = message[pri.end():]
+            rfc5424 = _RFC5424_RE.match(rest)
+            if rfc5424:
+                app, after_header = rfc5424.groups()
+                program = None if app == "-" else app
+                sd = _SD_RE.match(after_header)
+                text = sd.group(1) if sd else after_header
+            else:
+                program, text = _split_rfc3164(rest)
     except Exception as e:
         logger.warning(f"Failed to parse syslog: {e}")
-        return {
-            "device_ip": "unknown",
-            "program": "syslog",
-            "message": message,
-            "facility": 1,
-            "severity": 6,
-            "received_at": datetime.utcnow().isoformat() + "Z",
-        }
+        program, text = None, message
+
+    return {
+        "device_ip": source_ip,
+        "program": program[:PROGRAM_MAX_LEN] if program else None,
+        "message": text.strip() or message,
+        "facility": facility,
+        "severity": severity,
+        "received_at": _utc_now(),
+    }
 
 
 def flush_buffer():
@@ -144,7 +171,7 @@ def handle_client(data, addr):
         if not message:
             return
 
-        parsed = parse_syslog(message)
+        parsed = parse_syslog(message, addr[0])
         logger.info(f"Received from {addr}: {message[:50]}...")
 
         with buffer_lock:

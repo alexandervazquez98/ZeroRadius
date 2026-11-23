@@ -20,6 +20,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `GET /syslog/nas-status` and the "NAS not sending syslog" dashboard card:
   registered NAS with no syslog within `SYSLOG_SILENT_HOURS` (default 24).
 
+### Fixed
+
+- Syslog forwarder stored words of the message text (usually the time, e.g.
+  `17:52:31`) as `device_ip`, so `/syslog/nas-status` could never match a NAS.
+  It now uses the UDP source address and parses RFC 3164, RFC 5424, Cisco IOS
+  and MikroTik messages into `program` and `message`.
+
 ### Security
 - **Sign replies to signed requests with `Message-Authenticator`** (RFC 3579 §3.2).
   When an `Access-Request` carries `Message-Authenticator`, the
