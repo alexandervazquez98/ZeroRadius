@@ -38,6 +38,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   required an active session, so `readonly` and `auditor` accounts could
   create RADIUS users and grant reply attributes (privileges). They now
   require `superadmin`, `admin` or `helpdesk`.
+  The Users page now hides actions the role cannot use (Add User for
+  `readonly`/`auditor`; edit, delete, reset password and JIT approval for
+  everyone but `admin`/`superadmin`), and the create wizard shows the API
+  error instead of failing silently.
 - **Sign replies to signed requests with `Message-Authenticator`** (RFC 3579 §3.2).
   When an `Access-Request` carries `Message-Authenticator`, the
   `Access-Accept` and `Access-Reject` now carry a valid one too

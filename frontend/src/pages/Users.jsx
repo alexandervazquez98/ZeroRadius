@@ -5,6 +5,11 @@ import { Plus, Trash2, Edit, X, Clock, ShieldAlert, KeyRound } from 'lucide-reac
 import UserWizard from '../components/UserWizard';
 import { useToast } from '../context/ToastContext';
 import PasswordResetModal from '../components/PasswordResetModal';
+import { useAuth } from '../context/AuthContext';
+
+// Same rules as the API (backend/app/routers/users.py).
+const CREATE_ROLES = ['superadmin', 'admin', 'helpdesk'];
+const MANAGE_ROLES = ['superadmin', 'admin'];
 
 // Password values are write-only (#101): the API returns has_password instead.
 // The edit form never sends a password; it is changed with Reset password (#101 B).
@@ -44,6 +49,9 @@ const SetupLinkBadge = ({ link }) => {
 const UsersPage = () => {
     const queryClient = useQueryClient();
     const { showToast } = useToast();
+    const { hasRole } = useAuth();
+    const canCreate = hasRole(CREATE_ROLES);
+    const canManage = hasRole(MANAGE_ROLES);
     const [isOpen, setIsOpen] = useState(false);
     const [newUser, setNewUser] = useState({ username: '', attribute: 'Cleartext-Password', op: ':=', value: '' });
 
@@ -113,13 +121,15 @@ const UsersPage = () => {
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-bold text-slate-800">User Management</h2>
-                <button
-                    onClick={() => setIsOpen(true)}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700"
-                >
-                    <Plus size={18} />
-                    Add User
-                </button>
+                {canCreate && (
+                    <button
+                        onClick={() => setIsOpen(true)}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700"
+                    >
+                        <Plus size={18} />
+                        Add User
+                    </button>
+                )}
             </div>
 
             <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -146,6 +156,7 @@ const UsersPage = () => {
                                     <SetupLinkBadge link={user.setup_link} />
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex gap-2">
+                                    {canManage && (<>
                                     <button
                                         onClick={() => setJitUser(user)}
                                         className="text-rose-600 hover:text-rose-900 mr-2"
@@ -172,9 +183,11 @@ const UsersPage = () => {
                                     <button
                                         onClick={() => deleteMutation.mutate(user.id)}
                                         className="text-red-600 hover:text-red-900"
+                                        title="Delete"
                                     >
                                         <Trash2 size={18} />
                                     </button>
+                                    </>)}
                                 </td>
                             </tr>
                         ))}

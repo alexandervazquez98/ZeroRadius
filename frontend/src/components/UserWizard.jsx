@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
+import { useToast } from '../context/ToastContext';
 import { PASSWORD_TYPES, PASSWORD_TYPE_HELP } from '../constants/passwordTypes';
 import { Check, User, Shield, Activity, Save, Plus, Trash2 } from 'lucide-react';
 
 const UserWizard = ({ onComplete, onCancel }) => {
     const queryClient = useQueryClient();
+    const { showToast } = useToast();
     const [step, setStep] = useState(1);
     const [userData, setUserData] = useState({
         username: '',
@@ -60,6 +62,9 @@ const UserWizard = ({ onComplete, onCancel }) => {
         onSuccess: () => {
             queryClient.invalidateQueries(['users']);
             onComplete();
+        },
+        onError: (err) => {
+            showToast('Could not create user: ' + (err.response?.data?.detail || err.message), 'error');
         }
     });
 
