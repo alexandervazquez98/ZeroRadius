@@ -2,15 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
-
-// Writing a dictionary restarts RADIUS: same roles as the API
-// (backend/app/routers/dictionary.py). Every role can read.
-const WRITE_ROLES = ['superadmin', 'admin'];
 import {
     Upload, FileText, CheckCircle, AlertTriangle,
     Edit2, X, Save, Trash2, Eye, ArrowLeft,
     Terminal, RefreshCw, ChevronDown, ChevronUp, Lock, Shield,
 } from 'lucide-react';
+
+// Writing a dictionary restarts RADIUS: same roles as the API
+// (backend/app/routers/dictionary.py). Every role can read.
+const WRITE_ROLES = ['superadmin', 'admin'];
 
 /* ------------------------------------------------------------------ */
 /*  Editor view — shown when a dictionary file is opened for editing  */
