@@ -45,15 +45,26 @@ def _month_key(year: int, month: int) -> int:
     return year * 100 + month
 
 
-def _env_int(name: str, default: int) -> int:
+MAX_MONTHS_AHEAD = 24  # MySQL caps a table at 8192 partitions
+
+
+def _env_int(name: str, default: int, maximum: int) -> int:
+    """Read a non-negative int; invalid or negative values fall back to default.
+
+    Falling back (not clamping to 0) matters for retention: 0 would drop
+    every month but the current one.
+    """
     raw = os.getenv(name)
     if raw is None or raw.strip() == "":
         return default
     try:
-        return max(0, int(raw))
+        value = int(raw)
     except ValueError:
+        value = -1
+    if value < 0:
         logger.warning("Invalid %s=%r; using default %d", name, raw, default)
         return default
+    return min(value, maximum)
 
 
 def plan_partition_changes(
@@ -132,9 +143,13 @@ async def maintain_syslog_partitions(
         return None
 
     if retention_months is None:
-        retention_months = _env_int("SYSLOG_RETENTION_MONTHS", DEFAULT_RETENTION_MONTHS)
+        retention_months = _env_int(
+            "SYSLOG_RETENTION_MONTHS", DEFAULT_RETENTION_MONTHS, maximum=1200
+        )
     if months_ahead is None:
-        months_ahead = _env_int("SYSLOG_PARTITIONS_AHEAD", DEFAULT_MONTHS_AHEAD)
+        months_ahead = _env_int(
+            "SYSLOG_PARTITIONS_AHEAD", DEFAULT_MONTHS_AHEAD, maximum=MAX_MONTHS_AHEAD
+        )
 
     plan = plan_partition_changes(
         existing, today or date.today(), retention_months, months_ahead

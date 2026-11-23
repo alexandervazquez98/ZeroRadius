@@ -16,7 +16,7 @@ Assumptions: retention is table-wide by monthly partition (keeps current month +
 
 | ID | Specs | Route | Status | Commit |
 |----|-------|-------|--------|--------|
-| T1 | S1, S2 | inline | done (11 unit tests RED->GREEN; verifier pending) | adf0ad4 |
+| T1 | S1, S2 | inline | done (15 unit tests; verifier PASS, 0 blockers, A1/A2 hardened) | adf0ad4 |
 | T2 | S3 | inline | done (7 integration tests RED 404 -> GREEN) | 24d5c2b |
 | T3 | S4 | inline | done (3 Vitest RED import -> GREEN; 63/63 suite; vite build ok) | 358cdfc |
 
@@ -30,3 +30,4 @@ Risk: T1 item 1 (drops stored data by partition).
 - L4: Backend suite 542 passed, 2 failed, 2 skipped (--ignore tests/unit/test_auth_service.py: imports `jose`, not in requirements). Both failures (test_models_regression_parity access_policy_assignments) also fail at d5edc95 -> pre-existing.
 - L5: Local env: repo backend/.venv is a Windows venv and frontend has no node_modules; tests ran from a scratch venv (no mysqlclient) and a scratch frontend copy. SQLite test DB cannot autoincrement BIGINT PK, so nas-status tests insert events directly.
 - L6: Next: live MariaDB check of REORGANIZE/DROP on `dev` (needs user confirmation); Engram mirror pending (auto-mode blocked mem_save).
+- L7: Independent verifier: S1/S2/S3 PASS, 630k planner cases, 0 blockers. Applied A1 (negative env -> default, not 0) and A2 (months ahead capped at 24). A3-A6 left as advisories.

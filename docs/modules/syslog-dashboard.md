@@ -129,8 +129,8 @@ at startup and every 24 h:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SYSLOG_RETENTION_MONTHS` | `3` | Full months kept besides the current one |
-| `SYSLOG_PARTITIONS_AHEAD` | `3` | Months created ahead of the current one |
+| `SYSLOG_RETENTION_MONTHS` | `3` | Full months kept besides the current one; invalid or negative values fall back to 3 |
+| `SYSLOG_PARTITIONS_AHEAD` | `3` | Months created ahead of the current one (max 24) |
 | `SYSLOG_SILENT_HOURS` | `24` | Hours without syslog before a NAS is silent |
 
 Dropping a partition deletes its events permanently. The hash chain stays

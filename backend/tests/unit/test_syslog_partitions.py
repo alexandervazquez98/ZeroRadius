@@ -160,3 +160,22 @@ class TestMaintainSyslogPartitions:
         plan = await maintain_syslog_partitions(db, today=date(2026, 11, 23))
         assert plan.to_add == []
         assert plan.to_drop == ["p202604"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("raw", ["-5", "abc", "3.5"])
+    async def test_invalid_retention_env_falls_back_to_default(self, monkeypatch, raw):
+        monkeypatch.setenv("SYSLOG_RETENTION_MONTHS", raw)
+        db = _FakeSession("mysql", INIT_SQL_PARTITIONS)
+        plan = await maintain_syslog_partitions(db, today=date(2026, 11, 23), months_ahead=0)
+        # Default 3 months: Aug..Nov kept, never "current month only".
+        assert plan.to_drop == ["p202604", "p202605", "p202606", "p202607"]
+
+    @pytest.mark.asyncio
+    async def test_months_ahead_env_is_capped(self, monkeypatch):
+        monkeypatch.setenv("SYSLOG_PARTITIONS_AHEAD", "999999")
+        db = _FakeSession("mysql", ["p202611", "pmax"])
+        plan = await maintain_syslog_partitions(
+            db, today=date(2026, 11, 23), retention_months=3
+        )
+        assert len(plan.to_add) == 24
+        assert plan.to_add[-1] == ("p202811", 202812)
