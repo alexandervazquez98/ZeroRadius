@@ -37,6 +37,7 @@ Base path: `/syslog`
 |---|---|---|---|
 | `POST` | `/ingest` | `SYSLOG_API_KEY` header | Bulk insert; returns `{ "ingested": N }` |
 | `GET` | `` | any active user | List with filters + DataTables-friendly partial matching |
+| `GET` | `/nas-status` | any active user | Registered NAS that sent no syslog within the threshold |
 
 ### 2.1 `POST /ingest`
 
@@ -75,12 +76,67 @@ Query params:
 | `severity` | int 0-7 | exact match |
 | `facility` | int 0-23 | exact match |
 
+### 2.3 `GET /syslog/nas-status`
+
+Every registered NAS is expected to send syslog. A NAS is **silent** when no
+event arrived from it within the threshold (`SYSLOG_SILENT_HOURS`, default 24).
+
+| Param | Type | Notes |
+|---|---|---|
+| `hours` | int 1-720 | optional; overrides `SYSLOG_SILENT_HOURS` |
+
+```json
+{
+  "threshold_hours": 24,
+  "total": 3,
+  "silent_count": 1,
+  "reporting_count": 2,
+  "devices": [
+    {"id": 3, "nasname": "192.168.1.191", "shortname": "moxa", "last_seen": null, "silent": true}
+  ]
+}
+```
+
+`devices` lists every NAS, silent ones first. Matching of `nas.nasname` against
+`syslog_events.device_ip`:
+
+- IP: exact match.
+- CIDR: any address inside the network counts as reporting.
+- Hostname: exact string match only (syslog stores source IPs), so a
+  hostname NAS shows as silent unless its events carry that exact name.
+
+The Syslog dashboard shows this as the "NAS not sending syslog" card
+(`frontend/src/components/NasSyslogStatusCard.jsx`), refreshed every 5 minutes.
+
 ## 3. Syslog integrity
 
 `syslog_integrity.py` keeps `previous_hash` / `hash` columns on each row,
 forming a SHA-256 chain (each row's `hash = sha256(previous_hash + row)`).
 A break in the chain indicates tampering; tampering alerts are out of scope
 for this version but the data is structured to support them.
+
+## 3.1 Partitions and retention
+
+`syslog_events` is RANGE-partitioned by month (`pYYYYMM` + catch-all `pmax`).
+A backend job (`app/services/syslog_partitions.py`, started in `main.py`) runs
+at startup and every 24 h:
+
+1. Splits upcoming months off `pmax` (`REORGANIZE PARTITION`) so new events
+   always land in their own month.
+2. Drops partitions older than the retention window (`DROP PARTITION`). The
+   current month plus the previous `SYSLOG_RETENTION_MONTHS` full months are
+   kept, so between 3 and 4 months of logs exist at any time with the default.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `SYSLOG_RETENTION_MONTHS` | `3` | Full months kept besides the current one; invalid or negative values fall back to 3 |
+| `SYSLOG_PARTITIONS_AHEAD` | `3` | Months created ahead of the current one (max 24) |
+| `SYSLOG_SILENT_HOURS` | `24` | Hours without syslog before a NAS is silent |
+
+Dropping a partition deletes its events permanently. The hash chain stays
+verifiable because each row is checked against its stored `previous_hash`.
+If the table was created without partitions (e.g. by `create_all` instead of
+`init.sql`), the job logs a warning and changes nothing.
 
 ## 4. End-to-end agent run
 
@@ -110,6 +166,8 @@ curl -sS -H "Authorization: Bearer $TOKEN" \
 | Backend logs `401 "Invalid API key"` after ingestion | `SYSLOG_API_KEY` rotated in `.env` but `radius-syslog` container not recreated | `docker compose up -d syslog` |
 | Events ingested but not visible in `/syslog` UI | Operator lacks `admin`+ role | Use a higher-role token |
 | Hash chain mismatch | Tampering or partial-write recovery | Run the integrity checker (planned) |
+| Log: `syslog_events is not partitioned; skipping partition maintenance` | Table created without `PARTITION BY` | Recreate it from `database/init.sql` |
+| Registered NAS always silent | `nasname` is a hostname, or the device sends from another IP | Register the NAS by its source IP or CIDR |
 
 ## 6. Cross-references
 

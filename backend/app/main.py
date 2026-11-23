@@ -270,6 +270,19 @@ app.add_middleware(SecurityHeadersMiddleware)
 # ---------------------------------------------------------------------------
 
 
+def _alembic_config():
+    """Alembic config for in-process migrations.
+
+    configure_logger=False keeps alembic/env.py from applying alembic.ini
+    logging, which would replace this app's JSON logging and silence it.
+    """
+    import alembic.config
+
+    cfg = alembic.config.Config("alembic.ini")
+    cfg.attributes["configure_logger"] = False
+    return cfg
+
+
 async def run_pending_migrations() -> None:
     """Run alembic migrations, respecting DISABLE_AUTO_MIGRATE.
 
@@ -291,7 +304,7 @@ async def run_pending_migrations() -> None:
     from sqlalchemy import text
     from sqlalchemy.exc import OperationalError, ProgrammingError
 
-    cfg = alembic.config.Config("alembic.ini")
+    cfg = _alembic_config()
 
     # Detect bootstrap path: alembic_version missing or empty.
     needs_stamp = False
@@ -471,20 +484,41 @@ async def _syslog_integrity_loop() -> None:
         await asyncio.sleep(60)
 
 
+_syslog_partition_task: asyncio.Task | None = None
+SYSLOG_PARTITION_INTERVAL_SECONDS = 24 * 60 * 60
+
+
+async def _syslog_partition_loop() -> None:
+    """Daily task: create upcoming syslog partitions and drop expired ones."""
+    from app.db.session import SessionLocal  # type: ignore[attr-defined]
+    from app.services.syslog_partitions import maintain_syslog_partitions
+
+    while True:
+        try:
+            async with SessionLocal() as db:  # type: ignore[attr-defined]
+                await maintain_syslog_partitions(db)
+        except Exception as exc:  # pragma: no cover
+            logger.error("Background syslog partition job error: %s", exc)
+
+        await asyncio.sleep(SYSLOG_PARTITION_INTERVAL_SECONDS)
+
+
 @app.on_event("startup")
 async def start_background_jobs() -> None:
     """Start the integrity hash background loop on application startup."""
-    global _integrity_task, _syslog_integrity_task
+    global _integrity_task, _syslog_integrity_task, _syslog_partition_task
     _integrity_task = asyncio.create_task(_integrity_hash_loop())
     _syslog_integrity_task = asyncio.create_task(_syslog_integrity_loop())
+    _syslog_partition_task = asyncio.create_task(_syslog_partition_loop())
     logger.info("Background integrity hash job started.")
     logger.info("Background syslog integrity hash job started.")
+    logger.info("Background syslog partition job started.")
 
 
 @app.on_event("shutdown")
 async def stop_background_jobs() -> None:
     """Cancel background tasks gracefully on shutdown."""
-    global _integrity_task, _syslog_integrity_task
+    global _integrity_task, _syslog_integrity_task, _syslog_partition_task
     if _integrity_task and not _integrity_task.done():
         _integrity_task.cancel()
         try:
@@ -500,6 +534,14 @@ async def stop_background_jobs() -> None:
         except asyncio.CancelledError:
             pass
     logger.info("Background syslog integrity hash job stopped.")
+
+    if _syslog_partition_task and not _syslog_partition_task.done():
+        _syslog_partition_task.cancel()
+        try:
+            await _syslog_partition_task
+        except asyncio.CancelledError:
+            pass
+    logger.info("Background syslog partition job stopped.")
 
 
 @app.get("/")

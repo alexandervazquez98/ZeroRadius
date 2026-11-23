@@ -46,6 +46,37 @@ class SyslogListResponse(BaseModel):
     total: int
 
 
+class NasSyslogStatusOut(BaseModel):
+    id: int
+    nasname: str
+    shortname: Optional[str]
+    last_seen: Optional[datetime]
+    silent: bool
+
+
+class NasSyslogStatusResponse(BaseModel):
+    threshold_hours: int
+    total: int
+    silent_count: int
+    reporting_count: int
+    devices: List[NasSyslogStatusOut]
+
+
+@router.get("/nas-status", response_model=NasSyslogStatusResponse)
+async def get_nas_syslog_status_endpoint(
+    hours: Optional[int] = Query(default=None, ge=1, le=720),
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = Depends(get_current_active_user),
+):
+    """
+    Report which registered NAS have not sent syslog within the threshold.
+    Threshold defaults to SYSLOG_SILENT_HOURS (24 h); `hours` overrides it.
+    """
+    from app.services.syslog_nas_status import get_nas_syslog_status
+
+    return await get_nas_syslog_status(db, hours)
+
+
 @router.post("/ingest", status_code=201, response_model=dict)
 async def ingest_syslog_events(
     events: List[SyslogEventIn],

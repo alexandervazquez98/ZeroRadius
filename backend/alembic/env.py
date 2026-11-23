@@ -17,9 +17,13 @@ from app.models.models import Base
 # this is the Alembic Config object
 config = context.config
 
-# Interpret the config file for Python logging
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+# Interpret the config file for Python logging, but only for the alembic CLI:
+# the backend runs migrations at startup with configure_logger=False so its
+# own JSON logging (level, handlers, app loggers) is not replaced.
+if config.config_file_name is not None and config.attributes.get(
+    "configure_logger", True
+):
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Set the metadata for autogenerate support
 target_metadata = Base.metadata
