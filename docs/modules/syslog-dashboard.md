@@ -25,6 +25,11 @@ A two-tier pipeline:
 1. The **radius-syslog** sidecar container listens on UDP 514 for RFC-3164
    syslog from network devices (routers, switches, APs). It batches up to 50
    messages or 5 s, then `POST`s them to `/syslog/ingest`.
+   `device_ip` is always the UDP source address of the datagram (Docker keeps
+   the real source for LAN devices). The forwarder parses RFC 3164, RFC 5424,
+   Cisco IOS (`45: *Nov 23 17:52:31.123: %SYS-5-CONFIG_I: ...`) and MikroTik
+   (`system,info,account user ...`) bodies into `program` and `message`.
+   Tests: `python -m pytest rsyslog/tests` (needs `requests`).
 2. The backend persists each event into `syslog_events`; the integrity
    service (`syslog_integrity.py`) maintains a tamper-evident hash chain
    (`previous_hash`, `hash` columns).
@@ -167,7 +172,7 @@ curl -sS -H "Authorization: Bearer $TOKEN" \
 | Events ingested but not visible in `/syslog` UI | Operator lacks `admin`+ role | Use a higher-role token |
 | Hash chain mismatch | Tampering or partial-write recovery | Run the integrity checker (planned) |
 | Log: `syslog_events is not partitioned; skipping partition maintenance` | Table created without `PARTITION BY` | Recreate it from `database/init.sql` |
-| Registered NAS always silent | `nasname` is a hostname, or the device sends from another IP | Register the NAS by its source IP or CIDR |
+| Registered NAS always silent | `nasname` is a hostname, or the device sends syslog from another IP (another interface, or NAT in between) | Check `device_ip` of its events and register the NAS by that IP or a CIDR |
 
 ## 6. Cross-references
 
