@@ -34,6 +34,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   at request time.
 
 ### Security
+- `POST /users/check`, `POST /users/reply` and `DELETE /users/reply/{id}` only
+  required an active session, so `readonly` and `auditor` accounts could
+  create RADIUS users and grant reply attributes (privileges). They now
+  require `superadmin`, `admin` or `helpdesk`.
 - **Sign replies to signed requests with `Message-Authenticator`** (RFC 3579 §3.2).
   When an `Access-Request` carries `Message-Authenticator`, the
   `Access-Accept` and `Access-Reject` now carry a valid one too

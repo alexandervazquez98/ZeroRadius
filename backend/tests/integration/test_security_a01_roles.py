@@ -101,6 +101,85 @@ class TestUsersCheckRoles:
         assert resp.status_code == 403
 
 
+class TestUsersWriteReadOnlyRoles:
+    """readonly and auditor must not create RADIUS users or change their reply
+    attributes (reply attributes carry privileges, e.g. Canopy UserLevel).
+    superadmin, admin and helpdesk keep write access (see test_users.py)."""
+
+    CHECK = {
+        "username": "ro_role_probe",
+        "attribute": "Cleartext-Password",
+        "op": ":=",
+        "value": "testpass",
+    }
+    REPLY = {
+        "username": "ro_role_probe",
+        "attribute": "Motorola-Cambium-Canopy-UserLevel",
+        "op": ":=",
+        "value": "3",
+    }
+
+    @pytest.mark.parametrize("role", ["readonly", "auditor"])
+    async def test_create_check_forbidden(self, async_client, request, role):
+        token = request.getfixturevalue(f"{role}_token")
+        resp = await async_client.post(
+            "/users/check", json=self.CHECK,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 403
+        listed = await async_client.get(
+            "/users", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert all(u["username"] != "ro_role_probe" for u in listed.json())
+
+    @pytest.mark.parametrize("role", ["readonly", "auditor"])
+    async def test_create_reply_forbidden(self, async_client, request, role):
+        token = request.getfixturevalue(f"{role}_token")
+        resp = await async_client.post(
+            "/users/reply", json=self.REPLY,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 403
+
+    @pytest.mark.parametrize("role", ["readonly", "auditor"])
+    async def test_delete_reply_forbidden(
+        self, async_client, request, role, admin_token
+    ):
+        created = await async_client.post(
+            "/users/reply", json=self.REPLY,
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert created.status_code in (200, 201)
+        reply_id = created.json()["id"]
+        token = request.getfixturevalue(f"{role}_token")
+        resp = await async_client.delete(
+            f"/users/reply/{reply_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 403
+        # The attribute is still there: an admin can delete it.
+        cleanup = await async_client.delete(
+            f"/users/reply/{reply_id}",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert cleanup.status_code == 200
+
+    @pytest.mark.parametrize("role", ["admin", "helpdesk"])
+    async def test_reply_create_and_delete_still_allowed(
+        self, async_client, request, role
+    ):
+        token = request.getfixturevalue(f"{role}_token")
+        headers = {"Authorization": f"Bearer {token}"}
+        created = await async_client.post(
+            "/users/reply", json=self.REPLY, headers=headers
+        )
+        assert created.status_code in (200, 201)
+        deleted = await async_client.delete(
+            f"/users/reply/{created.json()['id']}", headers=headers
+        )
+        assert deleted.status_code == 200
+
+
 class TestDictionaryLogsRoles:
     """Verifica que /dictionary/radius-logs restringe acceso a ADMIN/SUPERADMIN."""
 
