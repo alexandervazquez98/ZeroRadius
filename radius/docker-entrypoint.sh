@@ -161,6 +161,15 @@ if [ -d "/etc/raddb/custom_dictionaries" ]; then
     fi
 fi
 
+# --- Dynamic NAS clients (sites-enabled/dynamic-clients) ---
+# Which source networks may be looked up in the nas table, and how long a
+# looked-up client is cached (seconds) before secret changes or deletes apply.
+export RADIUS_DYNAMIC_CLIENT_NETWORK="${RADIUS_DYNAMIC_CLIENT_NETWORK:-0.0.0.0/0}"
+case "${RADIUS_CLIENT_LIFETIME:-}" in
+    ''|*[!0-9]*) RADIUS_CLIENT_LIFETIME=60 ;;
+esac
+export RADIUS_CLIENT_LIFETIME
+
 # --- Start FreeRADIUS ---
 # Production runs without -X: debug mode prints every decoded request,
 # including decrypted PAP passwords, to the container log (issue #102).

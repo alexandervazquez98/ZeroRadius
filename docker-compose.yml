@@ -40,6 +40,10 @@ services:
       DB_NAME: ${MYSQL_DATABASE}
       # yes = run freeradius -X (logs decrypted PAP passwords; troubleshooting only)
       RADIUS_DEBUG: "${RADIUS_DEBUG:-no}"
+      # NAS client cache (s): NAS secret changes/deletes apply within this time
+      RADIUS_CLIENT_LIFETIME: "${RADIUS_CLIENT_LIFETIME:-60}"
+      # Source networks looked up in the nas table (unknown IPs stay rejected)
+      RADIUS_DYNAMIC_CLIENT_NETWORK: "${RADIUS_DYNAMIC_CLIENT_NETWORK:-0.0.0.0/0}"
       TZ: UTC
     volumes:
       - /etc/localtime:/etc/localtime:ro

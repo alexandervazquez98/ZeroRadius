@@ -15,12 +15,12 @@ RUN cd /etc/raddb/mods-enabled && \
 # or we will mount a correct config if needed. But for now, let's trust the default module config structure
 # which reads env vars.
 
-# Enable read_clients in SQL module
+# SQL module tweaks (radius/sql is bind-mounted over this file at runtime;
+# read_clients is off there: NAS clients come from sites/dynamic-clients)
 # Also FIX THE DRIVER which defaults to rlm_sql_null
 # AND disable TLS ca_file check which fails (we don't use TLS for local docker db)
 # AND hardcode connection params because env vars seem flaky in this context
 RUN sed -i 's/driver = "rlm_sql_null"/driver = "rlm_sql_mysql"/g' /etc/raddb/mods-available/sql && \
-    sed -i 's/#\s*read_clients = yes/read_clients = yes/g' /etc/raddb/mods-available/sql && \
     sed -i 's/#\s*client_table = "nas"/client_table = "nas"/g' /etc/raddb/mods-available/sql && \
     sed -i 's/ca_file = "/# ca_file = "/g' /etc/raddb/mods-available/sql && \
     sed -i 's/certificate_file = "/# certificate_file = "/g' /etc/raddb/mods-available/sql && \
@@ -165,6 +165,9 @@ RUN sed -i 's/#\s*read_groups = yes/read_groups = yes/g' /etc/raddb/mods-availab
 COPY policy.d/nas_based_authorization /etc/raddb/policy.d/nas_based_authorization
 # Huntgroup enforcement for radgroupcheck rows (issue #92); invoked from default.conf
 COPY policy.d/nas_huntgroup_enforcement /etc/raddb/policy.d/nas_huntgroup_enforcement
+
+# NAS clients looked up in SQL on first packet (no restart on NAS changes)
+COPY sites/dynamic-clients /etc/raddb/sites-enabled/dynamic-clients
 
 # Copy entrypoint script
 COPY docker-entrypoint.sh /docker-entrypoint.sh

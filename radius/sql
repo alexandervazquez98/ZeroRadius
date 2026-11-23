@@ -21,8 +21,9 @@ sql {
         idle_timeout = 60
     }
 
-    # Helper functions
-    read_clients = yes
+    # Clients are NOT read at startup: radius/sites/dynamic-clients looks each
+    # NAS up in the nas table on its first packet, so NAS changes need no restart.
+    read_clients = no
     client_table = "nas"
 
     # Tables configuration
