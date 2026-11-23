@@ -131,9 +131,14 @@ async def _existing_by_nasname(db: AsyncSession, nasnames: list[str]) -> dict[st
     return found
 
 
+def _header(name) -> str:
+    """Header names ignore surrounding spaces and case (Excel writes 'Category')."""
+    return (name or "").strip().lower()
+
+
 def _clean_row(raw: dict) -> dict[str, str]:
     return {
-        (key or "").strip(): value.strip() if isinstance(value, str) else ""
+        _header(key): value.strip() if isinstance(value, str) else ""
         for key, value in raw.items()
     }
 
@@ -163,18 +168,24 @@ async def bulk_import_nas_csv(
         raise HTTPException(status_code=422, detail="CSV file must be UTF-8 encoded")
 
     reader = csv.DictReader(io.StringIO(text))
-    headers = {(h or "").strip() for h in (reader.fieldnames or [])}
+    headers = {_header(h) for h in (reader.fieldnames or [])}
     missing = sorted(BULK_REQUIRED - headers)
     if missing:
         raise HTTPException(
             status_code=422,
             detail=f"CSV missing required header(s): {', '.join(missing)}",
         )
-    rows: list[dict[str, str]] = []
-    for raw in reader:
-        rows.append(_clean_row(raw))
-        if len(rows) > BULK_MAX_ROWS:
+    # (data row number, cleaned row). Rows whose cells are all empty (",,,,,"
+    # from spreadsheets) are skipped but still counted, so row numbers in
+    # errors match the file.
+    numbered: list[tuple[int, dict[str, str]]] = []
+    for number, raw in enumerate(reader, start=1):
+        if number > BULK_MAX_ROWS:
             raise HTTPException(status_code=422, detail=f"CSV exceeds {BULK_MAX_ROWS} data rows")
+        row = _clean_row(raw)
+        if any(row.values()):
+            numbered.append((number, row))
+    rows = [row for _, row in numbered]
 
     if default_category_id is not None and (
         default_category_id <= 0 or await db.get(NasCategory, default_category_id) is None
@@ -192,7 +203,7 @@ async def bulk_import_nas_csv(
     errors: list[NasBulkRowError] = []
     seen: set[str] = set()
 
-    for number, row in enumerate(rows, start=1):
+    for number, row in numbered:
         nasname = row.get("nasname") or None
 
         def fail(message: str) -> None:

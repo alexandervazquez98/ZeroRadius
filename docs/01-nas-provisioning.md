@@ -55,7 +55,11 @@ Rules:
   their data row number (1 = first row after the header) and are skipped; the
   valid rows are saved together.
 - A `nasname` that already exists once is **updated** (secret plus any
-  non-empty optional cell; empty cells keep the current value).
+  non-empty optional cell; empty cells keep the current value, except an empty
+  `category` cell, which takes `default_category_id` when one is given).
+- Header names ignore case and surrounding spaces (`Category` = `category`).
+  Lines whose cells are all empty (`,,,,,`) are skipped; they still count for
+  row numbers.
 - A `nasname` that already exists on several rows, or that appears more than
   once in the file, is reported as an error (later repetitions only).
 - Unknown category names are errors. Files over 1 MB or 5000 data rows are

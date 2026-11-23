@@ -403,3 +403,34 @@ async def test_existing_post_nas_still_validates_and_creates(async_client, admin
     assert ok.status_code == 200
     assert ok.json()["nasname"] == ip
     assert len(await _rows(test_db, ip)) == 1
+
+
+async def test_bulk_csv_headers_are_case_insensitive(async_client, admin_token, test_db):
+    """A capitalized header (e.g. Excel 'Category') must not be dropped silently."""
+    cat = await _category(test_db)
+    ip = _ip()
+    resp = await _upload(
+        async_client,
+        admin_token,
+        _csv(f"{ip},{SECRET_A},{cat.name},Desc", header="NASNAME,Secret,Category,Description"),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["created"] == 1 and resp.json()["errors"] == []
+    [row] = await _rows(test_db, ip)
+    assert (row.category_id, row.description) == (cat.id, "Desc")
+
+
+async def test_bulk_csv_skips_comma_only_lines_and_keeps_row_numbers(
+    async_client, admin_token, test_db
+):
+    """Spreadsheets export empty rows as ',,,,,'; they are not data rows with errors."""
+    ip1, ip2 = _ip(), _ip()
+    resp = await _upload(
+        async_client,
+        admin_token,
+        _csv(f"{ip1},,{SECRET_A},,,", ",,,,,", f"{ip2},,short,,,"),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["created"] == 1
+    assert [(e["row"], e["nasname"]) for e in body["errors"]] == [(3, ip2)]
