@@ -4,8 +4,8 @@
  * Cubre:
  * - Renderiza la lista de usuarios desde MSW mock
  * - Los usernames de los mock users aparecen en el DOM
- * - El botón "Add User" está presente (todos los roles en UsersPage lo ven,
- *   ya que UsersPage no tiene RBAC — el RBAC está en el router de la app)
+ * - Las acciones siguen las reglas de la API: "Add User" para
+ *   superadmin/admin/helpdesk; editar, borrar, reset y JIT para superadmin/admin
  */
 
 import React from 'react'
@@ -314,5 +314,60 @@ describe('UsersPage — self-service setup link (#101 C)', () => {
 
     const plain = screen.getByText('plain').closest('tr')
     expect(within(plain).queryByText(/Setup link/)).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Actions follow the API role rules: create = superadmin/admin/helpdesk;
+// edit, delete, reset password and JIT approval = superadmin/admin.
+// ---------------------------------------------------------------------------
+
+describe('UsersPage — actions follow the API role rules', () => {
+  const row = async (name) => (await screen.findByText(name)).closest('tr')
+
+  it.each(['readonly', 'auditor'])('%s sees no create or management actions', async (role) => {
+    renderUsers(role)
+    const r = await row('jperez')
+    expect(screen.queryByText(/add user/i)).toBeNull()
+    expect(within(r).queryByTitle('Edit')).toBeNull()
+    expect(within(r).queryByTitle('Delete')).toBeNull()
+    expect(within(r).queryByTitle('Reset password')).toBeNull()
+    expect(within(r).queryByTitle(/Break-Glass/)).toBeNull()
+  })
+
+  it('helpdesk can add users but not edit, delete, reset or approve JIT', async () => {
+    renderUsers('helpdesk')
+    const r = await row('jperez')
+    expect(screen.getByText(/add user/i)).toBeInTheDocument()
+    expect(within(r).queryByTitle('Edit')).toBeNull()
+    expect(within(r).queryByTitle('Delete')).toBeNull()
+    expect(within(r).queryByTitle('Reset password')).toBeNull()
+    expect(within(r).queryByTitle(/Break-Glass/)).toBeNull()
+  })
+
+  it('admin keeps every action', async () => {
+    renderUsers('admin')
+    const r = await row('jperez')
+    expect(screen.getByText(/add user/i)).toBeInTheDocument()
+    expect(within(r).getByTitle('Edit')).toBeInTheDocument()
+    expect(within(r).getByTitle('Delete')).toBeInTheDocument()
+    expect(within(r).getByTitle('Reset password')).toBeInTheDocument()
+    expect(within(r).getByTitle(/Break-Glass/)).toBeInTheDocument()
+  })
+
+  it('the create wizard shows the API error instead of failing silently', async () => {
+    server.use(
+      http.post('/api/users/check', () =>
+        HttpResponse.json({ detail: 'Insufficient permissions' }, { status: 403 })
+      )
+    )
+    renderUsers('helpdesk')
+    fireEvent.click(await screen.findByText(/add user/i))
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'nuevo' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secreto123' } })
+    fireEvent.click(screen.getByRole('button', { name: /next/i }))
+    fireEvent.click(screen.getByRole('button', { name: /create user/i }))
+    expect(await screen.findByText(/Insufficient permissions/)).toBeInTheDocument()
+    expect(screen.getByText('Create New User')).toBeInTheDocument()
   })
 })

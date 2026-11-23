@@ -41,6 +41,12 @@ def _audit_safe(data: dict, attribute: str) -> dict:
     return data
 
 
+# Roles that may create RADIUS users and add/remove their reply attributes.
+# readonly and auditor are read-only roles. Editing or deleting a password row
+# stays limited to admin/superadmin (see update/delete below).
+_RADIUS_USER_WRITERS = require_roles(Role.SUPERADMIN, Role.ADMIN, Role.HELPDESK)
+
+
 @router.get("", response_model=list[RadCheckOut])
 @limiter.limit("60/minute")
 async def get_users(
@@ -79,7 +85,7 @@ async def create_user_check(
     request: Request,
     user: RadCheckCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = Depends(get_current_active_user),
+    current_user: AdminUser = _RADIUS_USER_WRITERS,
 ):
     # Input is the plaintext password; store it in the attribute's format
     # (MD5-Password / NT-Password are hashed).
@@ -333,7 +339,7 @@ async def create_user_reply(
     request: Request,
     reply: RadReplyCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = Depends(get_current_active_user),
+    current_user: AdminUser = _RADIUS_USER_WRITERS,
 ):
     new_reply = RadReply(**reply.model_dump())
     db.add(new_reply)
@@ -357,7 +363,7 @@ async def delete_user_reply(
     request: Request,
     id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: AdminUser = Depends(get_current_active_user),
+    current_user: AdminUser = _RADIUS_USER_WRITERS,
 ):
     result = await db.execute(select(RadReply).where(RadReply.id == id))
     item = result.scalars().first()
