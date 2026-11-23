@@ -16,9 +16,9 @@ Assumptions: retention is table-wide by monthly partition (keeps current month +
 
 | ID | Specs | Route | Status | Commit |
 |----|-------|-------|--------|--------|
-| T1 | S1, S2 | inline | pending | |
-| T2 | S3 | inline | pending | |
-| T3 | S4 | inline | pending | |
+| T1 | S1, S2 | inline | done (11 unit tests RED->GREEN; verifier pending) | adf0ad4 |
+| T2 | S3 | inline | done (7 integration tests RED 404 -> GREEN) | 24d5c2b |
+| T3 | S4 | inline | done (3 Vitest RED import -> GREEN; 63/63 suite; vite build ok) | 358cdfc |
 
 Risk: T1 item 1 (drops stored data by partition).
 
@@ -27,3 +27,6 @@ Risk: T1 item 1 (drops stored data by partition).
 - L1 (2026-11-23, user): "Vamos a crear esas particiones, vamos a almacenar 3 meses de logs de cada equipo, ademas cada NAS registrado debe de estar enviando logs, entonces ocupo algun indicador que me diga cuantos NAS no estan enviando informacion via syslogs"
 - L2 (2026-11-23, user): "24 horas sin recibir algun mensaje y como dices, no todos los equipos generan mensajes constantemente, no importa borrar syslog historicos ya que aun no lo implemento en produccino tienes libre albeldrio"
 - L3: Test DB is in-memory SQLite, so partition DDL is unit-tested through a pure planner; live MySQL check goes to `dev` only with user confirmation.
+- L4: Backend suite 542 passed, 2 failed, 2 skipped (--ignore tests/unit/test_auth_service.py: imports `jose`, not in requirements). Both failures (test_models_regression_parity access_policy_assignments) also fail at d5edc95 -> pre-existing.
+- L5: Local env: repo backend/.venv is a Windows venv and frontend has no node_modules; tests ran from a scratch venv (no mysqlclient) and a scratch frontend copy. SQLite test DB cannot autoincrement BIGINT PK, so nas-status tests insert events directly.
+- L6: Next: live MariaDB check of REORGANIZE/DROP on `dev` (needs user confirmation); Engram mirror pending (auto-mode blocked mem_save).
