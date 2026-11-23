@@ -14,6 +14,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- NAS changes no longer restart RADIUS. FreeRADIUS looks each NAS up in the
+  `nas` table on its first packet (`radius/sites/dynamic-clients`) and caches
+  it for `RADIUS_CLIENT_LIFETIME` seconds (default 60): a new NAS works at
+  once; secret changes and deletes apply within the lifetime. Exact-IP rows win
+  over CIDR rows, then the most specific CIDR. Hostname `nasname` rows are no
+  longer matched. `RADIUS_DYNAMIC_CLIENT_NETWORK` limits which source networks
+  are looked up.
 - Syslog partition maintenance: a daily backend job creates upcoming monthly
   `syslog_events` partitions and drops those older than
   `SYSLOG_RETENTION_MONTHS` (default 3).

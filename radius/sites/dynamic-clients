@@ -1,0 +1,43 @@
+# NAS clients looked up in SQL when their first packet arrives (no restart).
+#
+# FreeRADIUS 3.x reads `read_clients` only at startup, so every NAS change
+# used to restart the container. Instead, any packet from a source address
+# inside RADIUS_DYNAMIC_CLIENT_NETWORK that is not a known client runs the
+# `dynamic_clients` server below. If the `nas` table has a row for that
+# address, the client is created and cached for RADIUS_CLIENT_LIFETIME seconds;
+# after that the next packet looks it up again, so secret changes and deletes
+# apply within the lifetime. Unknown addresses stay rejected.
+#
+# Match order for the source IP (same rules as the nas_cidr_ranges view):
+#   1. a row whose nasname is exactly that IP
+#   2. the most specific CIDR row containing it (largest prefix)
+#   3. ties: lowest id (nas.nasname is not unique, see #98)
+# Hostname nasname rows are not matched. Only IPv4 sources are looked up.
+# Malformed rows (bad prefix like /33 or /abc, non-IP text) are skipped and
+# never break the lookup for other rows.
+
+client dynamic_nas {
+	ipaddr = $ENV{RADIUS_DYNAMIC_CLIENT_NETWORK}
+	dynamic_clients = dynamic_clients
+	lifetime = $ENV{RADIUS_CLIENT_LIFETIME}
+}
+
+server dynamic_clients {
+	authorize {
+		update control {
+			&Tmp-String-1 := "%{sql:SELECT id FROM nas WHERE nasname = '%{Packet-Src-IP-Address}' OR (LOCATE('/', nasname) > 0 AND INET_ATON(SUBSTRING_INDEX(nasname, '/', 1)) IS NOT NULL AND CONCAT('', CAST(SUBSTRING_INDEX(nasname, '/', -1) AS UNSIGNED)) = SUBSTRING_INDEX(nasname, '/', -1) AND CAST(SUBSTRING_INDEX(nasname, '/', -1) AS UNSIGNED) <= 32 AND (INET_ATON('%{Packet-Src-IP-Address}') >> (32 - LEAST(CAST(SUBSTRING_INDEX(nasname, '/', -1) AS SIGNED), 32))) = (INET_ATON(SUBSTRING_INDEX(nasname, '/', 1)) >> (32 - LEAST(CAST(SUBSTRING_INDEX(nasname, '/', -1) AS SIGNED), 32)))) ORDER BY LOCATE('/', nasname) > 0, CAST(SUBSTRING_INDEX(nasname, '/', -1) AS UNSIGNED) DESC, id LIMIT 1}"
+		}
+
+		if (&control:Tmp-String-1 && &control:Tmp-String-1 != "") {
+			update control {
+				&FreeRADIUS-Client-IP-Address = "%{Packet-Src-IP-Address}"
+				&FreeRADIUS-Client-Require-MA = no
+				&FreeRADIUS-Client-Secret = "%{sql:SELECT secret FROM nas WHERE id = '%{control:Tmp-String-1}'}"
+				&FreeRADIUS-Client-Shortname = "%{sql:SELECT COALESCE(NULLIF(shortname, ''), nasname) FROM nas WHERE id = '%{control:Tmp-String-1}'}"
+				&FreeRADIUS-Client-NAS-Type = "%{sql:SELECT COALESCE(NULLIF(type, ''), 'other') FROM nas WHERE id = '%{control:Tmp-String-1}'}"
+			}
+		}
+
+		ok
+	}
+}

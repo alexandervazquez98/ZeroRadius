@@ -56,8 +56,6 @@ class TestNasCreate:
             json=payload,
             headers={"Authorization": f"Bearer {superadmin_token}"},
         )
-        # NAS router may fail if Docker is not available (_reload_radius),
-        # but the DB write succeeds — 200/201 expected
         assert resp.status_code in (200, 201)
 
     async def test_admin_can_create_nas(self, async_client, admin_token):
@@ -248,3 +246,38 @@ class TestNasCategoryFilter:
         data = resp.json()
         assert len(data) == 1
         assert data[0]["category_name"] == "cat-with-name-test"
+
+
+class TestNasChangesDoNotRestartRadius:
+    """NAS create/update/delete must not restart radius-server: FreeRADIUS looks
+    each NAS up in SQL on its first packet (radius/sites/dynamic-clients)."""
+
+    async def test_crud_never_touches_docker(self, async_client, admin_token, monkeypatch):
+        from unittest.mock import MagicMock
+        import docker
+
+        from_env = MagicMock()
+        monkeypatch.setattr(docker, "from_env", from_env)
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        created = await async_client.post(
+            "/nas",
+            json={"nasname": "10.99.98.1", "shortname": "no-restart", "secret": _VALID_SECRET},
+            headers=headers,
+        )
+        assert created.status_code in (200, 201)
+        nas_id = created.json()["id"]
+
+        updated = await async_client.put(
+            f"/nas/{nas_id}",
+            json={"nasname": "10.99.98.1", "shortname": "no-restart", "secret": "z" * 40},
+            headers=headers,
+        )
+        assert updated.status_code == 200
+
+        deleted = await async_client.delete(f"/nas/{nas_id}", headers=headers)
+        assert deleted.status_code == 200
+        listed = await async_client.get("/nas", headers=headers)
+        assert all(n["id"] != nas_id for n in listed.json())
+
+        from_env.assert_not_called()
