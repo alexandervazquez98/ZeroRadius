@@ -42,6 +42,8 @@ Linux variant is auto-selected by `scripts/start.sh` on Linux.
 | `MYSQL_PASSWORD` | Application DB password | `db` grants + backend DSN |
 | `RADIUS_SECRET` | Shared secret for the `radius-server` container (used by `clients.conf`) | `radius/clients.conf` template |
 | `RADIUS_DEBUG` | `yes` runs FreeRADIUS with `-X` and enables the Live Log Viewer. **Logs decrypted PAP passwords** — troubleshooting only. Default `no`. | `radius/docker-entrypoint.sh` |
+| `RADIUS_CLIENT_LIFETIME` | Seconds a NAS client looked up in the `nas` table stays cached. NAS secret changes and deletes apply within this time; new NAS apply on their first packet. Default `60`. | `radius/sites/dynamic-clients`, `radius/docker-entrypoint.sh` |
+| `RADIUS_DYNAMIC_CLIENT_NETWORK` | Source network whose packets are looked up in the `nas` table (IPv4 CIDR). Addresses with no `nas` row are still rejected; narrow it to your management networks to avoid SQL lookups for stray traffic. Default `0.0.0.0/0`. | `radius/sites/dynamic-clients` |
 | `SECRET_KEY` | JWT signing key. **Backend crashes at startup if unset.** Generate with `openssl rand -hex 32`. | `app/core/security.py` |
 | `ALGORITHM` | JWT algorithm (`HS256`/`HS384`/`HS512` default `HS256`) | same |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Access-token TTL (default `30`) | same |
@@ -272,6 +274,7 @@ docker compose up -d backend              # rolling restart
 | `radius` exits immediately | `docker compose logs radius`; usually a TLS or rlm_sql config; check `radius/certs/` is populated | [`docs/architecture.md` → data flow](architecture.md#22-nac--radius-authentication) |
 | Login returns 401 with correct creds | Check `app_audit_log` for the failure reason; verify `SECRET_KEY` did not change mid-session | [`docs/security-coverage.md`](security-coverage.md#a04-auth) |
 | Live log viewer shows nothing | Backend cannot reach Docker daemon (volume mount issue); verify `/var/run/docker.sock` is the host socket | [`docs/04-live-log-viewer.md`](04-live-log-viewer.md#architecture) |
+| A NAS gets no reply (`unknown client` in the radius log) | The packet's source IP must match a `nas` row (exact IP, or a CIDR row containing it) and fall inside `RADIUS_DYNAMIC_CLIENT_NETWORK`. Hostname `nasname` rows are not matched. Secret changes take up to `RADIUS_CLIENT_LIFETIME` seconds | [`docs/01-nas-provisioning.md`](01-nas-provisioning.md) |
 | `radtest` returns no reply | `docker compose ps` for radius; `docker compose logs radius` for "Ready to process requests" | [`docs/simulation/01-basic-access-request.md`](simulation/01-basic-access-request.md) |
 | Syslog forwarded but no rows in `syslog_events` | Compare `SYSLOG_API_KEY` between `.env` and the running container; if they diverged after a `.env` edit, recreate the syslog container | [`docs/deployment.md` → rotating secrets](#6-rotating-secrets) |
 | `pytest` reports `database is locked` | You're running backend-fast and a previous run aborted; SQLite file lock left behind | [`docs/testing.md`](testing.md#troubleshooting) |

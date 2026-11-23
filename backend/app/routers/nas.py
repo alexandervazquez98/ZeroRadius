@@ -18,27 +18,15 @@ from app.core.security import get_current_active_user
 from app.core.rbac import require_roles, Role
 from app.core.limiter import limiter
 import logging
-import docker as docker_sdk
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/nas", tags=["nas"])
 
 
-def _reload_radius() -> None:
-    """Restart the radius-server container so it re-reads the nas table.
-
-    FreeRADIUS 3.x does not support SIGHUP for client reloading — a full
-    container restart is the only way to pick up changes to the nas table.
-    The failure is logged as a warning and does NOT abort the API response.
-    """
-    try:
-        client = docker_sdk.from_env()
-        container = client.containers.get("radius-server")
-        container.restart(timeout=5)
-        logger.info("radius-server restarted to reload NAS clients")
-    except Exception as exc:
-        logger.warning("Could not restart radius-server: %s", exc)
+# NAS changes need no RADIUS restart: FreeRADIUS looks each NAS up in the nas
+# table on its first packet and caches it for RADIUS_CLIENT_LIFETIME seconds
+# (radius/sites/dynamic-clients).
 
 
 def _nas_to_out(nas: Nas) -> NasOut:
@@ -104,7 +92,6 @@ async def create_nas(
         new_value=nas.model_dump(exclude={"secret"}),
         event_code=EventCode.ADMIN_005,
     )
-    _reload_radius()
     return _nas_to_out(new_nas)
 
 
@@ -171,7 +158,6 @@ async def update_nas(
         old_value={k: v for k, v in old_data.items() if k != "secret"},
         new_value={k: v for k, v in update_data.items() if k != "secret"},
     )
-    _reload_radius()
     return _nas_to_out(nas)
 
 
@@ -202,7 +188,6 @@ async def delete_nas(
         nas.nasname,
         old_value={k: v for k, v in old_data.items() if k != "secret"},
     )
-    _reload_radius()
     return {"ok": True}
 
 
