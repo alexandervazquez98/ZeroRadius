@@ -12,6 +12,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Syslog partition maintenance: a daily backend job creates upcoming monthly
+  `syslog_events` partitions and drops those older than
+  `SYSLOG_RETENTION_MONTHS` (default 3).
+
 ### Security
 - **Sign replies to signed requests with `Message-Authenticator`** (RFC 3579 §3.2).
   When an `Access-Request` carries `Message-Authenticator`, the
