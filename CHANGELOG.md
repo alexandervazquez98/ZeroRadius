@@ -26,6 +26,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `17:52:31`) as `device_ip`, so `/syslog/nas-status` could never match a NAS.
   It now uses the UDP source address and parses RFC 3164, RFC 5424, Cisco IOS
   and MikroTik messages into `program` and `message`.
+- MikroTik messages sent without `<PRI>` (RouterOS default) were stored with an
+  empty `program` and severity 6. Topics now become `program` and set severity.
 
 ### Security
 - **Sign replies to signed requests with `Message-Authenticator`** (RFC 3579 §3.2).
