@@ -165,9 +165,11 @@ fi
 # Which source networks may be looked up in the nas table, and how long a
 # looked-up client is cached (seconds) before secret changes or deletes apply.
 export RADIUS_DYNAMIC_CLIENT_NETWORK="${RADIUS_DYNAMIC_CLIENT_NETWORK:-0.0.0.0/0}"
+# 0 would mean "never expire" (secret changes and deletes never apply).
 case "${RADIUS_CLIENT_LIFETIME:-}" in
     ''|*[!0-9]*) RADIUS_CLIENT_LIFETIME=60 ;;
 esac
+[ "$RADIUS_CLIENT_LIFETIME" -ge 1 ] 2>/dev/null || RADIUS_CLIENT_LIFETIME=60
 export RADIUS_CLIENT_LIFETIME
 
 # --- Start FreeRADIUS ---

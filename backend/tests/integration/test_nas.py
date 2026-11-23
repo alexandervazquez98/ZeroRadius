@@ -56,8 +56,6 @@ class TestNasCreate:
             json=payload,
             headers={"Authorization": f"Bearer {superadmin_token}"},
         )
-        # NAS router may fail if Docker is not available (_reload_radius),
-        # but the DB write succeeds — 200/201 expected
         assert resp.status_code in (200, 201)
 
     async def test_admin_can_create_nas(self, async_client, admin_token):
