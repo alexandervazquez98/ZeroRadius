@@ -270,6 +270,19 @@ app.add_middleware(SecurityHeadersMiddleware)
 # ---------------------------------------------------------------------------
 
 
+def _alembic_config():
+    """Alembic config for in-process migrations.
+
+    configure_logger=False keeps alembic/env.py from applying alembic.ini
+    logging, which would replace this app's JSON logging and silence it.
+    """
+    import alembic.config
+
+    cfg = alembic.config.Config("alembic.ini")
+    cfg.attributes["configure_logger"] = False
+    return cfg
+
+
 async def run_pending_migrations() -> None:
     """Run alembic migrations, respecting DISABLE_AUTO_MIGRATE.
 
@@ -291,7 +304,7 @@ async def run_pending_migrations() -> None:
     from sqlalchemy import text
     from sqlalchemy.exc import OperationalError, ProgrammingError
 
-    cfg = alembic.config.Config("alembic.ini")
+    cfg = _alembic_config()
 
     # Detect bootstrap path: alembic_version missing or empty.
     needs_stamp = False
