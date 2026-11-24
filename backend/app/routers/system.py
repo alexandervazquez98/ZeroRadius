@@ -86,6 +86,7 @@ async def ntp_status(
         reference_server=status.reference_server,
         last_sync=status.last_sync,
         alert=status.alert,
+        configured=status.configured,
     )
 
 

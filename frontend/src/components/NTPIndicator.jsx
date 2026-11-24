@@ -30,19 +30,30 @@ function NTPIndicator() {
 
     if (!status && !error) return null; // Still loading
 
-    const isAlert = error || !status?.synchronized || status?.alert;
+    // NTP_SERVER not set on the backend: neutral, not an alarm.
+    const notConfigured = !error && status?.configured === false;
+    const isAlert = !notConfigured && (error || !status?.synchronized || status?.alert);
+    const tone = notConfigured
+        ? { bg: '#F8FAFC', border: '#E2E8F0', fg: '#64748B', dot: '#94A3B8', glow: 'none' }
+        : isAlert
+        ? { bg: '#FEF2F2', border: '#FECACA', fg: '#DC2626', dot: '#DC2626', glow: '0 0 4px rgba(220, 38, 38, 0.6)' }
+        : { bg: '#F0FDF4', border: '#BBF7D0', fg: '#16A34A', dot: '#16A34A', glow: '0 0 4px rgba(22, 163, 74, 0.6)' };
 
     return (
         <div
+            data-testid="ntp-indicator"
+            data-state={notConfigured ? 'not-configured' : isAlert ? 'alert' : 'ok'}
             className="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-semibold cursor-default"
             style={{
-                backgroundColor: isAlert ? '#FEF2F2' : '#F0FDF4',
-                borderColor: isAlert ? '#FECACA' : '#BBF7D0',
-                color: isAlert ? '#DC2626' : '#16A34A',
+                backgroundColor: tone.bg,
+                borderColor: tone.border,
+                color: tone.fg,
             }}
             title={
                 error
                     ? 'NTP status unavailable'
+                    : notConfigured
+                    ? 'NTP check not configured (set NTP_SERVER on the backend)'
                     : status
                     ? `NTP: ${status.synchronized ? 'Synced' : 'Not Synced'} | Offset: ${status.offset_ms?.toFixed(2)}ms | Server: ${status.reference_server || 'unknown'}`
                     : 'Loading NTP status...'
@@ -51,10 +62,8 @@ function NTPIndicator() {
             <span
                 className="w-2 h-2 rounded-full inline-block"
                 style={{
-                    backgroundColor: isAlert ? '#DC2626' : '#16A34A',
-                    boxShadow: isAlert
-                        ? '0 0 4px rgba(220, 38, 38, 0.6)'
-                        : '0 0 4px rgba(22, 163, 74, 0.6)',
+                    backgroundColor: tone.dot,
+                    boxShadow: tone.glow,
                 }}
             />
             <span className="hidden sm:inline">NTP</span>

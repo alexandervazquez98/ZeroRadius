@@ -38,6 +38,23 @@ class TestSystemNTPStatus:
         )
         assert resp.status_code == 200
 
+    async def test_ntp_status_reports_not_configured_without_server(
+        self, async_client, admin_token, monkeypatch
+    ):
+        from app.services import ntp_status
+
+        monkeypatch.delenv("NTP_SERVER", raising=False)
+        ntp_status.clear_cache()
+        resp = await async_client.get(
+            "/system/ntp-status",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        ntp_status.clear_cache()
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["configured"] is False
+        assert body["alert"] is False
+
     async def test_helpdesk_cannot_read_ntp_status(self, async_client, helpdesk_token):
         resp = await async_client.get(
             "/system/ntp-status",
@@ -64,6 +81,7 @@ import asyncio
 import time
 from unittest.mock import patch
 
+from app.services.ntp_status import NTPStatus
 from app.services.system_health import ContainerStats, SystemResources
 
 
@@ -79,6 +97,12 @@ _RESOURCES = SystemResources(
     cpu_percent=10.0, cpu_count=2, memory_total_gb=2.0, memory_used_gb=1.0,
     memory_percent=50.0, disk_total_gb=100.0, disk_used_gb=10.0,
     disk_percent=10.0, network_interfaces=["eth0"],
+)
+
+
+_NTP = NTPStatus(
+    synchronized=True, offset_ms=1.0, stratum=2, reference_server="10.0.0.1",
+    last_sync=None, alert=False,
 )
 
 
@@ -103,6 +127,7 @@ class TestSystemHealthDoesNotBlockEventLoop:
     @pytest.mark.parametrize("path,target,value", [
         ("/system/health/containers", "app.routers.system.get_container_stats", []),
         ("/system/health/resources", "app.routers.system.get_system_resources", _RESOURCES),
+        ("/system/ntp-status", "app.routers.system.get_ntp_status", _NTP),
     ])
     async def test_regression_slow_health_call_does_not_block_other_requests_128(
         self, async_client, admin_token, path, target, value
