@@ -5,6 +5,8 @@ import { describe, it, expect } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import NasPage from '../pages/NAS'
+import { http, HttpResponse } from 'msw'
+import { server } from './mocks/server'
 import { ToastProvider } from '../context/ToastContext'
 
 function renderNas() {
@@ -138,5 +140,43 @@ describe('NASPage — NAS Categories and Devices', () => {
     await waitFor(() => {
       expect(screen.queryByText('Add NAS Client')).not.toBeInTheDocument()
     })
+  })
+
+  it('regression: saves the short name exactly as typed on create (issue #125)', async () => {
+    let sent
+    server.use(http.post('/api/nas', async ({ request }) => {
+      sent = await request.json()
+      return HttpResponse.json({ id: 99, ...sent }, { status: 201 })
+    }))
+    const user = userEvent.setup()
+    renderNas()
+    await user.click(await screen.findByRole('button', { name: /Add NAS/i }))
+    await user.type(document.getElementById('nas-nasname'), '10.53.6.1')
+    await user.type(document.getElementById('nas-shortname'), 'SW-L3-CUMBRES')
+    await user.type(document.getElementById('nas-secret'), '12345678901234567890123456789012')
+    await user.click(document.getElementById('nas-submit-btn'))
+    await waitFor(() => expect(sent).toBeDefined())
+    expect(sent.shortname).toBe('SW-L3-CUMBRES')
+  })
+
+  it('regression: edit shows and saves the stored short name unchanged (issue #125)', async () => {
+    server.use(http.get('/api/nas', () => HttpResponse.json([
+      { id: 53, nasname: '10.53.6.1', shortname: 'AP-SW-L3-CUMBRES', secret: '***', type: 'cisco', category_id: 2, category_name: 'CORE' },
+    ])))
+    let sent
+    server.use(http.put('/api/nas/:id', async ({ request }) => {
+      sent = await request.json()
+      return HttpResponse.json({ id: 53, ...sent })
+    }))
+    const user = userEvent.setup()
+    renderNas()
+    await user.click(await screen.findByTitle('Edit'))
+    const shortname = document.getElementById('nas-shortname')
+    expect(shortname.value).toBe('AP-SW-L3-CUMBRES')
+    await user.clear(shortname)
+    await user.type(shortname, 'SW-L3-CUMBRES')
+    await user.click(document.getElementById('nas-submit-btn'))
+    await waitFor(() => expect(sent).toBeDefined())
+    expect(sent.shortname).toBe('SW-L3-CUMBRES')
   })
 })

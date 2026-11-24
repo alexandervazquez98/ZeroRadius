@@ -29,8 +29,6 @@ const NasPage = () => {
     const [formData, setFormData] = useState({
         nasname: '', secret: '', shortname: '', type: 'other', category_id: '',
     });
-    const [nasCategory, setNasCategory] = useState('AP');
-    const [nasName, setNasName] = useState('');
 
     // Category manager state
     const [showCatManager, setShowCatManager] = useState(false);
@@ -143,25 +141,10 @@ const NasPage = () => {
         setFormData({
             nasname: nas.nasname,
             secret: nas.secret,
-            shortname: nas.shortname,
+            shortname: nas.shortname || '',
             type: nas.type,
             category_id: nas.category_id || '',
         });
-        if (nas.shortname && nas.shortname.includes('-')) {
-            const parts = nas.shortname.split('-');
-            const possibleCategory = parts[0];
-            const cats = ['AP', 'SM', 'PTZ', 'SW', 'RTR', 'FW', 'WLC', 'OTHER'];
-            if (cats.includes(possibleCategory)) {
-                setNasCategory(possibleCategory);
-                setNasName(parts.slice(1).join('-'));
-            } else {
-                setNasCategory('OTHER');
-                setNasName(nas.shortname);
-            }
-        } else {
-            setNasCategory('OTHER');
-            setNasName(nas.shortname || '');
-        }
         setIsOpen(true);
     };
 
@@ -169,16 +152,12 @@ const NasPage = () => {
         setIsOpen(false);
         setEditingId(null);
         setFormData({ nasname: '', secret: '', shortname: '', type: 'other', category_id: '' });
-        setNasCategory('AP');
-        setNasName('');
     };
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        const finalShortname = nasCategory === 'OTHER' ? nasName : `${nasCategory}-${nasName}`;
         const payload = {
             ...formData,
-            shortname: finalShortname,
             category_id: formData.category_id ? parseInt(formData.category_id, 10) : null,
         };
         if (editingId) {
@@ -545,8 +524,8 @@ const NasPage = () => {
                                     <input
                                         id="nas-shortname"
                                         className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                                        value={nasName}
-                                        onChange={e => setNasName(e.target.value)}
+                                        value={formData.shortname}
+                                        onChange={e => setFormData({ ...formData, shortname: e.target.value })}
                                         placeholder="e.g. Sector1-Norte"
                                         required
                                     />
