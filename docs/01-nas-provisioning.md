@@ -57,6 +57,10 @@ Rules:
 - A `nasname` that already exists once is **updated** (secret plus any
   non-empty optional cell; empty cells keep the current value, except an empty
   `category` cell, which takes `default_category_id` when one is given).
+- The file must be UTF-8 (save from Excel as **CSV UTF-8**). Cells may be
+  separated by `,` or `;`: Excel with a Spanish or other European locale opens
+  the template in a single column and saves with `;`. The header line decides
+  which one is used.
 - Header names ignore case and surrounding spaces (`Category` = `category`).
   Lines whose cells are all empty (`,,,,,`) are skipped; they still count for
   row numbers.

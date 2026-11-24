@@ -136,6 +136,16 @@ def _header(name) -> str:
     return (name or "").strip().lower()
 
 
+def _delimiter(text: str) -> str:
+    """Excel with a Spanish/European locale saves CSV with ';' instead of ','.
+
+    The header line decides: ';' only when it has semicolons and no commas,
+    so comma files (including commas inside descriptions) parse as before.
+    """
+    header_line = text.split("\n", 1)[0]
+    return ";" if ";" in header_line and "," not in header_line else ","
+
+
 def _clean_row(raw: dict) -> dict[str, str]:
     return {
         _header(key): value.strip() if isinstance(value, str) else ""
@@ -156,6 +166,7 @@ async def bulk_import_nas_csv(
     """Create or update NAS clients from a CSV file.
 
     Columns: nasname, shortname, secret, category (name), type, description.
+    Separated by ',' or ';' (Excel with a Spanish locale), decided by the header.
     A nasname matching exactly one existing row updates it; rows with errors
     are skipped and reported. FreeRADIUS is not restarted.
     """
@@ -167,7 +178,7 @@ async def bulk_import_nas_csv(
     except UnicodeDecodeError:
         raise HTTPException(status_code=422, detail="CSV file must be UTF-8 encoded")
 
-    reader = csv.DictReader(io.StringIO(text))
+    reader = csv.DictReader(io.StringIO(text), delimiter=_delimiter(text))
     headers = {_header(h) for h in (reader.fieldnames or [])}
     missing = sorted(BULK_REQUIRED - headers)
     if missing:
