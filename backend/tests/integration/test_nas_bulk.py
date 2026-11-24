@@ -434,3 +434,33 @@ async def test_bulk_csv_skips_comma_only_lines_and_keeps_row_numbers(
     body = resp.json()
     assert body["created"] == 1
     assert [(e["row"], e["nasname"]) for e in body["errors"]] == [(3, ip2)]
+
+
+async def test_regression_bulk_csv_semicolon_delimiter_from_spanish_excel(
+    async_client, admin_token, test_db
+):
+    """Excel with a Spanish locale saves CSV with ';' — it must import like ','."""
+    cat = await _category(test_db)
+    ip1, ip2 = _ip(), _ip()
+    content = (
+        "\r\n".join(
+            [
+                HEADER.replace(",", ";"),
+                f"{ip1};AP-SEMI;{SECRET_A};{cat.name};other;Torre 1, sector norte",
+                f"{ip2};;short;;;",
+            ]
+        )
+        + "\r\n"
+    ).encode("utf-8")
+    resp = await _upload(async_client, admin_token, content)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["created"] == 1
+    assert [(e["row"], e["nasname"]) for e in body["errors"]] == [(2, ip2)]
+    [row] = await _rows(test_db, ip1)
+    assert (row.shortname, row.category_id, row.type, row.description) == (
+        "AP-SEMI",
+        cat.id,
+        "other",
+        "Torre 1, sector norte",
+    )

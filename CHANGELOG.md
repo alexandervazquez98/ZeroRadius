@@ -36,6 +36,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Bulk NAS CSV import rejected files saved by Excel with a Spanish or other
+  European locale, which use `;` as separator ("CSV missing required
+  header(s)"). The header line now decides between `,` and `;`.
 - Syslog forwarder stored words of the message text (usually the time, e.g.
   `17:52:31`) as `device_ip`, so `/syslog/nas-status` could never match a NAS.
   It now uses the UDP source address and parses RFC 3164, RFC 5424, Cisco IOS
