@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 from starlette.requests import Request
 from starlette.responses import Response
@@ -54,18 +54,55 @@ def _nas_to_out(nas: Nas) -> NasOut:
 @limiter.limit("60/minute")
 async def get_nas(
     request: Request,
+    response: Response,
     category_id: Optional[int] = Query(None),
+    nasname: Optional[str] = Query(None, max_length=128),
+    shortname: Optional[str] = Query(None, max_length=32),
+    nas_type: Optional[str] = Query(None, alias="type", max_length=30),
+    description: Optional[str] = Query(None, max_length=200),
+    limit: Optional[int] = Query(None, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
 ):
-    query = select(Nas).options(selectinload(Nas.category))
+    """List NAS clients, ordered by id.
+
+    Text filters are case-insensitive partial matches and combine with AND.
+    The secret is never filterable. Without ``limit`` the whole filtered list
+    is returned; X-Total-Count always holds the filtered total before paging.
+    """
+    conditions = []
     if category_id is not None:
         if category_id <= 0:
             raise HTTPException(status_code=422, detail="category_id must be positive")
-        query = query.where(Nas.category_id == category_id)
-    query = query.order_by(Nas.id)
+        conditions.append(Nas.category_id == category_id)
+    for column, value in (
+        (Nas.nasname, nasname),
+        (Nas.shortname, shortname),
+        (Nas.type, nas_type),
+        (Nas.description, description),
+    ):
+        if value:
+            conditions.append(column.ilike(f"%{_escape_like(value)}%", escape="\\"))
+
+    total = await db.scalar(select(func.count()).select_from(Nas).where(*conditions))
+    response.headers["X-Total-Count"] = str(total)
+
+    query = (
+        select(Nas)
+        .options(selectinload(Nas.category))
+        .where(*conditions)
+        .order_by(Nas.id)
+    )
+    if limit is not None:
+        query = query.limit(limit).offset(offset)
     result = await db.execute(query)
     return [_nas_to_out(n) for n in result.scalars().all()]
+
+
+def _escape_like(value: str) -> str:
+    """Treat %, _ and \\ in a filter as literal characters."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 @router.post("", response_model=NasOut)

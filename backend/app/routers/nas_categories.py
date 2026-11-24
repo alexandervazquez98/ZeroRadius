@@ -6,7 +6,7 @@ ISO 27001 A.8.1 — Asset inventory and classification.
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 from starlette.requests import Request
 from app.db.session import get_db
 from app.models.models import NasCategory, Nas, AdminUser
@@ -29,9 +29,20 @@ async def list_nas_categories(
     db: AsyncSession = Depends(get_db),
     current_user: AdminUser = Depends(get_current_active_user),
 ):
-    """List all NAS categories. Accessible by any authenticated user."""
-    result = await db.execute(select(NasCategory).order_by(NasCategory.name))
-    return result.scalars().all()
+    """List all NAS categories with their NAS count. Any authenticated user."""
+    nas_count = (
+        select(func.count(Nas.id))
+        .where(Nas.category_id == NasCategory.id)
+        .correlate(NasCategory)
+        .scalar_subquery()
+    )
+    result = await db.execute(
+        select(NasCategory, nas_count).order_by(NasCategory.name)
+    )
+    return [
+        NasCategoryOut.model_validate(category).model_copy(update={"nas_count": count})
+        for category, count in result.all()
+    ]
 
 
 @router.get("/{id}", response_model=NasCategoryOut)

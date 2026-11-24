@@ -287,6 +287,8 @@ class NasCategoryCreate(NasCategoryBase):
 class NasCategoryOut(NasCategoryBase):
     id: int
     created_at: Optional[datetime] = None
+    # Number of NAS in the category; only filled by GET /nas-categories.
+    nas_count: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
 
 

@@ -157,3 +157,30 @@ async def test_delete_nas_category_unauthorized(
 
     # Cleanup
     await async_client.delete(f"/nas-categories/{cat_id}", headers=headers_sa)
+
+
+async def test_list_nas_categories_includes_nas_count(
+    async_client: AsyncClient, superadmin_token: str, test_db
+):
+    """GET /nas-categories returns nas_count per category (issue #127)."""
+    from app.models.models import Nas, NasCategory
+
+    busy = NasCategory(name="Count Busy", criticality="standard")
+    empty = NasCategory(name="Count Empty", criticality="standard")
+    test_db.add_all([busy, empty])
+    await test_db.flush()
+    test_db.add_all(
+        [
+            Nas(nasname="10.77.0.1", shortname="cnt-1", secret="a" * 32, category_id=busy.id),
+            Nas(nasname="10.77.0.2", shortname="cnt-2", secret="a" * 32, category_id=busy.id),
+            Nas(nasname="10.77.0.3", shortname="cnt-3", secret="a" * 32),
+        ]
+    )
+    await test_db.commit()
+
+    headers = {"Authorization": f"Bearer {superadmin_token}"}
+    response = await async_client.get("/nas-categories", headers=headers)
+    assert response.status_code == 200
+    by_name = {cat["name"]: cat for cat in response.json()}
+    assert by_name["Count Busy"]["nas_count"] == 2
+    assert by_name["Count Empty"]["nas_count"] == 0

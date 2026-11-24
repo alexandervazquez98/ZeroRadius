@@ -180,3 +180,109 @@ describe('NASPage — NAS Categories and Devices', () => {
     expect(sent.shortname).toBe('SW-L3-CUMBRES')
   })
 })
+
+// ── Pagination and filters (issue #127) ─────────────────────────────────────
+
+/**
+ * Serve 60 NAS paginated like the backend and record every page request
+ * (the limit=1 request that only reads the overall total is not recorded).
+ */
+function usePagedNas() {
+  const requests = []
+  const all = Array.from({ length: 60 }, (_, i) => ({
+    id: i + 1,
+    nasname: `10.1.0.${i + 1}`,
+    shortname: `nas-${String(i + 1).padStart(2, '0')}`,
+    secret: '***',
+    type: 'other',
+    category_id: null,
+    category_name: null,
+  }))
+  server.use(http.get('/api/nas', ({ request }) => {
+    const params = new URL(request.url).searchParams
+    const limit = params.get('limit')
+    if (limit !== '1') requests.push(params)
+    const offset = Number(params.get('offset') || 0)
+    const items = limit ? all.slice(offset, offset + Number(limit)) : all
+    return HttpResponse.json(items, { headers: { 'X-Total-Count': String(all.length) } })
+  }))
+  return requests
+}
+
+describe('NASPage — pagination and filters (issue #127)', () => {
+  it('requests the first page of 25 and navigates with next/previous', async () => {
+    const requests = usePagedNas()
+    const user = userEvent.setup()
+    renderNas()
+
+    expect(await screen.findByText('nas-01')).toBeInTheDocument()
+    expect(screen.queryByText('nas-26')).not.toBeInTheDocument()
+    expect(screen.getByText('1–25 of 60')).toBeInTheDocument()
+    const first = requests.find(p => p.get('limit'))
+    expect(first.get('limit')).toBe('25')
+    expect(first.get('offset')).toBe('0')
+
+    await user.click(screen.getByRole('button', { name: /next page/i }))
+    expect(await screen.findByText('nas-26')).toBeInTheDocument()
+    expect(screen.getByText('26–50 of 60')).toBeInTheDocument()
+    expect(requests.at(-1).get('offset')).toBe('25')
+
+    await user.click(screen.getByRole('button', { name: /previous page/i }))
+    expect(await screen.findByText('nas-01')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /previous page/i })).toBeDisabled()
+  })
+
+  it('changes the page size to 50 and goes back to the first page', async () => {
+    const requests = usePagedNas()
+    const user = userEvent.setup()
+    renderNas()
+
+    await screen.findByText('nas-01')
+    await user.click(screen.getByRole('button', { name: /next page/i }))
+    await screen.findByText('nas-26')
+
+    await user.selectOptions(document.getElementById('nas-page-size'), '50')
+    expect(await screen.findByText('1–50 of 60')).toBeInTheDocument()
+    expect(requests.at(-1).get('limit')).toBe('50')
+    expect(requests.at(-1).get('offset')).toBe('0')
+  })
+
+  it('debounces a text filter, sends it to the server and resets to page 1', async () => {
+    const requests = usePagedNas()
+    const user = userEvent.setup()
+    renderNas()
+
+    await screen.findByText('nas-01')
+    await user.click(screen.getByRole('button', { name: /next page/i }))
+    await screen.findByText('nas-26')
+
+    await user.type(document.getElementById('nas-filter-shortname'), 'core')
+    await waitFor(() => expect(requests.at(-1).get('shortname')).toBe('core'))
+    expect(requests.at(-1).get('offset')).toBe('0')
+    // Debounced: no request for the partial input typed on the way
+    const shortnames = requests.map(p => p.get('shortname')).filter(Boolean)
+    expect(shortnames).toEqual(['core'])
+    // The secret is never sent as a filter
+    expect(requests.some(p => p.has('secret'))).toBe(false)
+  })
+
+  it('shows one-click category chips with counts and filters by category', async () => {
+    const requests = usePagedNas()
+    const user = userEvent.setup()
+    renderNas()
+
+    const allChip = await screen.findByRole('button', { name: 'All (60)' })
+    expect(allChip).toHaveAttribute('aria-pressed', 'true')
+    const apChip = await screen.findByRole('button', { name: 'AP_CAMBIUM (1)' })
+    expect(screen.getByRole('button', { name: 'SM_CAMBIUM (0)' })).toBeInTheDocument()
+
+    await user.click(apChip)
+    await waitFor(() => expect(requests.at(-1).get('category_id')).toBe('1'))
+    expect(requests.at(-1).get('offset')).toBe('0')
+    expect(apChip).toHaveAttribute('aria-pressed', 'true')
+    expect(allChip).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(allChip)
+    await waitFor(() => expect(requests.at(-1).has('category_id')).toBe(false))
+  })
+})

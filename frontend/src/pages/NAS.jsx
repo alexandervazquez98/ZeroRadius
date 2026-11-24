@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import React, { useEffect, useState } from 'react';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import api from '../api';
-import { Plus, Trash2, Tag, ChevronDown, ChevronUp, Settings2, Download, Upload } from 'lucide-react';
+import { Plus, Trash2, Tag, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Settings2, Download, Upload } from 'lucide-react';
 import NasCategoriesService from '../services/nasCategoriesService';
 import NasService from '../services/nas';
 import { useToast } from '../context/ToastContext';
@@ -16,6 +16,25 @@ const CRITICALITY_BADGE = {
 };
 
 const EMPTY_CAT_FORM = { name: '', description: '', criticality: 'standard', vendor: '' };
+
+// List paging and filters. The secret is deliberately not a filter.
+const PAGE_SIZES = [25, 50, 100];
+const FILTER_DEBOUNCE_MS = 300;
+const FILTER_FIELDS = ['nasname', 'shortname', 'type', 'description'];
+const EMPTY_FILTERS = { nasname: '', shortname: '', type: '', description: '' };
+const FILTER_INPUTS = [
+    { field: 'nasname', label: 'IP / CIDR', placeholder: '10.53.1.' },
+    { field: 'shortname', label: 'Short name', placeholder: 'SW-L3' },
+    { field: 'type', label: 'Type', placeholder: 'cisco' },
+    { field: 'description', label: 'Description', placeholder: 'Building' },
+];
+
+const chipClass = (active) =>
+    `inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+        active
+            ? 'bg-indigo-600 text-white border-indigo-600'
+            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+    }`;
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
@@ -45,11 +64,48 @@ const NasPage = () => {
     const [bulkCategoryId, setBulkCategoryId] = useState('');
     const [bulkResult, setBulkResult] = useState(null);
 
+    // List paging and filters (server-side). Text filters are debounced
+    // because GET /nas is rate limited.
+    const [page, setPage] = useState(0);
+    const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
+    const [filters, setFilters] = useState(EMPTY_FILTERS);
+    const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
+    const [categoryFilter, setCategoryFilter] = useState(null);
+
+    useEffect(() => {
+        if (FILTER_FIELDS.every(f => appliedFilters[f] === filters[f])) return undefined;
+        const timer = setTimeout(() => {
+            setAppliedFilters(filters);
+            setPage(0);
+        }, FILTER_DEBOUNCE_MS);
+        return () => clearTimeout(timer);
+    }, [filters, appliedFilters]);
+
+    const listParams = { limit: pageSize, offset: page * pageSize };
+    FILTER_FIELDS.forEach(field => {
+        const value = appliedFilters[field].trim();
+        if (value) listParams[field] = value;
+    });
+    if (categoryFilter !== null) listParams.category_id = categoryFilter;
+
     // ── Queries ──────────────────────────────────────────────────────────────
 
-    const { data: nasList = [], isLoading } = useQuery({
-        queryKey: ['nas'],
-        queryFn: () => api.get('/nas').then(r => r.data),
+    const { data: nasPage, isLoading } = useQuery({
+        queryKey: ['nas', 'page', listParams],
+        queryFn: () => api.get('/nas', { params: listParams }).then(r => ({
+            items: r.data,
+            total: Number(r.headers?.['x-total-count'] ?? r.data.length),
+        })),
+        placeholderData: keepPreviousData,
+    });
+    const nasList = nasPage?.items ?? [];
+    const total = nasPage?.total ?? 0;
+
+    // Overall NAS count for the "All" chip (one row, total read from the header).
+    const { data: overallTotal } = useQuery({
+        queryKey: ['nas', 'total'],
+        queryFn: () => api.get('/nas', { params: { limit: 1 } })
+            .then(r => Number(r.headers?.['x-total-count'] ?? 0)),
     });
 
     const { data: categories = [] } = useQuery({
@@ -57,21 +113,41 @@ const NasPage = () => {
         queryFn: NasCategoriesService.getAll,
     });
 
+    // A delete can empty the last page: step back to the new last page.
+    useEffect(() => {
+        if (page > 0 && nasPage && nasPage.items.length === 0 && nasPage.total > 0) {
+            setPage(Math.max(0, Math.ceil(nasPage.total / pageSize) - 1));
+        }
+    }, [nasPage, page, pageSize]);
+
+    const hasFilters = categoryFilter !== null || FILTER_FIELDS.some(f => appliedFilters[f].trim());
+    const firstShown = total === 0 ? 0 : page * pageSize + 1;
+    const lastShown = Math.min(total, page * pageSize + nasList.length);
+    const isLastPage = (page + 1) * pageSize >= total;
+
+    const selectCategory = (id) => { setCategoryFilter(id); setPage(0); };
+
+    // NAS changes also change the per-category counts.
+    const invalidateNas = () => {
+        queryClient.invalidateQueries({ queryKey: ['nas'] });
+        queryClient.invalidateQueries({ queryKey: ['nas-categories'] });
+    };
+
     // ── NAS Mutations ────────────────────────────────────────────────────────
 
     const createMutation = useMutation({
         mutationFn: (nas) => api.post('/nas', nas),
-        onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['nas'] }); closeModal(); },
+        onSuccess: () => { invalidateNas(); closeModal(); },
     });
 
     const updateMutation = useMutation({
         mutationFn: ({ id, data }) => api.put(`/nas/${id}`, data),
-        onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['nas'] }); closeModal(); },
+        onSuccess: () => { invalidateNas(); closeModal(); },
     });
 
     const deleteMutation = useMutation({
         mutationFn: (id) => api.delete(`/nas/${id}`),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['nas'] }),
+        onSuccess: invalidateNas,
     });
 
     const bulkMutation = useMutation({
@@ -80,7 +156,7 @@ const NasPage = () => {
         onSuccess: (result) => {
             setBulkResult(result);
             if (!result.dry_run) {
-                queryClient.invalidateQueries({ queryKey: ['nas'] });
+                invalidateNas();
             }
         },
         onError: (err) => showToast(err?.response?.data?.detail || 'CSV import failed', 'error'),
@@ -420,9 +496,55 @@ const NasPage = () => {
                 </div>
             )}
 
+            {/* ── One-click category filter ──────────────────────────────────────── */}
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by category">
+                <button
+                    type="button"
+                    aria-pressed={categoryFilter === null}
+                    onClick={() => selectCategory(null)}
+                    className={chipClass(categoryFilter === null)}
+                >
+                    {`All (${overallTotal ?? 0})`}
+                </button>
+                {categories.map(cat => (
+                    <button
+                        key={cat.id}
+                        type="button"
+                        aria-pressed={categoryFilter === cat.id}
+                        onClick={() => selectCategory(cat.id)}
+                        className={chipClass(categoryFilter === cat.id)}
+                    >
+                        {`${cat.name} (${cat.nas_count ?? 0})`}
+                    </button>
+                ))}
+            </div>
+
+            {/* ── Field filters (the secret is never filterable) ─────────────────── */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {FILTER_INPUTS.map(({ field, label, placeholder }) => (
+                    <div key={field}>
+                        <label htmlFor={`nas-filter-${field}`} className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                            {label}
+                        </label>
+                        <input
+                            id={`nas-filter-${field}`}
+                            type="search"
+                            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                            placeholder={placeholder}
+                            value={filters[field]}
+                            onChange={e => setFilters(f => ({ ...f, [field]: e.target.value }))}
+                        />
+                    </div>
+                ))}
+            </div>
+
             {/* ── NAS Card Grid ──────────────────────────────────────────────────── */}
             {isLoading ? (
                 <div className="text-center py-16 text-slate-400">Loading devices…</div>
+            ) : nasList.length === 0 && hasFilters ? (
+                <div className="text-center py-16 text-slate-400">
+                    <p className="text-lg font-semibold">No NAS devices match the filters</p>
+                </div>
             ) : nasList.length === 0 ? (
                 <div className="text-center py-16 text-slate-400">
                     <p className="text-lg font-semibold">No NAS devices registered</p>
@@ -489,6 +611,46 @@ const NasPage = () => {
                             </div>
                         </div>
                     ))}
+                </div>
+            )}
+
+            {/* ── Pagination ─────────────────────────────────────────────────────── */}
+            {!isLoading && (
+                <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+                    <div className="flex items-center gap-2">
+                        <label htmlFor="nas-page-size" className="text-xs text-slate-500">Per page</label>
+                        <select
+                            id="nas-page-size"
+                            className="border border-slate-200 rounded-xl px-2 py-1.5 text-sm"
+                            value={pageSize}
+                            onChange={e => { setPageSize(Number(e.target.value)); setPage(0); }}
+                        >
+                            {PAGE_SIZES.map(size => (
+                                <option key={size} value={size}>{size}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <span className="text-xs text-slate-500">{`${firstShown}–${lastShown} of ${total}`}</span>
+                        <button
+                            type="button"
+                            aria-label="Previous page"
+                            onClick={() => setPage(p => Math.max(0, p - 1))}
+                            disabled={page === 0}
+                            className="p-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40"
+                        >
+                            <ChevronLeft size={16} />
+                        </button>
+                        <button
+                            type="button"
+                            aria-label="Next page"
+                            onClick={() => setPage(p => p + 1)}
+                            disabled={isLastPage}
+                            className="p-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40"
+                        >
+                            <ChevronRight size={16} />
+                        </button>
+                    </div>
                 </div>
             )}
 

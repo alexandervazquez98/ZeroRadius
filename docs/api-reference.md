@@ -63,6 +63,13 @@ For each domain, deep documentation lives under `docs/modules/<name>.md`.
 | Circuits (CIR) | [`docs/modules/circuits.md`](modules/circuits.md) | `/circuits`, `/circuits/resolve`, `/circuits/{id}` |
 | Device Registry | [`docs/modules/device-registry.md`](modules/device-registry.md) | `/device-registry`, `/device-registry/{id}`, `/device-registry/bulk`, `/device-registry/bulk/csv`, `/device-registry/bulk/template`, `/device-registry/stats` |
 
+### NAS list
+
+| Method | Path | Roles | Notes |
+|---|---|---|---|
+| `GET` | `/nas` | any active user | Returns a JSON list of NAS ordered by `id`. Optional query: `limit` (1–100) and `offset` (≥ 0) for pages; `nasname`, `shortname`, `type`, `description` (case-insensitive partial match); `category_id` (> 0). Filters combine with AND. The `secret` is never filterable (a `secret=` parameter is ignored). Without `limit` the whole filtered list is returned. The `X-Total-Count` response header always holds the number of rows matching the filters, before `limit`/`offset` (exposed to browsers through CORS). Invalid values → 422. Rate limit 60/minute |
+| `GET` | `/nas-categories` | any active user | Each category includes `nas_count`, the number of NAS assigned to it |
+
 ### NAS bulk import
 
 | Method | Path | Roles | Notes |

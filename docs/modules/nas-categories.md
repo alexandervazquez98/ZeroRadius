@@ -47,6 +47,11 @@ Base path: `/nas-categories`
 | `vendor` | str \| null | Reference only ("Cisco", "Juniper", …) |
 | `created_at` | datetime | Server-set |
 
+`GET /nas-categories` also returns `nas_count` on each category: the number
+of NAS assigned to it (computed, not stored; `null` on the other endpoints).
+The NAS page shows these counts on its one-click category filter, which calls
+`GET /nas?category_id=<id>`.
+
 ## 4. Criticality
 
 | Value | Meaning |

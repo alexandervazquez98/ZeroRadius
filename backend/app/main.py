@@ -234,6 +234,8 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
+    # GET /nas returns the filtered total for pagination (NAS page).
+    expose_headers=["X-Total-Count"],
 )
 
 app.add_middleware(ForcePasswordChangeMiddleware)
