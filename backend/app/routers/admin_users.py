@@ -14,6 +14,27 @@ from app.services.lockout import unlock_user
 router = APIRouter(prefix="/admin-users", tags=["admin-users"])
 
 
+def _is_active_superadmin(role, is_active) -> bool:
+    return role == Role.SUPERADMIN.value and bool(is_active)
+
+
+async def _other_active_superadmins(db: AsyncSession, exclude_id: int) -> int:
+    """Count active superadmins other than exclude_id, locking them (MariaDB)
+    so two concurrent demotions cannot both see the other as remaining."""
+    ids = (
+        await db.execute(
+            select(AdminUser.id)
+            .where(
+                AdminUser.role == Role.SUPERADMIN.value,
+                AdminUser.is_active != 0,  # same truthiness as login
+                AdminUser.id != exclude_id,
+            )
+            .with_for_update()
+        )
+    ).scalars().all()
+    return len(ids)
+
+
 @router.get("", response_model=list[AdminUserOut])
 @limiter.limit("60/minute")
 async def get_admin_users(
@@ -88,6 +109,20 @@ async def update_admin_user(
         raise HTTPException(status_code=404, detail="User not found")
 
     old_data = AdminUserOut.model_validate(db_user).model_dump()
+
+    # Never leave the system without an active superadmin: nobody could manage
+    # admin accounts (or undo the change) from the UI any more.
+    new_role = user_update.role if user_update.role is not None else db_user.role
+    new_active = user_update.is_active if user_update.is_active is not None else db_user.is_active
+    if (
+        _is_active_superadmin(db_user.role, db_user.is_active)
+        and not _is_active_superadmin(new_role, new_active)
+        and await _other_active_superadmins(db, db_user.id) == 0
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot demote or deactivate the last active superadmin.",
+        )
 
     if user_update.password:
         db_user.hashed_password = get_password_hash(user_update.password)
