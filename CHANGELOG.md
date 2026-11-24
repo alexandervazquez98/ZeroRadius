@@ -12,6 +12,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- NAS page pagination and filters. `GET /nas` accepts optional `limit`
+  (1-100), `offset`, and `nasname`, `shortname`, `type`, `description`
+  filters (case-insensitive partial match, combined with AND and with
+  `category_id`), and always returns `X-Total-Count`. Without `limit` it
+  returns the full list as before, so the Groups, Access Policies and
+  Dashboard views are unchanged. The secret is never filterable.
+  `GET /nas-categories` adds `nas_count`. The NAS page has page sizes
+  25/50/100, debounced field filters and one-click category buttons with
+  counts ([#127](https://github.com/alexandervazquez98/ZeroRadius/issues/127)).
+
 ### Fixed
 
 - The header NTP indicator was always red in Docker: it ran `chronyc` /
