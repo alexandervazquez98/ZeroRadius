@@ -4,7 +4,11 @@ Provides container stats and system resource monitoring using Docker SDK and psu
 """
 
 import logging
-import subprocess
+import os
+import socket
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Optional
 
@@ -14,6 +18,18 @@ logger = logging.getLogger(__name__)
 
 # Cache duration in seconds
 CACHE_TTL = 10
+
+COMPOSE_PROJECT_LABEL = "com.docker.compose.project"
+
+# Each Docker stats call waits ~2 s for two CPU samples, so they run in parallel.
+_STATS_MAX_WORKERS = 8
+
+# Fail fast if the Docker daemon hangs (docker-py defaults to 60 s per call).
+DOCKER_TIMEOUT = 5
+
+_cache_lock = threading.Lock()
+_cache_time: float = 0.0
+_cache_value: Optional[list["ContainerStats"]] = None
 
 
 @dataclass
@@ -100,26 +116,76 @@ def _parse_docker_stats(container) -> Optional[ContainerStats]:
         return None
 
 
-def get_container_stats() -> list[ContainerStats]:
+def clear_container_stats_cache() -> None:
+    """Drop cached container stats (used by tests)."""
+    global _cache_time, _cache_value
+    with _cache_lock:
+        _cache_time = 0.0
+        _cache_value = None
+
+
+def _own_compose_project(client) -> Optional[str]:
     """
-    Get stats for all Docker containers.
-    Returns list of ContainerStats with CPU, memory, and network metrics.
+    Compose project of the running stack: COMPOSE_PROJECT_NAME if set, else the
+    project label of this backend container (its hostname is the container id).
     """
+    project = os.getenv("COMPOSE_PROJECT_NAME", "").strip()
+    if project:
+        return project
     try:
-        client = docker.from_env()
-        containers = client.containers.list(all=True)
+        own = client.containers.get(socket.gethostname())
+        return (own.labels or {}).get(COMPOSE_PROJECT_LABEL)
+    except Exception as e:
+        logger.warning("Cannot determine own compose project: %s", e)
+        return None
 
-        results = []
-        for container in containers:
-            stats = _parse_docker_stats(container)
-            if stats:
-                results.append(stats)
 
-        client.close()
-        return results
+def _fetch_container_stats() -> list[ContainerStats]:
+    try:
+        client = docker.from_env(timeout=DOCKER_TIMEOUT)
     except docker.errors.DockerException as e:
         logger.error("Failed to connect to Docker: %s", e)
         return []
+    try:
+        project = _own_compose_project(client)
+        if not project:
+            # Never fall back to listing every container on a shared host.
+            logger.warning("Compose project unknown; not listing containers")
+            return []
+        containers = client.containers.list(
+            all=True, filters={"label": f"{COMPOSE_PROJECT_LABEL}={project}"}
+        )
+        if not containers:
+            return []
+        workers = min(_STATS_MAX_WORKERS, len(containers))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            parsed = list(pool.map(_parse_docker_stats, containers))
+        return [stats for stats in parsed if stats]
+    except Exception as e:
+        # Includes requests timeouts/connection errors, which docker-py does not
+        # wrap in DockerException.
+        logger.error("Failed to read Docker containers: %s", e)
+        return []
+    finally:
+        client.close()
+
+
+def get_container_stats() -> list[ContainerStats]:
+    """
+    Stats (CPU, memory, network) for the containers of this compose project.
+
+    Blocking (Docker API): call it from a worker thread, not the event loop.
+    Results are cached for CACHE_TTL seconds; concurrent callers wait on the
+    lock and share one Docker query.
+    """
+    global _cache_time, _cache_value
+    with _cache_lock:
+        now = time.monotonic()
+        if _cache_value is None or now - _cache_time >= CACHE_TTL:
+            _cache_value = _fetch_container_stats()
+            _cache_time = time.monotonic()
+        # Copy so callers cannot mutate the cached list.
+        return list(_cache_value)
 
 
 def get_system_resources() -> SystemResources:
