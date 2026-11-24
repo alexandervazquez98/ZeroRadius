@@ -36,6 +36,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- System Administrators page had no role field: every account created from the
+  UI became `admin`, and a superadmin could not create another superadmin (or
+  helpdesk/auditor/readonly accounts) without the API. The create and edit
+  forms now have a role selector and the table shows each role. The API
+  rejects unknown roles (422) and refuses to demote or deactivate the last
+  active superadmin (400).
 - Bulk NAS CSV import rejected files saved by Excel with a Spanish or other
   European locale, which use `;` as separator ("CSV missing required
   header(s)"). The header line now decides between `,` and `;`.

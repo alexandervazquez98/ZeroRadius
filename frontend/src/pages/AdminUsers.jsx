@@ -4,12 +4,16 @@ import api from '../api';
 import { Plus, Trash2, Edit, RefreshCw, X } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
+// Same values as backend app/core/rbac.py Role; the API rejects anything else.
+const ROLES = ['superadmin', 'admin', 'helpdesk', 'auditor', 'readonly'];
+const EMPTY_USER = { username: '', password: '', is_active: 1, role: 'admin' };
+
 const AdminUsers = () => {
     const queryClient = useQueryClient();
     const { showToast } = useToast();
     const [isOpen, setIsOpen] = useState(false);
     const [isEditOpen, setIsEditOpen] = useState(false);
-    const [newUser, setNewUser] = useState({ username: '', password: '', is_active: 1 });
+    const [newUser, setNewUser] = useState(EMPTY_USER);
     const [editingUser, setEditingUser] = useState(null);
     const [passwordReset, setPasswordReset] = useState('');
 
@@ -23,7 +27,7 @@ const AdminUsers = () => {
         onSuccess: () => {
             queryClient.invalidateQueries(['admin-users']);
             setIsOpen(false);
-            setNewUser({ username: '', password: '', is_active: 1 });
+            setNewUser(EMPTY_USER);
         },
         onError: (err) => {
             showToast(err.response?.data?.detail || "Error creating user", 'error');
@@ -37,6 +41,9 @@ const AdminUsers = () => {
             setIsEditOpen(false);
             setEditingUser(null);
             setPasswordReset('');
+        },
+        onError: (err) => {
+            showToast(err.response?.data?.detail || "Error updating user", 'error');
         }
     });
 
@@ -58,6 +65,12 @@ const AdminUsers = () => {
         const data = {
             is_active: editingUser.is_active
         };
+        // Only send the role when it changed, so editing the status or password
+        // of an account with a legacy role value is not rejected by the API.
+        const original = users?.find(u => u.id === editingUser.id);
+        if (editingUser.role !== original?.role) {
+            data.role = editingUser.role;
+        }
         if (passwordReset) {
             data.password = passwordReset;
         }
@@ -89,6 +102,7 @@ const AdminUsers = () => {
                         <tr>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Username</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Force Change</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -99,6 +113,7 @@ const AdminUsers = () => {
                             <tr key={user.id}>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">#{user.id}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{user.username}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{user.role}</td>
                                 <td className="px-6 py-4 whitespace-nowrap">
                                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                                         {user.is_active ? 'Active' : 'Inactive'}
@@ -137,8 +152,9 @@ const AdminUsers = () => {
                         <h3 className="text-lg font-bold mb-4">Add New Administrator</h3>
                         <form onSubmit={handleCreate} className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Username</label>
+                                <label htmlFor="new-admin-username" className="block text-sm font-medium text-gray-700">Username</label>
                                 <input
+                                    id="new-admin-username"
                                     className="mt-1 block w-full rounded-md border-gray-300 border p-2"
                                     value={newUser.username}
                                     onChange={e => setNewUser({ ...newUser, username: e.target.value })}
@@ -146,14 +162,26 @@ const AdminUsers = () => {
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Password</label>
+                                <label htmlFor="new-admin-password" className="block text-sm font-medium text-gray-700">Password</label>
                                 <input
+                                    id="new-admin-password"
                                     type="password"
                                     className="mt-1 block w-full rounded-md border-gray-300 border p-2"
                                     value={newUser.password}
                                     onChange={e => setNewUser({ ...newUser, password: e.target.value })}
                                     required
                                 />
+                            </div>
+                            <div>
+                                <label htmlFor="new-admin-role" className="block text-sm font-medium text-gray-700">Role</label>
+                                <select
+                                    id="new-admin-role"
+                                    className="mt-1 block w-full rounded-md border-gray-300 border p-2"
+                                    value={newUser.role}
+                                    onChange={e => setNewUser({ ...newUser, role: e.target.value })}
+                                >
+                                    {ROLES.map(role => <option key={role} value={role}>{role}</option>)}
+                                </select>
                             </div>
                             <div className="flex justify-end gap-2 mt-6">
                                 <button
@@ -185,8 +213,20 @@ const AdminUsers = () => {
                         </div>
                         <form onSubmit={handleUpdate} className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Status</label>
+                                <label htmlFor="edit-admin-role" className="block text-sm font-medium text-gray-700">Role</label>
                                 <select
+                                    id="edit-admin-role"
+                                    className="mt-1 block w-full rounded-md border-gray-300 border p-2"
+                                    value={editingUser.role}
+                                    onChange={e => setEditingUser({ ...editingUser, role: e.target.value })}
+                                >
+                                    {ROLES.map(role => <option key={role} value={role}>{role}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label htmlFor="edit-admin-status" className="block text-sm font-medium text-gray-700">Status</label>
+                                <select
+                                    id="edit-admin-status"
                                     className="mt-1 block w-full rounded-md border-gray-300 border p-2"
                                     value={editingUser.is_active}
                                     onChange={e => setEditingUser({ ...editingUser, is_active: parseInt(e.target.value) })}

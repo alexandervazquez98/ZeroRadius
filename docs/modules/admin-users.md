@@ -28,6 +28,15 @@ outputs:
 The `superadmin` role can only be granted by an existing `superadmin`. Any
 attempt to mint a `superadmin` from an `admin` → 403.
 
+`role` must be one of `superadmin`, `admin`, `helpdesk`, `auditor`, `readonly`
+(422 otherwise); it defaults to `admin` on create. In the UI (**System
+Administrators**) a superadmin picks the role when creating an account and can
+change it in **Edit**; the table shows each account's role.
+
+The last active `superadmin` cannot be demoted or deactivated (400), so the
+system always keeps someone who can manage admin accounts. Promote or
+reactivate another superadmin first.
+
 ## 2. URL surface
 
 Base path: `/admin-users`
@@ -92,6 +101,8 @@ curl -sS -X POST http://localhost:8000/admin-users/3/unlock \
 |---|---|---|
 | `400 "Cannot delete your own account"` | Self-delete attempted | Delete a different account |
 | `400 "Cannot delete super admin"` | Deleting the bootstrap admin | Rename the bootstrap user first; do not delete |
+| `400 "Cannot demote or deactivate the last active superadmin."` | Changing the role or status of the only active superadmin | Promote or reactivate another superadmin first |
+| `422` on `role` | Role is not one of the five RBAC roles | Use `superadmin`, `admin`, `helpdesk`, `auditor` or `readonly` |
 | `403 "Only superadmin can assign the superadmin role"` | Non-super trying to mint a superadmin | Escalate from a superadmin session |
 | `403 "Password change required"` | Forced change is still pending | `POST /auth/change-password` |
 

@@ -741,6 +741,17 @@ class RadPostAuthOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+def _validate_admin_role(value: Optional[str]) -> Optional[str]:
+    """Admin accounts must carry one of the RBAC roles; anything else has no
+    permissions at all and is almost always a typo."""
+    from app.core.rbac import Role
+
+    allowed = [r.value for r in Role]
+    if value is not None and value not in allowed:
+        raise ValueError(f"role must be one of: {', '.join(allowed)}")
+    return value
+
+
 class AdminUserCreate(BaseModel):
     username: str
     password: str
@@ -748,12 +759,16 @@ class AdminUserCreate(BaseModel):
     is_active: int = 1
     role: str = "admin"
 
+    _check_role = field_validator("role")(_validate_admin_role)
+
 
 class AdminUserUpdate(BaseModel):
     password: Optional[str] = None
     is_active: Optional[int] = None
     email: Optional[str] = None
     role: Optional[str] = None
+
+    _check_role = field_validator("role")(_validate_admin_role)
 
 
 class AdminUserOut(BaseModel):
