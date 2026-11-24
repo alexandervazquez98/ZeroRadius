@@ -12,6 +12,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+---
+
+## [v1.4.1] - 2026-11-24
+
+The **Responsive Dashboard** release. The dashboard health checks no longer
+freeze the backend, and the containers panel works again.
+
 ### Fixed
 
 - The dashboard froze the whole backend: `/system/health/containers`,
@@ -358,7 +365,8 @@ hydration work and the removal of the obsolete IAM module.
 - [`docs/02-iso27001-privilege-map.md`](docs/02-iso27001-privilege-map.md): security authorization flow for NAS-based Privilege Maps with ISO 27001 constraints.
 - [`docs/03-jit-break-glass.md`](docs/03-jit-break-glass.md): complete sequence diagram defining the JIT Break-Glass operator request, execution, and expiration.
 
-[Unreleased]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.4.1...HEAD
+[v1.4.1]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.4.0...v1.4.1
 [v1.4.0]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.3.4...v1.4.0
 [v1.3.4]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.3.3...v1.3.4
 [v1.3.3]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.3.2...v1.3.3
