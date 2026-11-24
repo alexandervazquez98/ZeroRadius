@@ -12,6 +12,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+---
+
+## [v1.5.0] - 2026-11-24
+
+The **NAS at Scale** release. The NAS page paginates and filters as the
+inventory grows, and the header NTP indicator reports the real clock offset.
+
+> **Upgrade note:** set `NTP_SERVER` (e.g. your NTP server's IP) in `.env`
+> for the NTP indicator; without it the indicator shows "not configured".
+
 ### Added
 
 - NAS page pagination and filters. `GET /nas` accepts optional `limit`
@@ -389,7 +399,8 @@ hydration work and the removal of the obsolete IAM module.
 - [`docs/02-iso27001-privilege-map.md`](docs/02-iso27001-privilege-map.md): security authorization flow for NAS-based Privilege Maps with ISO 27001 constraints.
 - [`docs/03-jit-break-glass.md`](docs/03-jit-break-glass.md): complete sequence diagram defining the JIT Break-Glass operator request, execution, and expiration.
 
-[Unreleased]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.5.0...HEAD
+[v1.5.0]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.4.1...v1.5.0
 [v1.4.1]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.4.0...v1.4.1
 [v1.4.0]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.3.4...v1.4.0
 [v1.3.4]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.3.3...v1.3.4
