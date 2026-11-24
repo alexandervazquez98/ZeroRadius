@@ -12,6 +12,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+---
+
+## [v1.4.0] - 2026-11-24
+
+The **Production Rollout** release. Everything merged since v1.3.4 and already
+running in the first production deployment: NAS changes without restarting
+RADIUS, bulk NAS import, MikroTik support, password reset and self-service
+setup links, Access Policies bulk edit, syslog fixes, and RADIUS password
+exposure fixes.
+
+> **Upgrade note:** `radgroupcheck` rows with a `NAS-IP-Address` check are now
+> enforced (see Security, #92). Audit those rows before upgrading. The Live Log
+> Viewer requires `RADIUS_DEBUG=yes` on `radius-server` (see Changed).
+
 ### Added
 
 - NAS changes no longer restart RADIUS. FreeRADIUS looks each NAS up in the
@@ -33,9 +47,42 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `SYSLOG_RETENTION_MONTHS` (default 3).
 - `GET /syslog/nas-status` and the "NAS not sending syslog" dashboard card:
   registered NAS with no syslog within `SYSLOG_SILENT_HOURS` (default 24).
+- MikroTik support: ships the upstream `dictionary.mikrotik` (vendor 14988,
+  `Mikrotik-Group`) and a new `NT-Password` type, stored as an NT hash, so one
+  stored value serves PAP and MS-CHAP without cleartext
+  ([#99](https://github.com/alexandervazquez98/ZeroRadius/issues/99),
+  [#96](https://github.com/alexandervazquez98/ZeroRadius/issues/96), PR #106).
+- Admin "Reset password" action: `POST /users/check/{id}/reset-password`
+  (admin/superadmin) with a typed or generated password, shown once; audited
+  as `PASSWORD_RESET` without the value (#101 part B, PR #107).
+- Self-service password setup link: an admin generates a one-time URL
+  (`/setup-password/<token>`, 72 h, single use) so the user sets their own
+  password; the current password is blocked until the link is used, and the
+  Users table shows the link status (#101 part C, PR #108).
+- Access Policies bulk edit and bulk delete
+  (`PATCH /access-policies/assignments/bulk`,
+  `POST /access-policies/assignments/bulk-delete`), with one audit entry per
+  row in the same transaction ([#97](https://github.com/alexandervazquez98/ZeroRadius/issues/97), PR #109).
+
+### Changed
+
+- `radius-server` no longer runs `freeradius -X` in production; the image
+  default is `freeradius -f -l stdout`. `RADIUS_DEBUG=yes` now really enables
+  debug mode, and the Live Log Viewer requires it (otherwise it shows an
+  actionable message) ([#102](https://github.com/alexandervazquez98/ZeroRadius/issues/102), PR #103).
 
 ### Fixed
 
+- Event times were shown in UTC instead of the browser's local time (syslog
+  events, NAS last seen, audit, sessions), and the syslog date filters were
+  compared against UTC as if they were local
+  ([#123](https://github.com/alexandervazquez98/ZeroRadius/issues/123), PR #124).
+- The NAS form silently prefixed every new NAS short name with `AP-`, and edit
+  hid and re-added the prefix; the short name is now saved exactly as typed
+  ([#125](https://github.com/alexandervazquez98/ZeroRadius/issues/125), PR #126).
+- Editing an IP, MAC or segment access policy assignment returned 409 when the
+  user had another active non-category row, and saving wiped `cir_id` and
+  `nas_identifier` (PR #109).
 - System Administrators page had no role field: every account created from the
   UI became `admin`, and a superadmin could not create another superadmin (or
   helpdesk/auditor/readonly accounts) without the API. The create and edit
@@ -57,6 +104,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   at request time.
 
 ### Security
+- RADIUS passwords (cleartext and hashes) were readable by any admin-panel
+  role through `GET /users`, the Users table, the edit modal and the audit
+  log. The API now returns `has_password` instead of the value, and audit
+  entries store `***` ([#101](https://github.com/alexandervazquez98/ZeroRadius/issues/101),
+  [#95](https://github.com/alexandervazquez98/ZeroRadius/issues/95), PR #104).
+- Production RADIUS logs no longer contain decrypted PAP passwords, since
+  debug mode is off by default (PR #103).
 - Dictionary upload, rename, edit and delete accepted any active session,
   including `readonly`, and each one restarts RADIUS. They now require
   `admin` or `superadmin` (same as NAS management); the Dictionaries page
@@ -288,7 +342,11 @@ hydration work and the removal of the obsolete IAM module.
 - [`docs/02-iso27001-privilege-map.md`](docs/02-iso27001-privilege-map.md): security authorization flow for NAS-based Privilege Maps with ISO 27001 constraints.
 - [`docs/03-jit-break-glass.md`](docs/03-jit-break-glass.md): complete sequence diagram defining the JIT Break-Glass operator request, execution, and expiration.
 
-[Unreleased]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.4.0...HEAD
+[v1.4.0]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.3.4...v1.4.0
+[v1.3.4]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.3.3...v1.3.4
+[v1.3.3]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.3.2...v1.3.3
+[v1.3.2]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.3.1...v1.3.2
 [v1.3.1]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.3.0...v1.3.1
 [v1.3.0]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.2.0...v1.3.0
 [v1.2.0]: https://github.com/alexandervazquez98/ZeroRadius/compare/v1.1.1...v1.2.0
