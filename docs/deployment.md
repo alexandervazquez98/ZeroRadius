@@ -43,6 +43,7 @@ Linux variant is auto-selected by `scripts/start.sh` on Linux.
 | `RADIUS_SECRET` | Shared secret for the `radius-server` container (used by `clients.conf`) | `radius/clients.conf` template |
 | `RADIUS_DEBUG` | `yes` runs FreeRADIUS with `-X` and enables the Live Log Viewer. **Logs decrypted PAP passwords** — troubleshooting only. Default `no`. | `radius/docker-entrypoint.sh` |
 | `COMPOSE_PROJECT_NAME` | Optional. Compose project whose containers the dashboard lists. Default: detected from the backend container's `com.docker.compose.project` label; if it cannot be detected, no containers are listed. | `backend/app/services/system_health.py` |
+| `NTP_SERVER` | Optional. NTP server (`host` or `host:port`) the backend queries with SNTP to show the header NTP indicator. Unset: the indicator shows "not configured" (grey). | `backend/app/services/ntp_status.py` |
 | `RADIUS_CLIENT_LIFETIME` | Seconds a NAS client looked up in the `nas` table stays cached. NAS secret changes and deletes apply within this time; new NAS apply on their first packet. Default `60`. | `radius/sites/dynamic-clients`, `radius/docker-entrypoint.sh` |
 | `RADIUS_DYNAMIC_CLIENT_NETWORK` | Source network whose packets are looked up in the `nas` table (IPv4 CIDR). Addresses with no `nas` row are still rejected; narrow it to your management networks to avoid SQL lookups for stray traffic. Default `0.0.0.0/0`. | `radius/sites/dynamic-clients` |
 | `SECRET_KEY` | JWT signing key. **Backend crashes at startup if unset.** Generate with `openssl rand -hex 32`. | `app/core/security.py` |

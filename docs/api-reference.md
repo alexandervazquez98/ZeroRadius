@@ -33,8 +33,9 @@ outputs:
 | `POST` | `/users/check/{id}/setup-link` | `admin` / `superadmin` | Body: optional `password_type` (default: current). Returns a one-time `token` (shown once; the UI builds `<origin>/setup-password/<token>`) valid 72 h. **Blocks the current password immediately**; revokes a previous pending link. `GET /users` shows `setup_link.status` (`pending` / `expired` / `used` / `revoked`), `created_by`, `expires_at`. Audited as `PASSWORD_SETUP_LINK_CREATED` |
 | `GET` | `/password-setup/{token}` | none (token) | `{"username", "expires_at"}` while valid; 404 unknown token, 410 used / expired / replaced |
 | `POST` | `/password-setup/{token}` | none (token) | Body: `{"password"}`. Sets the password with the type chosen by the admin and consumes the link (single use, atomic). Audited as `PASSWORD_SETUP_LINK_USED` |
-| `GET` | `/system/version` | none | Returns `{"version": "x.y.z"}` |
-| `GET` | `/system/health` | none | `{"status": "ok"}` |
+| `GET` | `/` | none | Welcome message |
+| `GET` | `/health` | none | `{"status": "ok", "services": {...}}` (database and dependency checks); used by the container healthcheck |
+| `GET` | `/system/ntp-status` | `admin` / `superadmin` | Clock offset measured with one SNTP request to `NTP_SERVER`: `synchronized`, `offset_ms`, `stratum`, `reference_server`, `last_sync`, `alert` (offset > 500 ms or no valid reply), `configured` (`false` when `NTP_SERVER` is unset; then `alert` is `false`). Cached 60 s |
 | `GET` | `/system/health/containers` | `admin` / `superadmin` | Resource snapshot of the containers of this compose project only (label `com.docker.compose.project`; `COMPOSE_PROJECT_NAME` overrides detection; empty list if unknown). Cached 10 s |
 | `GET` | `/system/health/resources` | `admin` / `superadmin` | Host resource snapshot |
 | `WS` | `/system/logs/stream` | `admin` / `superadmin` | WebSocket: live FreeRADIUS stdout |

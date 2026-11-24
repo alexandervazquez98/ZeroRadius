@@ -12,6 +12,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The header NTP indicator was always red in Docker: it ran `chronyc` /
+  `ntpq`, which are not in the backend image and cannot see the host daemon.
+  The backend now measures the clock offset with one SNTP request to the new
+  optional `NTP_SERVER` (`host` or `host:port`); `alert` when the offset
+  exceeds 500 ms or the server gives no valid reply. Without `NTP_SERVER` the
+  status is `configured: false` and the indicator is grey, not red
+  ([#122](https://github.com/alexandervazquez98/ZeroRadius/issues/122)).
+- `docs/api-reference.md` listed `/system/version` and `/system/health`,
+  which do not exist; the real endpoints are `/` and `/health`.
+
 ---
 
 ## [v1.4.1] - 2026-11-24

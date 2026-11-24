@@ -802,6 +802,7 @@ class NTPStatusResponse(BaseModel):
     reference_server: Optional[str] = None
     last_sync: Optional[str] = None
     alert: bool
+    configured: bool = True
 
 
 class ContainerStatsResponse(BaseModel):
