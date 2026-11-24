@@ -12,6 +12,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The dashboard froze the whole backend: `/system/health/containers`,
+  `/system/health/resources` and `/system/ntp-status` ran blocking calls
+  (Docker API, psutil, subprocess) inside the single event loop, so every
+  other request waited ~10 s while container stats were read, every 30 s
+  while a dashboard was open. They now run in a worker thread; container
+  stats are fetched in parallel and cached 10 s, with concurrent callers
+  sharing one Docker query
+  ([#128](https://github.com/alexandervazquez98/ZeroRadius/issues/128)).
+- `/system/health/containers` returned 500 on every call and listed every
+  container on the Docker host. It now returns 200 with only the containers
+  of the ZeroRadius compose project (`COMPOSE_PROJECT_NAME` overrides the
+  detected project)
+  ([#121](https://github.com/alexandervazquez98/ZeroRadius/issues/121)).
+
 ---
 
 ## [v1.4.0] - 2026-11-24

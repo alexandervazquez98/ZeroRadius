@@ -35,8 +35,8 @@ outputs:
 | `POST` | `/password-setup/{token}` | none (token) | Body: `{"password"}`. Sets the password with the type chosen by the admin and consumes the link (single use, atomic). Audited as `PASSWORD_SETUP_LINK_USED` |
 | `GET` | `/system/version` | none | Returns `{"version": "x.y.z"}` |
 | `GET` | `/system/health` | none | `{"status": "ok"}` |
-| `GET` | `/health/containers` | `admin` / `superadmin` | Per-container resource snapshot |
-| `GET` | `/health/resources` | `admin` / `superadmin` | Host resource snapshot |
+| `GET` | `/system/health/containers` | `admin` / `superadmin` | Resource snapshot of the containers of this compose project only (label `com.docker.compose.project`; `COMPOSE_PROJECT_NAME` overrides detection; empty list if unknown). Cached 10 s |
+| `GET` | `/system/health/resources` | `admin` / `superadmin` | Host resource snapshot |
 | `WS` | `/system/logs/stream` | `admin` / `superadmin` | WebSocket: live FreeRADIUS stdout |
 | `POST` | `/sessions/*` | active | Active session management |
 

@@ -42,6 +42,7 @@ Linux variant is auto-selected by `scripts/start.sh` on Linux.
 | `MYSQL_PASSWORD` | Application DB password | `db` grants + backend DSN |
 | `RADIUS_SECRET` | Shared secret for the `radius-server` container (used by `clients.conf`) | `radius/clients.conf` template |
 | `RADIUS_DEBUG` | `yes` runs FreeRADIUS with `-X` and enables the Live Log Viewer. **Logs decrypted PAP passwords** — troubleshooting only. Default `no`. | `radius/docker-entrypoint.sh` |
+| `COMPOSE_PROJECT_NAME` | Optional. Compose project whose containers the dashboard lists. Default: detected from the backend container's `com.docker.compose.project` label; if it cannot be detected, no containers are listed. | `backend/app/services/system_health.py` |
 | `RADIUS_CLIENT_LIFETIME` | Seconds a NAS client looked up in the `nas` table stays cached. NAS secret changes and deletes apply within this time; new NAS apply on their first packet. Default `60`. | `radius/sites/dynamic-clients`, `radius/docker-entrypoint.sh` |
 | `RADIUS_DYNAMIC_CLIENT_NETWORK` | Source network whose packets are looked up in the `nas` table (IPv4 CIDR). Addresses with no `nas` row are still rejected; narrow it to your management networks to avoid SQL lookups for stray traffic. Default `0.0.0.0/0`. | `radius/sites/dynamic-clients` |
 | `SECRET_KEY` | JWT signing key. **Backend crashes at startup if unset.** Generate with `openssl rand -hex 32`. | `app/core/security.py` |
@@ -172,8 +173,8 @@ Outside Docker:
 
 ```bash
 curl -sS http://localhost:8000/health
-curl -sS http://localhost:8000/health/containers   # admin only
-curl -sS http://localhost:8000/health/resources    # admin only
+curl -sS http://localhost:8000/system/health/containers   # admin only
+curl -sS http://localhost:8000/system/health/resources    # admin only
 ```
 
 > The backend listens on `127.0.0.1:8000` only (loopback). For browser access

@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import re
+from dataclasses import asdict
 from datetime import datetime, timezone
 
 import docker
@@ -28,6 +29,7 @@ from app.models.models import AdminUser
 from app.schemas.schemas import (
     NTPStatusResponse,
     ContainerStatsListResponse,
+    ContainerStatsResponse,
     SystemResourcesResponse,
 )
 from app.services.ntp_status import get_status as get_ntp_status
@@ -75,7 +77,8 @@ async def ntp_status(
     Returns current NTP synchronization status.
     Requires admin or superadmin role.
     """
-    status = get_ntp_status()
+    # Blocking (subprocess): run off the event loop.
+    status = await asyncio.to_thread(get_ntp_status)
     return NTPStatusResponse(
         synchronized=status.synchronized,
         offset_ms=status.offset_ms,
@@ -96,14 +99,16 @@ async def list_containers(
     current_user: AdminUser = require_roles(Role.ADMIN, Role.SUPERADMIN),
 ):
     """
-    Returns list of all Docker containers with their status and resource usage.
+    Returns the containers of this ZeroRadius compose project with their
+    status and resource usage.
     Requires admin or superadmin role.
     """
-    containers = get_container_stats()
+    # Blocking (Docker API, ~2 s per stats call): run off the event loop.
+    containers = await asyncio.to_thread(get_container_stats)
     running = sum(1 for c in containers if c.state == "running")
     stopped = sum(1 for c in containers if c.state != "running")
     return ContainerStatsListResponse(
-        containers=containers,
+        containers=[ContainerStatsResponse(**asdict(c)) for c in containers],
         total=len(containers),
         running=running,
         stopped=stopped,
@@ -120,7 +125,8 @@ async def system_resources(
     Returns host system resources (CPU, RAM, disk, network).
     Requires admin or superadmin role.
     """
-    resources = get_system_resources()
+    # Blocking (psutil samples CPU for 0.1 s): run off the event loop.
+    resources = await asyncio.to_thread(get_system_resources)
     return SystemResourcesResponse(
         cpu_percent=resources.cpu_percent,
         cpu_count=resources.cpu_count,
