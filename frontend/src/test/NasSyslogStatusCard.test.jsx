@@ -45,6 +45,8 @@ describe('NasSyslogStatusCard', () => {
     expect(screen.getByText('moxa')).toBeInTheDocument()
     expect(screen.getByText('mikrotik')).toBeInTheDocument()
     expect(screen.getByText('Never')).toBeInTheDocument()
+    // last_seen is UTC: 2026-11-20 10:00 UTC = 02:00 PST (issue #123)
+    expect(screen.getByText('2026-11-20 02:00')).toBeInTheDocument()
     expect(screen.queryByText('sw-oficina')).not.toBeInTheDocument()
   })
 

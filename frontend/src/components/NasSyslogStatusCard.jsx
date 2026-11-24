@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import dayjs from 'dayjs';
+import { parseServerTime } from '../utils/serverTime';
 import { Server, ChevronDown, ChevronUp } from 'lucide-react';
 import api from '../api';
 
@@ -88,7 +88,7 @@ const NasSyslogStatusCard = () => {
                                 <td className="py-2 text-slate-700">{d.shortname || '-'}</td>
                                 <td className="py-2 font-mono text-xs text-slate-500">{d.nasname}</td>
                                 <td className="py-2 text-xs text-slate-500">
-                                    {d.last_seen ? dayjs(d.last_seen).format('YYYY-MM-DD HH:mm') : 'Never'}
+                                    {d.last_seen ? parseServerTime(d.last_seen).format('YYYY-MM-DD HH:mm') : 'Never'}
                                 </td>
                             </tr>
                         ))}

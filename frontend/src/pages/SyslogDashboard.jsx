@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../api';
-import dayjs from 'dayjs';
+import { parseServerTime, toServerTime } from '../utils/serverTime';
 import { Search, Filter, CheckCircle, Clock, AlertCircle } from 'lucide-react';
 import NasSyslogStatusCard from '../components/NasSyslogStatusCard';
 
@@ -40,8 +40,8 @@ const SyslogDashboard = () => {
 
     const buildQueryParams = () => {
         const params = { limit, offset };
-        if (filters.start_date) params.start_date = filters.start_date;
-        if (filters.end_date) params.end_date = filters.end_date;
+        if (filters.start_date) params.start_date = toServerTime(filters.start_date);
+        if (filters.end_date) params.end_date = toServerTime(filters.end_date);
         if (filters.device_ip) params.device_ip = filters.device_ip;
         if (filters.message) params.message = filters.message;
         if (filters.severity !== '') params.severity = parseInt(filters.severity, 10);
@@ -187,7 +187,7 @@ const SyslogDashboard = () => {
                                         return (
                                             <tr key={event.id} className="hover:bg-slate-50/60 transition-colors">
                                                 <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600">
-                                                    {dayjs(event.received_at).format('YYYY-MM-DD HH:mm:ss')}
+                                                    {parseServerTime(event.received_at).format('YYYY-MM-DD HH:mm:ss')}
                                                 </td>
                                                 <td className="px-4 py-3 whitespace-nowrap text-xs font-mono text-slate-700">
                                                     {event.device_ip}

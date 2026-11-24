@@ -4,6 +4,7 @@ import api from '../api';
 import { ShieldAlert, ShieldCheck, History, UserCog, Activity, Search, ChevronLeft, ChevronRight, Eye, X, Info, ArrowRight, Database, Hash, Type, Plus, Trash2, Edit2, Server, Download } from 'lucide-react';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
+import { parseServerTime } from '../utils/serverTime';
 import { useAuth } from '../context/AuthContext';
 
 dayjs.extend(relativeTime);
@@ -49,7 +50,7 @@ const AuditPage = () => {
     const logs = tab === 'access' ? accessLogs : adminLogs;
 
     const formatTime = (dateStr) => {
-        const d = dayjs(dateStr);
+        const d = parseServerTime(dateStr);
         return {
             full: d.format('DD MMM YYYY, HH:mm:ss'),
             relative: d.fromNow(),
