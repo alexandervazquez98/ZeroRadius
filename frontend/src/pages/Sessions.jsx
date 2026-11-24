@@ -4,6 +4,7 @@ import api from '../api';
 import { WifiOff, Clock } from 'lucide-react';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
+import { parseServerTime } from '../utils/serverTime';
 import { useToast } from '../context/ToastContext';
 
 dayjs.extend(relativeTime);
@@ -60,7 +61,7 @@ const SessionsPage = () => {
                                     <td className="px-6 py-4 whitespace-nowrap text-gray-500 font-mono text-xs">{s.callingstationid}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-gray-500 flex items-center gap-1">
                                         <Clock size={14} />
-                                        {dayjs(s.acctstarttime).fromNow()}
+                                        {parseServerTime(s.acctstarttime).fromNow()}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-gray-500 text-xs">
                                         <span className="text-green-600">↓ {s.acctinputoctets || 0}</span>
