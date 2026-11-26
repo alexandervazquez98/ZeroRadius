@@ -29,6 +29,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   longer logs successful `POST /syslog/ingest` calls; every container rotates
   its Docker logs (10 MB × 5 files).
 
+- **Syslog queries no longer scan the whole table** (#136). Measured in
+  production at 1.7M rows, the hash-chain worker spent ~26 s of every minute
+  on a full scan, and the NAS status card and message search took ~29 s.
+  New `syslog_events` indexes bring each to milliseconds:
+  `(received_at, id)`, `(device_ip, received_at)` and a `hash(1)` prefix;
+  the `severity` / `facility` indexes are dropped.
+
+### Changed
+
+- **Syslog list is limited to an 8-hour window** (#136). `GET /syslog`
+  shows the last 8 hours by default and rejects longer ranges
+  (`SYSLOG_QUERY_MAX_HOURS`). It pages with a cursor (`next_cursor`) instead
+  of `offset`, and no longer returns `total`. The Syslog page shows the
+  queried window and Newer / Older buttons instead of page numbers.
+
+> **Upgrade note:** run `docker exec radius-backend python -m scripts.alembic
+> upgrade head` to build the new syslog indexes. The ALTER runs online
+> (`ALGORITHM=INPLACE, LOCK=NONE`), so ingestion keeps working.
+
 ### Added
 
 - `SYSLOG_MIN_SEVERITY` (e.g. `notice`) drops less severe syslog events in

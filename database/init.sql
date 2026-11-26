@@ -295,10 +295,11 @@ PARTITION BY RANGE (YEAR(received_at) * 100 + MONTH(received_at)) (
 );
 
 -- Indexes for syslog_events
-CREATE INDEX idx_syslog_device_ip ON syslog_events(device_ip);
-CREATE INDEX idx_syslog_received_at ON syslog_events(received_at);
-CREATE INDEX idx_syslog_severity ON syslog_events(severity);
-CREATE INDEX idx_syslog_facility ON syslog_events(facility);
+-- received_id: list keyset pagination; device_received: MAX(received_at) per
+-- device (nas-status); hash_pending: hash-chain worker finds hash IS NULL rows.
+CREATE INDEX idx_syslog_received_id ON syslog_events(received_at, id);
+CREATE INDEX idx_syslog_device_received ON syslog_events(device_ip, received_at);
+CREATE INDEX idx_syslog_hash_pending ON syslog_events(hash(1));
 
 -- IAM & NAC RBAC tables
 

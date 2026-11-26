@@ -600,9 +600,10 @@ class SyslogEvent(Base):
     previous_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
+    # Each index serves one query that otherwise scans the whole table (#136):
+    # list keyset pagination, nas-status MAX per device, hash-chain backlog.
     __table_args__ = (
-        Index("idx_syslog_device_ip", "device_ip"),
-        Index("idx_syslog_received_at", "received_at"),
-        Index("idx_syslog_severity", "severity"),
-        Index("idx_syslog_facility", "facility"),
+        Index("idx_syslog_received_id", "received_at", "id"),
+        Index("idx_syslog_device_received", "device_ip", "received_at"),
+        Index("idx_syslog_hash_pending", "hash", mysql_length={"hash": 1}),
     )

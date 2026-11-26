@@ -73,17 +73,41 @@ curl -sS -X POST http://radius-backend:8000/syslog/ingest \
 
 ### 2.2 `GET /syslog`
 
+Lists events newest first inside a time window. The window defaults to the
+last 8 hours and can never be longer (`SYSLOG_QUERY_MAX_HOURS`, default 8),
+so a request stays bounded however large `syslog_events` grows. There is no
+total count; pages are keyset-paginated.
+
 Query params:
 
 | Param | Type | Notes |
 |---|---|---|
 | `limit` | int 1-500 | default 50 |
-| `offset` | int ≥ 0 | pagination |
-| `start_date`, `end_date` | ISO datetime | range filter |
-| `device_ip` | str | case-insensitive partial match (`192.168` matches `192.168.1.50`) |
-| `message` | str | case-insensitive substring match |
+| `cursor` | str | `next_cursor` from the previous page; omit for the first page |
+| `start_date`, `end_date` | ISO datetime (UTC) | both omitted: last 8 h; only `start_date`: the next 8 h; only `end_date`: the previous 8 h |
+| `device_ip` | str | prefix match (`192.168` matches `192.168.1.50`); `%` and `_` are literal |
+| `message` | str | case-insensitive substring match; `%` and `_` are literal |
 | `severity` | int 0-7 | exact match |
 | `facility` | int 0-23 | exact match |
+
+```json
+{
+  "events": [{"id": 912, "received_at": "2026-11-25T17:52:31", "device_ip": "10.3.152.213", "...": "..."}],
+  "has_more": true,
+  "next_cursor": "MjAyNi0xMS0yNVQxNzo1MjozMXw5MTI",
+  "start_date": "2026-11-25T10:00:00",
+  "end_date": "2026-11-25T18:00:00",
+  "max_range_hours": 8
+}
+```
+
+**Failure modes:**
+
+| Output | Cause |
+|---|---|
+| `422 "The time range cannot exceed 8 hours."` | `end_date - start_date` > 8 h |
+| `422 "end_date must be after start_date."` | Reversed range |
+| `422 "Invalid cursor."` | Cursor not produced by this endpoint |
 
 ### 2.3 `GET /syslog/nas-status`
 
@@ -147,6 +171,20 @@ verifiable because each row is checked against its stored `previous_hash`.
 If the table was created without partitions (e.g. by `create_all` instead of
 `init.sql`), the job logs a warning and changes nothing.
 
+## 3.2 Indexes
+
+Each secondary index serves one query that would otherwise scan the table:
+
+| Index | Serves |
+|---|---|
+| `idx_syslog_received_id (received_at, id)` | `GET /syslog` window + keyset order, no filesort |
+| `idx_syslog_device_received (device_ip, received_at)` | `GET /syslog/nas-status` (`MAX(received_at)` per device, loose index scan) and the `device_ip` filter |
+| `idx_syslog_hash_pending (hash(1))` | Hash-chain worker lookup of `hash IS NULL` rows |
+
+Partition pruning does not apply to `received_at` ranges: the partition
+expression `YEAR*100+MONTH` is not one MariaDB can prune by range, so every
+query relies on these indexes instead.
+
 ## 4. End-to-end agent run
 
 ```bash
@@ -166,7 +204,7 @@ curl -sS -H "Authorization: Bearer $TOKEN" \
   "http://localhost:8000/syslog?device_ip=192.168&limit=10" | jq .
 ```
 
-**Expected output:** A list with at least one matching entry, total count near `limit`.
+**Expected output:** Events from the last 8 hours whose `device_ip` starts with `192.168`, at most `limit`, plus `has_more` / `next_cursor`.
 
 ## 5. Failure modes
 

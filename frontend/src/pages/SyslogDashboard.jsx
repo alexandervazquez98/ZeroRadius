@@ -29,7 +29,9 @@ const SEVERITY_COLORS = {
 
 const SyslogDashboard = () => {
     const [limit, setLimit] = useState(50);
-    const [offset, setOffset] = useState(0);
+    // Keyset pagination: cursors[i] fetches page i + 1 (null = newest page).
+    const [cursors, setCursors] = useState([null]);
+    const cursor = cursors[cursors.length - 1];
     const [filters, setFilters] = useState({
         start_date: '',
         end_date: '',
@@ -39,7 +41,8 @@ const SyslogDashboard = () => {
     });
 
     const buildQueryParams = () => {
-        const params = { limit, offset };
+        const params = { limit };
+        if (cursor) params.cursor = cursor;
         if (filters.start_date) params.start_date = toServerTime(filters.start_date);
         if (filters.end_date) params.end_date = toServerTime(filters.end_date);
         if (filters.device_ip) params.device_ip = filters.device_ip;
@@ -49,28 +52,28 @@ const SyslogDashboard = () => {
     };
 
     const { data, isLoading, error } = useQuery({
-        queryKey: ['syslog', limit, offset, filters],
+        queryKey: ['syslog', limit, cursor, filters],
         queryFn: () => api.get('/syslog', { params: buildQueryParams() }).then(r => r.data),
         staleTime: 30000,
     });
 
     const handleFilterChange = (key, value) => {
         setFilters(f => ({ ...f, [key]: value }));
-        setOffset(0);
+        setCursors([null]);
     };
 
     const clearFilters = () => {
         setFilters({ start_date: '', end_date: '', device_ip: '', message: '', severity: '' });
-        setOffset(0);
+        setCursors([null]);
     };
 
-    const total = data?.total || 0;
-    const totalPages = Math.ceil(total / limit);
-    const currentPage = Math.floor(offset / limit) + 1;
-
-    const goToPage = (page) => {
-        setOffset((page - 1) * limit);
-    };
+    const currentPage = cursors.length;
+    const goOlder = () => data?.next_cursor && setCursors(c => [...c, data.next_cursor]);
+    const goNewer = () => setCursors(c => (c.length > 1 ? c.slice(0, -1) : c));
+    const detail = error?.response?.data?.detail;
+    // FastAPI validation errors carry a list in `detail`; show only plain strings.
+    const errorMessage = typeof detail === 'string' ? detail : error?.message;
+    const formatWindow = (value) => parseServerTime(value).format('YYYY-MM-DD HH:mm');
 
     const getHashStatus = (event) => {
         if (!event.hash) return { status: 'pending', label: 'Pending', color: 'text-amber-500', bg: 'bg-amber-100' };
@@ -82,9 +85,11 @@ const SyslogDashboard = () => {
         <div className="space-y-6 pb-10">
             <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-bold text-slate-800">Syslog Dashboard</h2>
-                <span className="text-sm text-slate-500">
-                    {total.toLocaleString()} total events
-                </span>
+                {data?.start_date && (
+                    <span className="text-sm text-slate-500">
+                        Showing {formatWindow(data.start_date)} → {formatWindow(data.end_date)}
+                    </span>
+                )}
             </div>
 
             <NasSyslogStatusCard />
@@ -93,6 +98,9 @@ const SyslogDashboard = () => {
                 <div className="flex items-center gap-2 mb-4">
                     <Filter size={16} className="text-slate-400" />
                     <h3 className="text-xs font-black text-slate-600 uppercase tracking-widest">Filters</h3>
+                    <span className="text-xs text-slate-400">
+                        Time range up to {data?.max_range_hours ?? 8} hours; leave dates empty for the last {data?.max_range_hours ?? 8} hours.
+                    </span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                     <div>
@@ -160,7 +168,7 @@ const SyslogDashboard = () => {
             {isLoading ? (
                 <div className="text-center py-16 text-slate-400">Loading syslog events…</div>
             ) : error ? (
-                <div className="text-center py-16 text-red-500">Error loading data: {error.message}</div>
+                <div className="text-center py-16 text-red-500">Error loading data: {errorMessage}</div>
             ) : data?.events?.length === 0 ? (
                 <div className="text-center py-16 bg-white rounded-lg border border-dashed border-slate-300">
                     <p className="text-slate-500">No syslog events found.</p>
@@ -231,7 +239,7 @@ const SyslogDashboard = () => {
                             <span className="text-xs text-slate-500">Rows per page:</span>
                             <select
                                 value={limit}
-                                onChange={e => { setLimit(parseInt(e.target.value, 10)); setOffset(0); }}
+                                onChange={e => { setLimit(parseInt(e.target.value, 10)); setCursors([null]); }}
                                 className="border border-slate-200 rounded-lg px-2 py-1 text-sm"
                             >
                                 <option value="25">25</option>
@@ -242,37 +250,21 @@ const SyslogDashboard = () => {
                         </div>
 
                         <div className="flex items-center gap-2">
-                            <span className="text-xs text-slate-500">
-                                Page {currentPage} of {totalPages || 1}
-                            </span>
+                            <span className="text-xs text-slate-500">Page {currentPage}</span>
                             <div className="flex gap-1">
                                 <button
-                                    onClick={() => goToPage(1)}
+                                    onClick={goNewer}
                                     disabled={currentPage === 1}
                                     className="px-3 py-1 text-xs border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    First
+                                    Newer
                                 </button>
                                 <button
-                                    onClick={() => goToPage(currentPage - 1)}
-                                    disabled={currentPage === 1}
+                                    onClick={goOlder}
+                                    disabled={!data?.has_more}
                                     className="px-3 py-1 text-xs border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    Prev
-                                </button>
-                                <button
-                                    onClick={() => goToPage(currentPage + 1)}
-                                    disabled={currentPage >= totalPages}
-                                    className="px-3 py-1 text-xs border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    Next
-                                </button>
-                                <button
-                                    onClick={() => goToPage(totalPages)}
-                                    disabled={currentPage >= totalPages}
-                                    className="px-3 py-1 text-xs border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    Last
+                                    Older
                                 </button>
                             </div>
                         </div>
