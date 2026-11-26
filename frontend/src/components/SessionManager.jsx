@@ -8,13 +8,27 @@ import { setReauthHandler } from '../session/reauth';
 
 const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'wheel'];
 
-function tokenExpiryMs() {
+function tokenClaims() {
     try {
-        return jwtDecode(localStorage.getItem('token') || '').exp * 1000;
+        return jwtDecode(localStorage.getItem('token') || '');
     } catch {
-        return 0;
+        return {};
     }
 }
+
+function tokenExpiryMs() {
+    return (tokenClaims().exp || 0) * 1000;
+}
+
+// Refresh no earlier than half the token's lifetime, so a short idle timeout
+// (ACCESS_TOKEN_EXPIRE_MINUTES <= 5) does not refresh on every tick.
+function refreshLead(maxLeadMs) {
+    const { exp, iat } = tokenClaims();
+    if (!exp || !iat) return maxLeadMs;
+    return Math.min(maxLeadMs, ((exp - iat) * 1000) / 2);
+}
+
+const REFRESH_RETRY_MS = 30 * 1000;
 
 function formatRemaining(ms) {
     const total = Math.max(0, Math.ceil(ms / 1000));
@@ -46,6 +60,7 @@ const SessionManager = ({ tickMs = 1000, refreshLeadMs = 5 * 60 * 1000, warnMs =
     const lastActivity = useRef(0);
     const lastRefresh = useRef(Date.now());
     const refreshing = useRef(false);
+    const retryAfter = useRef(0); // back-off after a non-auth refresh failure
     const capped = useRef(false); // backend could not extend: absolute lifetime reached
     const waiters = useRef([]);
     const modeRef = useRef(mode);
@@ -65,10 +80,17 @@ const SessionManager = ({ tickMs = 1000, refreshLeadMs = 5 * 60 * 1000, warnMs =
             const { data } = await api.post('/auth/refresh');
             applyToken(data.access_token);
             lastRefresh.current = Date.now();
+            retryAfter.current = 0;
             capped.current = tokenExpiryMs() <= before;
             setMode(capped.current ? 'capped' : null);
-        } catch {
-            openReauth();
+        } catch (err) {
+            if (err?.response?.status === 401) {
+                openReauth();
+            } else {
+                // Network error, 429 or 5xx: keep the session, try again later.
+                retryAfter.current = Date.now() + REFRESH_RETRY_MS;
+                if (modeRef.current === 'warning') setMode(null);
+            }
         } finally {
             refreshing.current = false;
         }
@@ -84,17 +106,22 @@ const SessionManager = ({ tickMs = 1000, refreshLeadMs = 5 * 60 * 1000, warnMs =
     }, []);
 
     // 401 from any request: open the dialog and let the request wait on it.
-    useEffect(
-        () =>
-            setReauthHandler(
-                () =>
-                    new Promise((resolve, reject) => {
-                        waiters.current.push({ resolve, reject });
-                        openReauth();
-                    })
-            ),
-        [openReauth]
-    );
+    useEffect(() => {
+        const unregister = setReauthHandler(
+            () =>
+                new Promise((resolve, reject) => {
+                    waiters.current.push({ resolve, reject });
+                    openReauth();
+                })
+        );
+        return () => {
+            unregister();
+            // Never leave requests waiting on a dialog that no longer exists.
+            const pending = waiters.current;
+            waiters.current = [];
+            pending.forEach((w) => w.reject(new Error('session-manager-unmounted')));
+        };
+    }, [openReauth]);
 
     // Expiry clock.
     useEffect(() => {
@@ -108,7 +135,8 @@ const SessionManager = ({ tickMs = 1000, refreshLeadMs = 5 * 60 * 1000, warnMs =
                 return;
             }
             const active = lastActivity.current > lastRefresh.current;
-            if (remaining <= refreshLeadMs && active && !capped.current) {
+            const canRefresh = !capped.current && current >= retryAfter.current;
+            if (remaining <= refreshLead(refreshLeadMs) && active && canRefresh) {
                 refresh();
             } else if (remaining <= warnMs && modeRef.current === null) {
                 setMode(capped.current ? 'capped' : 'warning');

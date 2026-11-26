@@ -177,4 +177,53 @@ describe('SessionManager', () => {
     fireEvent.keyDown(window, { key: 'a' })
     expect(await screen.findByLabelText(/password/i)).toBeInTheDocument()
   })
+
+  it('does not leave requests hanging when the page unmounts with the dialog open', async () => {
+    // Regression: waiters were never settled on unmount, so the shared re-auth
+    // promise stayed pending and every later 401 hung until a full reload.
+    server.use(
+      http.get('/api/thing', () =>
+        HttpResponse.json({ detail: 'Could not validate credentials' }, { status: 401 })
+      )
+    )
+    const first = renderWithSession(tokenExpiringIn(1800))
+    const firstRequest = api.get('/thing')
+    await screen.findByRole('dialog')
+    first.unmount()
+    await expect(firstRequest).rejects.toBeTruthy()
+
+    renderWithSession(tokenExpiringIn(1800))
+    api.get('/thing').catch(() => {})
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('does not refresh more than once per half token lifetime with a short idle timeout', async () => {
+    // ACCESS_TOKEN_EXPIRE_MINUTES=4: a fixed 5-minute lead refreshed every tick.
+    server.use(
+      http.post('/api/auth/refresh', () => {
+        refreshCalls += 1
+        return HttpResponse.json({ access_token: tokenExpiringIn(240, { iat: nowS() }), token_type: 'bearer' })
+      })
+    )
+    renderWithSession(tokenExpiringIn(240, { iat: nowS() }))
+    for (let i = 0; i < 10; i++) {
+      fireEvent.keyDown(window, { key: 'a' })
+      await new Promise((r) => setTimeout(r, 60))
+    }
+    expect(refreshCalls).toBe(0)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('keeps the session and retries later when refresh fails for a non-auth reason', async () => {
+    server.use(http.post('/api/auth/refresh', () => {
+      refreshCalls += 1
+      return HttpResponse.json({ detail: 'busy' }, { status: 503 })
+    }))
+    renderWithSession(tokenExpiringIn(240))
+    fireEvent.keyDown(window, { key: 'a' })
+    await waitFor(() => expect(refreshCalls).toBe(1))
+    await new Promise((r) => setTimeout(r, 300))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(refreshCalls).toBe(1) // backs off instead of hammering the endpoint
+  })
 })

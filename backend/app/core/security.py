@@ -91,6 +91,7 @@ def issue_session_token(user: AdminUser, auth_time: Optional[int] = None) -> str
         "role": user.role,
         "force_change": user.force_password_change == 1,
         "auth_time": session_start,
+        "iat": now,  # lets the UI pace refreshes to the token lifetime
         "exp": min(now + ACCESS_TOKEN_EXPIRE_MINUTES * 60, session_end),
     }
     return jwt.encode(claims, SECRET_KEY, algorithm=ALGORITHM)

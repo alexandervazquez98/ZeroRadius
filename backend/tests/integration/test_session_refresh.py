@@ -69,6 +69,7 @@ class TestLoginToken:
         assert resp.status_code == 200
         claims = _claims(resp.json()["access_token"])
         assert before <= claims["auth_time"] <= int(time.time())
+        assert claims["iat"] == claims["auth_time"]
         idle = security.ACCESS_TOKEN_EXPIRE_MINUTES * 60
         assert abs(claims["exp"] - (claims["auth_time"] + idle)) <= 2
 
@@ -95,6 +96,7 @@ class TestRefresh:
         claims = _claims(body["access_token"])
         assert claims["sub"] == name
         assert claims["auth_time"] == start
+        assert abs(claims["iat"] - int(time.time())) <= 2
         idle = security.ACCESS_TOKEN_EXPIRE_MINUTES * 60
         assert abs(claims["exp"] - (int(time.time()) + idle)) <= 2
 

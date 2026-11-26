@@ -11,7 +11,10 @@ let pending = null;
 export function setReauthHandler(fn) {
     handler = fn;
     return () => {
-        if (handler === fn) handler = null;
+        if (handler === fn) {
+            handler = null;
+            pending = null; // a new owner must open its own dialog
+        }
     };
 }
 
