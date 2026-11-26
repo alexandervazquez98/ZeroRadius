@@ -1,6 +1,14 @@
+# Rotate container logs; without this json-file logs grow until the disk fills.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   db:
     restart: unless-stopped
+    logging: *default-logging
     image: mariadb:10.11
     container_name: radius-db
     env_file:
@@ -23,6 +31,7 @@ services:
 
   radius:
     restart: unless-stopped
+    logging: *default-logging
     build:
       context: ./radius
     container_name: radius-server
@@ -61,6 +70,7 @@ services:
 
   backend:
     restart: unless-stopped
+    logging: *default-logging
     build:
       context: ./backend
     container_name: radius-backend
@@ -98,6 +108,7 @@ services:
 
   syslog:
     restart: unless-stopped
+    logging: *default-logging
     build:
       context: ./rsyslog
     container_name: radius-syslog
@@ -107,8 +118,12 @@ services:
       TZ: UTC
       BACKEND_URL: http://backend:8000/syslog/ingest
       API_KEY: ${SYSLOG_API_KEY:-syslog-secret-key}
-      BATCH_SIZE: "50"
-      BATCH_TIMEOUT: "5"
+      BATCH_SIZE: "${SYSLOG_BATCH_SIZE:-200}"
+      BATCH_TIMEOUT: "${SYSLOG_BATCH_TIMEOUT:-2}"
+      # Events kept in memory while the backend is down (oldest dropped first)
+      MAX_BUFFER: "${SYSLOG_MAX_BUFFER:-50000}"
+      # Optional safety net, e.g. "notice" drops info/debug. Empty = keep all.
+      SYSLOG_MIN_SEVERITY: "${SYSLOG_MIN_SEVERITY:-}"
     volumes:
       - /etc/localtime:/etc/localtime:ro
     depends_on:
@@ -117,6 +132,7 @@ services:
 
   frontend:
     restart: unless-stopped
+    logging: *default-logging
     build:
       context: ./frontend
     container_name: radius-frontend

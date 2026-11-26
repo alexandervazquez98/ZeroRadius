@@ -12,6 +12,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Syslog forwarder batches for real** (#136). It used to send one HTTP
+  request and one database commit per message from the UDP receive thread,
+  so the socket was not read while waiting for the backend and the kernel
+  dropped syslog datagrams. Events are now queued and sent by a separate
+  thread when `BATCH_SIZE` events are queued or the oldest is
+  `BATCH_TIMEOUT` seconds old. The UDP receive buffer is raised
+  (`SOCKET_RCVBUF`, capped by the host's `net.core.rmem_max`).
+- **Bounded syslog queue while the backend is down** (#136). The forwarder
+  keeps at most `MAX_BUFFER` events (default 50,000), drops the oldest, and
+  reports drops in its periodic summary.
+- **Quieter logs** (#136). The forwarder logs a counter summary every
+  `SUMMARY_INTERVAL` seconds instead of one line per message; the backend no
+  longer logs successful `POST /syslog/ingest` calls; every container rotates
+  its Docker logs (10 MB × 5 files).
+
+### Added
+
+- `SYSLOG_MIN_SEVERITY` (e.g. `notice`) drops less severe syslog events in
+  the forwarder. Disabled by default; meant as a safety net while devices are
+  reconfigured. Compose also reads `SYSLOG_BATCH_SIZE` (default 200),
+  `SYSLOG_BATCH_TIMEOUT` (default 2 s) and `SYSLOG_MAX_BUFFER` from `.env`.
+
 ---
 
 ## [v1.5.0] - 2026-11-24

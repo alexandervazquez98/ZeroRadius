@@ -9,6 +9,9 @@ GET /syslog/nas-status could never match a registered NAS.
 """
 
 import importlib.util
+import socket
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -113,20 +116,199 @@ def test_received_at_is_utc_iso():
     assert e["received_at"].endswith("Z")
 
 
+def _forwarder(**kw):
+    sent = []
+    kw.setdefault("send", lambda batch: sent.append(list(batch)) or True)
+    kw.setdefault("batch_size", 50)
+    kw.setdefault("batch_timeout", 60)
+    return fwd.Forwarder(**kw), sent
+
+
+def _ev(n, severity=6):
+    return {"message": f"m{n}", "severity": severity}
+
+
 def test_handle_client_records_source_address(monkeypatch):
-    monkeypatch.setattr(fwd, "flush_buffer", lambda: None)
-    fwd.message_buffer.clear()
+    f, _ = _forwarder()
+    monkeypatch.setattr(fwd, "FORWARDER", f)
     fwd.handle_client(b"<134>Nov 23 17:52:31 dev app: hello", ("192.168.1.190", 40000))
-    assert fwd.message_buffer[-1]["device_ip"] == "192.168.1.190"
-    fwd.message_buffer.clear()
+    assert f.pending()[-1]["device_ip"] == "192.168.1.190"
 
 
 @pytest.mark.parametrize("raw", ["", "   "])
 def test_handle_client_ignores_empty(monkeypatch, raw):
-    monkeypatch.setattr(fwd, "flush_buffer", lambda: None)
-    fwd.message_buffer.clear()
+    f, _ = _forwarder()
+    monkeypatch.setattr(fwd, "FORWARDER", f)
     fwd.handle_client(raw.encode(), ("192.168.1.190", 40000))
-    assert fwd.message_buffer == []
+    assert f.pending() == []
+
+
+def test_handle_client_never_sends_on_the_receive_path(monkeypatch):
+    # Regression: every datagram triggered its own POST on the UDP thread.
+    f, sent = _forwarder(batch_size=1)
+    monkeypatch.setattr(fwd, "FORWARDER", f)
+    for _ in range(3):
+        fwd.handle_client(b"<134>Nov 23 17:52:31 dev app: hello", ("10.0.0.1", 1))
+    assert sent == []
+    assert len(f.pending()) == 3
+
+
+def test_full_batch_is_returned_without_waiting_for_timeout():
+    f, _ = _forwarder(batch_size=3, batch_timeout=60)
+    for n in range(3):
+        f.submit(_ev(n))
+    start = time.monotonic()
+    assert [e["message"] for e in f.next_batch()] == ["m0", "m1", "m2"]
+    assert time.monotonic() - start < 1
+
+
+def test_partial_batch_is_returned_after_timeout():
+    f, _ = _forwarder(batch_size=100, batch_timeout=0.1)
+    f.submit(_ev(0))
+    f.submit(_ev(1))
+    start = time.monotonic()
+    assert len(f.next_batch()) == 2
+    assert time.monotonic() - start >= 0.09
+
+
+def test_batch_never_exceeds_batch_size():
+    f, _ = _forwarder(batch_size=2)
+    for n in range(5):
+        f.submit(_ev(n))
+    assert [e["message"] for e in f.next_batch()] == ["m0", "m1"]
+    assert [e["message"] for e in f.next_batch()] == ["m2", "m3"]
+    assert [e["message"] for e in f.pending()] == ["m4"]
+
+
+def test_buffer_is_bounded_and_drops_oldest():
+    f, _ = _forwarder(max_buffer=3)
+    for n in range(5):
+        f.submit(_ev(n))
+    assert [e["message"] for e in f.pending()] == ["m2", "m3", "m4"]
+    assert f.stats()["dropped"] == 2
+
+
+def test_failed_delivery_requeues_batch_in_order_ahead_of_new_messages():
+    f, _ = _forwarder(send=lambda batch: False, batch_size=2)
+    f.submit(_ev(0))
+    f.submit(_ev(1))
+    batch = f.next_batch()
+    f.submit(_ev(2))
+    assert f.deliver(batch) is False
+    assert [e["message"] for e in f.pending()] == ["m0", "m1", "m2"]
+    assert f.stats()["forwarded"] == 0
+
+
+def test_failed_delivery_requeue_respects_bound():
+    f, _ = _forwarder(send=lambda batch: False, batch_size=2, max_buffer=3)
+    f.submit(_ev(0))
+    f.submit(_ev(1))
+    batch = f.next_batch()
+    f.submit(_ev(2))
+    f.submit(_ev(3))
+    f.deliver(batch)
+    assert [e["message"] for e in f.pending()] == ["m1", "m2", "m3"]
+    assert f.stats()["dropped"] == 1
+
+
+def test_send_exception_counts_as_failed_delivery():
+    def boom(batch):
+        raise ConnectionError("backend down")
+
+    f, _ = _forwarder(send=boom, batch_size=1)
+    f.submit(_ev(0))
+    assert f.deliver(f.next_batch()) is False
+    assert [e["message"] for e in f.pending()] == ["m0"]
+    assert f.stats()["failed_posts"] == 1
+
+
+def test_successful_delivery_counts_forwarded():
+    f, sent = _forwarder(batch_size=2)
+    f.submit(_ev(0))
+    f.submit(_ev(1))
+    assert f.deliver(f.next_batch()) is True
+    assert len(sent) == 1 and f.stats()["forwarded"] == 2
+
+
+def test_min_severity_filters_less_severe_messages():
+    f, _ = _forwarder(min_severity=5)
+    f.submit(_ev(0, severity=6))  # info: dropped
+    f.submit(_ev(1, severity=5))  # notice: kept
+    f.submit(_ev(2, severity=3))  # error: kept
+    assert [e["message"] for e in f.pending()] == ["m1", "m2"]
+    assert f.stats()["filtered"] == 1
+
+
+def test_no_min_severity_keeps_everything():
+    f, _ = _forwarder()
+    f.submit(_ev(0, severity=7))
+    assert len(f.pending()) == 1
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [("", None), ("notice", 5), ("INFO", 6), ("4", 4), ("warning", 4), ("bogus", None), ("9", None)],
+)
+def test_parse_min_severity(raw, expected):
+    assert fwd.parse_min_severity(raw) == expected
+
+
+def test_run_loop_sends_one_post_per_batch():
+    f, sent = _forwarder(batch_size=3, batch_timeout=60)
+    stop = threading.Event()
+    worker = threading.Thread(target=f.run, args=(stop,), daemon=True)
+    worker.start()
+    for n in range(3):
+        f.submit(_ev(n))
+    deadline = time.monotonic() + 2
+    while not sent and time.monotonic() < deadline:
+        time.sleep(0.01)
+    stop.set()
+    f.wake()
+    worker.join(2)
+    assert [len(b) for b in sent] == [3]
+    assert not worker.is_alive()
+
+
+def test_stop_flushes_pending_messages():
+    f, sent = _forwarder(batch_size=100, batch_timeout=60)
+    stop = threading.Event()
+    worker = threading.Thread(target=f.run, args=(stop,), daemon=True)
+    worker.start()
+    f.submit(_ev(0))
+    stop.set()
+    f.wake()
+    worker.join(2)
+    assert [len(b) for b in sent] == [1]
+
+
+class _Resp:
+    def __init__(self, status):
+        self.status_code = status
+        self.text = "x"
+
+
+@pytest.mark.parametrize("status, ok", [(201, True), (200, True), (500, False), (401, False)])
+def test_post_to_backend_reports_status(monkeypatch, status, ok):
+    monkeypatch.setattr(fwd.requests, "post", lambda *a, **k: _Resp(status))
+    assert fwd.post_to_backend([_ev(0)]) is ok
+
+
+def test_post_to_backend_propagates_network_errors(monkeypatch):
+    def down(*a, **k):
+        raise fwd.requests.ConnectionError("refused")
+
+    monkeypatch.setattr(fwd.requests, "post", down)
+    with pytest.raises(fwd.requests.ConnectionError):
+        fwd.post_to_backend([_ev(0)])
+
+
+def test_udp_socket_gets_a_larger_receive_buffer():
+    sock = fwd.open_udp_socket("127.0.0.1", 0, rcvbuf=1 << 20)
+    try:
+        assert sock.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF) >= 256 * 1024
+    finally:
+        sock.close()
 
 
 # RouterOS remote logging (bsd-syslog=no) sends no <PRI>: "system,info log rule added by admin".

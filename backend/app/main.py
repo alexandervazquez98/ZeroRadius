@@ -113,6 +113,26 @@ class _JSONFormatter(logging.Formatter):
             return json.dumps(fallback)
 
 
+class _SyslogIngestAccessFilter(logging.Filter):
+    """Drop uvicorn access lines for successful POST /syslog/ingest.
+
+    The syslog forwarder calls it continuously; failures (4xx/5xx) still log.
+    uvicorn passes (client, method, path, http_version, status) as record.args.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if not isinstance(args, tuple) or len(args) != 5:
+            return True
+        _client, method, path, _version, status = args
+        if method != "POST" or not str(path).startswith("/syslog/ingest"):
+            return True
+        try:
+            return not 200 <= int(status) < 300
+        except (TypeError, ValueError):
+            return True
+
+
 def _configure_logging() -> None:
     raw_log_level = os.getenv("LOG_LEVEL", "INFO").strip()
     if raw_log_level.isdigit():
@@ -143,6 +163,7 @@ def _configure_logging() -> None:
         uv_logger = logging.getLogger(name)
         uv_logger.handlers = [handler]
         uv_logger.propagate = False
+    logging.getLogger("uvicorn.access").addFilter(_SyslogIngestAccessFilter())
 
 
 _configure_logging()
