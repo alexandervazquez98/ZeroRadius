@@ -98,4 +98,11 @@ describe('SyslogDashboard', () => {
     )
     expect(await screen.findByText(/the time range cannot exceed 8 hours/i)).toBeInTheDocument()
   })
+
+  it('falls back to the generic error when detail is a validation list', async () => {
+    renderPage(() =>
+      HttpResponse.json({ detail: [{ loc: ['query', 'limit'], msg: 'too big' }] }, { status: 422 })
+    )
+    expect(await screen.findByText(/request failed with status code 422/i)).toBeInTheDocument()
+  })
 })

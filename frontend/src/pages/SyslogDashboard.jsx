@@ -70,7 +70,9 @@ const SyslogDashboard = () => {
     const currentPage = cursors.length;
     const goOlder = () => data?.next_cursor && setCursors(c => [...c, data.next_cursor]);
     const goNewer = () => setCursors(c => (c.length > 1 ? c.slice(0, -1) : c));
-    const errorMessage = error?.response?.data?.detail || error?.message;
+    const detail = error?.response?.data?.detail;
+    // FastAPI validation errors carry a list in `detail`; show only plain strings.
+    const errorMessage = typeof detail === 'string' ? detail : error?.message;
     const formatWindow = (value) => parseServerTime(value).format('YYYY-MM-DD HH:mm');
 
     const getHashStatus = (event) => {

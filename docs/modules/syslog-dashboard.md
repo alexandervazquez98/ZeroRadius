@@ -86,7 +86,7 @@ Query params:
 | `cursor` | str | `next_cursor` from the previous page; omit for the first page |
 | `start_date`, `end_date` | ISO datetime (UTC) | both omitted: last 8 h; only `start_date`: the next 8 h; only `end_date`: the previous 8 h |
 | `device_ip` | str | prefix match (`192.168` matches `192.168.1.50`); `%` and `_` are literal |
-| `message` | str | case-insensitive substring match |
+| `message` | str | case-insensitive substring match; `%` and `_` are literal |
 | `severity` | int 0-7 | exact match |
 | `facility` | int 0-23 | exact match |
 
