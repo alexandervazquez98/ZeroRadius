@@ -44,9 +44,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of `offset`, and no longer returns `total`. The Syslog page shows the
   queried window and Newer / Older buttons instead of page numbers.
 
-> **Upgrade note:** run `docker exec radius-backend python -m scripts.alembic
-> upgrade head` to build the new syslog indexes. The ALTER runs online
-> (`ALGORITHM=INPLACE, LOCK=NONE`), so ingestion keeps working.
+> **Upgrade note:** the backend applies the new syslog index migration on
+> startup; do not also run `scripts.alembic upgrade head` by hand at the
+> same time, or the two runs collide. The ALTER runs online
+> (`ALGORITHM=INPLACE, LOCK=NONE`; ~40 s at 1.7M rows) and ingestion keeps
+> working, but the backend answers only after it finishes.
 
 ### Added
 
