@@ -100,9 +100,16 @@ async def verify_syslog_chain(
     Checks that each event's hash matches its content and that its
     previous_hash equals the prior event's hash. The first event checked is
     only checked against its own content: retention drops old partitions, so
-    the oldest surviving event need not point at GENESIS_HASH. Pass
-    `since_id` to start after a known cut-over (events hashed before #138
-    restart the chain about once a minute).
+    the oldest surviving event need not point at GENESIS_HASH. `since_id` is
+    inclusive: pass the first event id hashed after the #138 fix to skip the
+    older segments (they restart the chain about once a minute).
+
+    Links are checked by id adjacency, which matches hashing order while
+    ingest has a single sequential writer; an ingest commit landing out of
+    id order would show up here as a false break.
+
+    Uses `db` for reads and calls `expunge_all()` between batches, so pass a
+    dedicated session: objects the caller loaded in it become detached.
     """
     from app.models.models import SyslogEvent
 

@@ -158,9 +158,15 @@ A background job in `main.py` runs `backfill_syslog_hashes` every 60 s.
   `{"checked": N, "first_break_id": id | None, "reason": str | None}`.
   `reason` is `"hash mismatch"` (content changed) or `"previous_hash does
   not match the prior event"` (an event was removed or reordered). Pass the
-  first event id hashed after the fix as `since_id` to skip the old segments.
-  The oldest event checked is only checked against its own content, because
-  retention drops old partitions.
+  first event id hashed after the fix as `since_id` (inclusive) to skip the
+  old segments. The oldest event checked is only checked against its own
+  content, because retention drops old partitions. Use a dedicated session:
+  the verifier expunges it between batches.
+- **Assumption:** ingest has one sequential writer (the `radius-syslog`
+  forwarder sends one batch at a time) and the backend runs one uvicorn
+  worker, so ids are committed in increasing order and only one backfill
+  runs at a time. A second writer or worker could fork the chain or make the
+  verifier report a false break.
 
 Tampering alerts are out of scope for this version.
 
