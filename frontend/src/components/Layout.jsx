@@ -4,6 +4,7 @@ import { LayoutDashboard, Users, Server, Radio, Activity, Shield, Layers, BookOp
 import { useAuth } from '../context/AuthContext';
 import NTPIndicator from './NTPIndicator';
 import LogViewer from './LogViewer';
+import SessionManager from './SessionManager';
 
 const Layout = () => {
     const location = useLocation();
@@ -119,6 +120,9 @@ const Layout = () => {
                     <Outlet />
                 </div>
             </main>
+
+            {/* Session keep-alive, idle warning and in-place sign-in (#135) */}
+            <SessionManager />
 
             {/* Log viewer drawer — persists across navigation */}
             <LogViewer isOpen={logDrawerOpen} onClose={() => setLogDrawerOpen(false)} />

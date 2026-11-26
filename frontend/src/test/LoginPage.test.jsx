@@ -96,3 +96,20 @@ describe('LoginPage — failed login', () => {
     })
   })
 })
+
+describe('LoginPage — return route (#135)', () => {
+  it('goes back to the page the admin was on before signing out', async () => {
+    mockNavigate.mockClear()
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/login', state: { from: { pathname: '/nas', search: '?page=2' } } }]}>
+        <AuthProvider>
+          <Login />
+        </AuthProvider>
+      </MemoryRouter>
+    )
+    await userEvent.type(screen.getByPlaceholderText('Username'), 'admin')
+    await userEvent.type(screen.getByPlaceholderText('Password'), 'password')
+    fireEvent.click(screen.getByRole('button', { name: /login/i }))
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/nas?page=2', { replace: true }))
+  })
+})
