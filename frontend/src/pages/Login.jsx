@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Lock, User } from 'lucide-react';
 
 const Login = () => {
@@ -9,6 +9,8 @@ const Login = () => {
     const [error, setError] = useState('');
     const { login } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
+    const from = location.state?.from;
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -16,6 +18,9 @@ const Login = () => {
             const user = await login(username, password);
             if (user.force_change) {
                 navigate('/change-password');
+            } else if (from?.pathname && from.pathname !== '/login') {
+                // Back to the page the admin was on when the session ended (#135).
+                navigate(`${from.pathname}${from.search || ''}`, { replace: true });
             } else {
                 navigate('/');
             }

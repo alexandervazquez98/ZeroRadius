@@ -1,16 +1,21 @@
 import re
+import time
 import bcrypt as _bcrypt
-from datetime import timedelta
+import jwt
+from jwt.exceptions import InvalidTokenError
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.session import get_db
 from app.core.security import (
+    ALGORITHM,
+    SECRET_KEY,
+    SESSION_MAX_HOURS,
+    issue_session_token,
+    oauth2_scheme,
     verify_password,
-    create_access_token,
     get_password_hash,
-    ACCESS_TOKEN_EXPIRE_MINUTES,
     get_current_active_user,
 )
 from app.models.models import AdminUser
@@ -142,18 +147,51 @@ async def login_for_access_token(
         event_code=EventCode.ADMIN_007,
     )
 
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-
-    # Include 'role' and 'force_change' in JWT payload
-    access_token = create_access_token(
-        data={
-            "sub": user.username,
-            "role": user.role,
-            "force_change": user.force_password_change == 1,
-        },
-        expires_delta=access_token_expires,
-    )
+    access_token = issue_session_token(user)
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+SESSION_EXPIRED = "Session expired. Please sign in again."
+
+
+@router.post("/refresh", response_model=Token)
+@limiter.limit("30/minute")
+async def refresh_session(
+    request: Request,
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+):
+    """Issue a fresh token for an active session (sliding idle timeout, #135).
+
+    The current token must still be valid. The new token keeps the session
+    start (`auth_time`) and never outlives SESSION_MAX_HOURS. The admin is
+    re-read from the DB: disabled or deleted admins get 401, and role /
+    force_change changes apply immediately.
+    """
+    unauthorized = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except InvalidTokenError:
+        raise unauthorized
+
+    auth_time = payload.get("auth_time")
+    if not isinstance(auth_time, int) or time.time() >= auth_time + SESSION_MAX_HOURS * 3600:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=SESSION_EXPIRED,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    result = await db.execute(select(AdminUser).where(AdminUser.username == payload.get("sub")))
+    user = result.scalars().first()
+    if user is None or not bool(user.is_active):
+        raise unauthorized
+
+    return {"access_token": issue_session_token(user, auth_time=auth_time), "token_type": "bearer"}
 
 
 from pydantic import BaseModel

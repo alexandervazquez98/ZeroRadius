@@ -23,6 +23,7 @@ outputs:
 | Method | Path | Roles | Notes |
 |---|---|---|---|
 | `POST` | `/auth/token` | none | Form-encoded (`username`, `password`) → JWT |
+| `POST` | `/auth/refresh` | valid token | Returns a new JWT for the same session (`auth_time` kept), expiring after the idle period (`ACCESS_TOKEN_EXPIRE_MINUTES`) but never after `SESSION_MAX_HOURS` from sign-in. Re-reads the admin: disabled or deleted → 401. Past the session lifetime, or a token without `auth_time` → 401 `"Session expired. Please sign in again."`. Rate limit `30/minute` |
 | `POST` | `/auth/change-password` | active user | Body: `{"current_password", "new_password"}` |
 | `GET` | `/users` | active | List RADIUS user check attributes (`radcheck`). Password values are never returned: password rows have `value: null` and `has_password: true` |
 | `POST` | `/users/check` | `admin` / `superadmin` / `helpdesk` | Create a RADIUS user attribute row. `readonly` and `auditor` get 403 |

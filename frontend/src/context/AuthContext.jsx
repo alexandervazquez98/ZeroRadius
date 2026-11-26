@@ -56,6 +56,12 @@ export const AuthProvider = ({ children, initialToken }) => {
         return jwtDecode(access_token);
     };
 
+    // Store a token issued by refresh or re-authentication.
+    const applyToken = (token) => {
+        localStorage.setItem('token', token);
+        setUser(parseToken(token));
+    };
+
     const logout = () => {
         localStorage.removeItem('token');
         setUser(null);
@@ -75,7 +81,7 @@ export const AuthProvider = ({ children, initialToken }) => {
     const role = user?.role || null;
 
     return (
-        <AuthContext.Provider value={{ user, login, logout, loading, role, hasRole }}>
+        <AuthContext.Provider value={{ user, login, logout, applyToken, loading, role, hasRole }}>
             {!loading && children}
         </AuthContext.Provider>
     );

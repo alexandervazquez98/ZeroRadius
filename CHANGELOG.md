@@ -61,6 +61,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Active sessions stay signed in** (#135). The UI refreshes the access
+  token (`POST /auth/refresh`) while the admin is active, warns two minutes
+  before an idle session expires ("Your session expires in 1:59"), and on
+  expiry or any 401 asks for the password in a dialog over the current page:
+  unsaved work is kept and the failed request is retried. Signing out from
+  that dialog returns to the same page after the next login. Sessions still
+  end after `ACCESS_TOKEN_EXPIRE_MINUTES` of inactivity (default 30) and at
+  most `SESSION_MAX_HOURS` after sign-in (new, default 12, max 24). Refresh
+  re-reads the admin, so disabled or deleted admins lose access on their
+  next request. Tokens issued before this release cannot be refreshed:
+  admins sign in once more after upgrading.
 - `SYSLOG_MIN_SEVERITY` (e.g. `notice`) drops less severe syslog events in
   the forwarder. Disabled by default; meant as a safety net while devices are
   reconfigured. Compose also reads `SYSLOG_BATCH_SIZE` (default 200),

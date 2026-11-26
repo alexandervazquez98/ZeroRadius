@@ -48,7 +48,8 @@ Linux variant is auto-selected by `scripts/start.sh` on Linux.
 | `RADIUS_DYNAMIC_CLIENT_NETWORK` | Source network whose packets are looked up in the `nas` table (IPv4 CIDR). Addresses with no `nas` row are still rejected; narrow it to your management networks to avoid SQL lookups for stray traffic. Default `0.0.0.0/0`. | `radius/sites/dynamic-clients` |
 | `SECRET_KEY` | JWT signing key. **Backend crashes at startup if unset.** Generate with `openssl rand -hex 32`. | `app/core/security.py` |
 | `ALGORITHM` | JWT algorithm (`HS256`/`HS384`/`HS512` default `HS256`) | same |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Access-token TTL (default `30`) | same |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Idle timeout: each access token lives this long and the UI refreshes it while the admin is active (default `30`, max `1440`) | same |
+| `SESSION_MAX_HOURS` | Absolute session lifetime: refresh never extends a session past this many hours after sign-in (default `12`, `1`-`24`; the backend refuses to start outside that range) | same |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins (no trailing slash) | `app/main.py` |
 | `SYSLOG_API_KEY` | Header sent by the `radius-syslog` container on `POST /syslog/ingest` | `docker-compose.yml` → `syslog.service.api_key` (default `syslog-secret-key` if unset) |
 | `DISABLE_DOCS` | When `true` removes Swagger/ReDoc | `app/main.py` |

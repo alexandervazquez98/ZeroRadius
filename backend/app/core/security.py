@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import time
 from typing import Optional
 import jwt
 from jwt.exceptions import InvalidTokenError
@@ -25,7 +26,26 @@ SECRET_KEY: str = _secret_key
 # JWT_ALGORITHM is configurable via the ALGORITHM environment variable (default: HS256).
 # Supported values: HS256, HS384, HS512 (symmetric) or RS256/RS512 (asymmetric, requires key pair).
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
+# Idle timeout: each token lives this long; activity refreshes it (#135).
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+SESSION_MAX_HOURS_LIMIT = 24
+
+
+def parse_session_max_hours(raw: Optional[str]) -> int:
+    """Absolute session lifetime in hours (default 12, at most 24)."""
+    value = (raw or "").strip()
+    if not value.lstrip("-").isdigit():
+        return 12
+    hours = int(value)
+    if not 1 <= hours <= SESSION_MAX_HOURS_LIMIT:
+        raise RuntimeError(
+            f"SESSION_MAX_HOURS={hours} must be between 1 and {SESSION_MAX_HOURS_LIMIT}."
+        )
+    return hours
+
+
+# Absolute lifetime: refresh never extends a session past this (#135).
+SESSION_MAX_HOURS = parse_session_max_hours(os.getenv("SESSION_MAX_HOURS"))
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 
@@ -55,6 +75,26 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+
+def issue_session_token(user: AdminUser, auth_time: Optional[int] = None) -> str:
+    """Token for `user`: expires after the idle period, never past the session end.
+
+    `auth_time` (epoch seconds) is when the session started; it is carried over
+    unchanged on refresh. Role and force_change come from the DB row.
+    """
+    now = int(time.time())
+    session_start = now if auth_time is None else auth_time
+    session_end = session_start + SESSION_MAX_HOURS * 3600
+    claims = {
+        "sub": user.username,
+        "role": user.role,
+        "force_change": user.force_password_change == 1,
+        "auth_time": session_start,
+        "iat": now,  # lets the UI pace refreshes to the token lifetime
+        "exp": min(now + ACCESS_TOKEN_EXPIRE_MINUTES * 60, session_end),
+    }
+    return jwt.encode(claims, SECRET_KEY, algorithm=ALGORITHM)
 
 
 async def get_current_user(
