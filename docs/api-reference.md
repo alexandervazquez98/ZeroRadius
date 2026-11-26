@@ -88,7 +88,9 @@ All Pydantic schemas are in `backend/app/schemas/`.
   `/syslog`.
 - `offset`: zero-based; combine with `limit` to iterate.
 - `response.model=list[T]`: a plain array (no envelope). `GET /syslog` is
-  the exception — it returns `{ events: [...], total: N }`.
+  the exception — it returns `{ events, has_more, next_cursor, start_date,
+  end_date, max_range_hours }`, takes `cursor` instead of `offset`, and only
+  reads an 8-hour window (see `docs/modules/syslog-dashboard.md`).
 - `GET /audit/export`: when JSON and ≥ 1000 results, the response is a
   streaming `Transfer-Encoding: chunked` JSON array.
 
