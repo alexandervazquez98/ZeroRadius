@@ -113,7 +113,7 @@ async def ingest_syslog_events(
     )
     await db.commit()
 
-    logger.info("Ingested %d syslog events", len(mappings))
+    logger.debug("Ingested %d syslog events", len(mappings))
     return {"ingested": len(mappings)}
 
 
