@@ -36,6 +36,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `(received_at, id)`, `(device_ip, received_at)` and a `hash(1)` prefix;
   the `severity` / `facility` indexes are dropped.
 
+- **Syslog hash chain no longer restarts every minute** (#138). The hash
+  worker started each 60 s run from `GENESIS_HASH`, so production held a
+  new chain segment about every minute (~1,000 a day) and removing a whole
+  segment could not be detected. Each run now continues from the last hashed
+  event, in insertion (`id`) order, so late events are appended too. New
+  `verify_syslog_chain` reports the first break; events hashed before this
+  fix keep their segments (stored data is not rewritten). The per-batch
+  "backfilled N records" log line moved to debug; the per-run total stays.
+
 ### Changed
 
 - **Syslog list is limited to an 8-hour window** (#136). `GET /syslog`

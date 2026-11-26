@@ -145,8 +145,30 @@ The Syslog dashboard shows this as the "NAS not sending syslog" card
 
 `syslog_integrity.py` keeps `previous_hash` / `hash` columns on each row,
 forming a SHA-256 chain (each row's `hash = sha256(previous_hash + row)`).
-A break in the chain indicates tampering; tampering alerts are out of scope
-for this version but the data is structured to support them.
+A background job in `main.py` runs `backfill_syslog_hashes` every 60 s.
+
+- **Order:** the chain follows insertion order (`id`). An event that arrives
+  late (older `received_at`) is still appended after the current tip.
+- **Continuity:** each run continues from the hash of the last hashed event;
+  only the very first event ever hashed uses `GENESIS_HASH`
+  (`sha256("ZERO")`). Before #138 every run restarted at `GENESIS_HASH`, so
+  events hashed before that fix form one short segment per run.
+- **Verification:** `verify_syslog_chain(db, since_id=None)` walks hashed
+  events in `id` order and returns
+  `{"checked": N, "first_break_id": id | None, "reason": str | None}`.
+  `reason` is `"hash mismatch"` (content changed) or `"previous_hash does
+  not match the prior event"` (an event was removed or reordered). Pass the
+  first event id hashed after the fix as `since_id` (inclusive) to skip the
+  old segments. The oldest event checked is only checked against its own
+  content, because retention drops old partitions. Use a dedicated session:
+  the verifier expunges it between batches.
+- **Assumption:** ingest has one sequential writer (the `radius-syslog`
+  forwarder sends one batch at a time) and the backend runs one uvicorn
+  worker, so ids are committed in increasing order and only one backfill
+  runs at a time. A second writer or worker could fork the chain or make the
+  verifier report a false break.
+
+Tampering alerts are out of scope for this version.
 
 ## 3.1 Partitions and retention
 
